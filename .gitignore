@@ -1,6 +1,4 @@
-.worktrees/
 xirc
-xirc-arm64
-xirc-arm
-*.db
 data/
+*.db
+.superpowers/
