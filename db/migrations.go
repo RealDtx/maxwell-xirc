@@ -1,0 +1,123 @@
+package db
+
+import "database/sql"
+
+func migrationStatements() []string {
+	return []string{
+		`CREATE TABLE IF NOT EXISTS servers (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			host TEXT NOT NULL,
+			port INTEGER NOT NULL DEFAULT 6667,
+			ssl INTEGER NOT NULL DEFAULT 0,
+			nickname TEXT NOT NULL DEFAULT 'xirc_user',
+			alt_nicknames TEXT NOT NULL DEFAULT '[]',
+			auth_method TEXT NOT NULL DEFAULT 'none',
+			auth_password TEXT NOT NULL DEFAULT '',
+			auto_connect INTEGER NOT NULL DEFAULT 1,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS channels (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			server_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			key TEXT NOT NULL DEFAULT '',
+			search_command TEXT NOT NULL DEFAULT '!s',
+			download_channel TEXT NOT NULL DEFAULT '',
+			auto_join INTEGER NOT NULL DEFAULT 1,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS downloads (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			server_id INTEGER NOT NULL,
+			channel TEXT NOT NULL,
+			bot_nick TEXT NOT NULL,
+			pack_number INTEGER NOT NULL,
+			filename TEXT NOT NULL DEFAULT '',
+			filesize INTEGER NOT NULL DEFAULT 0,
+			downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'queued',
+			destination_path TEXT NOT NULL DEFAULT '',
+			error_message TEXT NOT NULL DEFAULT '',
+			peak_speed INTEGER NOT NULL DEFAULT 0,
+			average_speed INTEGER NOT NULL DEFAULT 0,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (server_id) REFERENCES servers(id)
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS search_results (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			server_id INTEGER NOT NULL,
+			channel TEXT NOT NULL,
+			bot_nick TEXT NOT NULL,
+			pack_number INTEGER,
+			filename TEXT,
+			filesize TEXT,
+			downloads_count INTEGER,
+			raw_line TEXT NOT NULL,
+			search_query TEXT NOT NULL,
+			parsed INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (server_id) REFERENCES servers(id)
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS saved_searches (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			server_id INTEGER NOT NULL,
+			channel TEXT NOT NULL,
+			query TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (server_id) REFERENCES servers(id)
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS parse_patterns (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			regex TEXT NOT NULL,
+			field_mapping TEXT NOT NULL DEFAULT '{}',
+			priority INTEGER NOT NULL DEFAULT 0,
+			builtin INTEGER NOT NULL DEFAULT 0,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			match_count INTEGER NOT NULL DEFAULT 0,
+			fail_count INTEGER NOT NULL DEFAULT 0,
+			last_matched_at DATETIME,
+			auto_disabled INTEGER NOT NULL DEFAULT 0
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS post_hooks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			scope TEXT NOT NULL DEFAULT 'global',
+			scope_id INTEGER,
+			hook_type TEXT NOT NULL,
+			config TEXT NOT NULL DEFAULT '{}',
+			enabled INTEGER NOT NULL DEFAULT 1
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS file_routing_rules (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			pattern TEXT NOT NULL,
+			destination_dir TEXT NOT NULL,
+			priority INTEGER NOT NULL DEFAULT 0,
+			builtin INTEGER NOT NULL DEFAULT 0,
+			enabled INTEGER NOT NULL DEFAULT 1
+		)`,
+	}
+}
+
+func runMigrations(db *sql.DB) error {
+	for _, stmt := range migrationStatements() {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
