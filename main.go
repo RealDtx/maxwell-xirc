@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -9,10 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/maxwell-xirc/xirc/config"
 	"github.com/maxwell-xirc/xirc/db"
+	ircpkg "github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/server"
 )
 
@@ -40,7 +39,16 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	srv := server.New(store)
+	bus := ircpkg.NewEventBus()
+	ircMgr := ircpkg.NewManager(store, bus)
+
+	if err := ircMgr.LoadFromStore(); err != nil {
+		log.Printf("warning: failed to load IRC servers: %v", err)
+	}
+
+	ircMgr.ConnectAutoConnect()
+
+	srv := server.New(store, ircMgr)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{
@@ -53,11 +61,8 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		log.Println("shutting down...")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := httpServer.Shutdown(ctx); err != nil {
-			log.Printf("shutdown error: %v", err)
-		}
+		ircMgr.Shutdown()
+		httpServer.Close()
 	}()
 
 	log.Printf("xirc starting on %s", addr)
