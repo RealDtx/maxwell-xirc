@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -52,7 +53,7 @@ func (s *SQLiteStore) GetServers() ([]Server, error) {
 	}
 	defer rows.Close()
 
-	var servers []Server
+	servers := []Server{}
 	for rows.Next() {
 		var srv Server
 		var altJSON string
@@ -62,8 +63,8 @@ func (s *SQLiteStore) GetServers() ([]Server, error) {
 		if err != nil {
 			return nil, err
 		}
-		json.Unmarshal([]byte(altJSON), &srv.AltNicknames)
-		if srv.AltNicknames == nil {
+		if err := json.Unmarshal([]byte(altJSON), &srv.AltNicknames); err != nil {
+			log.Printf("WARN: server %d has corrupt alt_nicknames JSON: %v", srv.ID, err)
 			srv.AltNicknames = []string{}
 		}
 		servers = append(servers, srv)
@@ -82,8 +83,8 @@ func (s *SQLiteStore) GetServer(id int64) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	json.Unmarshal([]byte(altJSON), &srv.AltNicknames)
-	if srv.AltNicknames == nil {
+	if err := json.Unmarshal([]byte(altJSON), &srv.AltNicknames); err != nil {
+		log.Printf("WARN: server %d has corrupt alt_nicknames JSON: %v", srv.ID, err)
 		srv.AltNicknames = []string{}
 	}
 	return &srv, nil
@@ -137,7 +138,7 @@ func (s *SQLiteStore) GetChannels(serverID int64) ([]Channel, error) {
 	}
 	defer rows.Close()
 
-	var channels []Channel
+	channels := []Channel{}
 	for rows.Next() {
 		var ch Channel
 		if err := rows.Scan(&ch.ID, &ch.ServerID, &ch.Name, &ch.Key, &ch.SearchCommand, &ch.DownloadChannel, &ch.AutoJoin, &ch.Enabled); err != nil {
@@ -201,7 +202,7 @@ func (s *SQLiteStore) GetDownloads(status string) ([]Download, error) {
 	}
 	defer rows.Close()
 
-	var downloads []Download
+	downloads := []Download{}
 	for rows.Next() {
 		var dl Download
 		if err := rows.Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
@@ -268,7 +269,7 @@ func (s *SQLiteStore) GetSearchResults(query string, serverID int64, channel str
 	}
 	defer rows.Close()
 
-	var results []SearchResult
+	results := []SearchResult{}
 	for rows.Next() {
 		var r SearchResult
 		if err := rows.Scan(&r.ID, &r.ServerID, &r.Channel, &r.BotNick, &r.PackNumber,
@@ -306,7 +307,7 @@ func (s *SQLiteStore) GetSavedSearches() ([]SavedSearch, error) {
 	}
 	defer rows.Close()
 
-	var searches []SavedSearch
+	searches := []SavedSearch{}
 	for rows.Next() {
 		var ss SavedSearch
 		if err := rows.Scan(&ss.ID, &ss.Name, &ss.ServerID, &ss.Channel, &ss.Query, &ss.CreatedAt); err != nil {
@@ -347,7 +348,7 @@ func (s *SQLiteStore) GetParsePatterns() ([]ParsePattern, error) {
 	}
 	defer rows.Close()
 
-	var patterns []ParsePattern
+	patterns := []ParsePattern{}
 	for rows.Next() {
 		var p ParsePattern
 		if err := rows.Scan(&p.ID, &p.Name, &p.Regex, &p.FieldMapping, &p.Priority,
@@ -400,7 +401,7 @@ func (s *SQLiteStore) GetPostHooks(scope string, scopeID *int64) ([]PostHook, er
 	}
 	defer rows.Close()
 
-	var hooks []PostHook
+	hooks := []PostHook{}
 	for rows.Next() {
 		var h PostHook
 		if err := rows.Scan(&h.ID, &h.Name, &h.Scope, &h.ScopeID, &h.HookType, &h.Config, &h.Enabled); err != nil {
@@ -445,7 +446,7 @@ func (s *SQLiteStore) GetFileRoutingRules() ([]FileRoutingRule, error) {
 	}
 	defer rows.Close()
 
-	var rules []FileRoutingRule
+	rules := []FileRoutingRule{}
 	for rows.Next() {
 		var r FileRoutingRule
 		if err := rows.Scan(&r.ID, &r.Pattern, &r.DestinationDir, &r.Priority, &r.Builtin, &r.Enabled); err != nil {

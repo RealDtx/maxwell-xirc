@@ -27,6 +27,18 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestHealthNonGetReturns405(t *testing.T) {
+	srv := New(nil)
+	for _, method := range []string{"POST", "PUT", "DELETE", "PATCH"} {
+		req := httptest.NewRequest(method, "/api/health", nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s /api/health: expected 405, got %d", method, w.Code)
+		}
+	}
+}
+
 func TestNotFoundReturns404(t *testing.T) {
 	srv := New(nil)
 	req := httptest.NewRequest("GET", "/api/nonexistent", nil)
