@@ -10,6 +10,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20240312041847-bd984b5ce465 // indirect
+	github.com/lrstanley/girc v1.1.1
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mattn/go-sqlite3 v1.14.15 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
@@ -31,3 +32,5 @@ require (
 	modernc.org/sqlite v1.18.1
 	modernc.org/tcl v1.13.2 // indirect
 )
+
+replace github.com/lrstanley/girc v1.1.1 => ./third_party/girc
