@@ -39,6 +39,10 @@ func ParseDCCSend(msg string) (*DCCOffer, error) {
 		return nil, fmt.Errorf("invalid port: %s", matches[3])
 	}
 
+	if port < 0 || port > 65535 {
+		return nil, fmt.Errorf("invalid port %d: out of range", port)
+	}
+
 	size, err := strconv.ParseInt(matches[4], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid size: %s", matches[4])
