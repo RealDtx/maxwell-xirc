@@ -189,27 +189,40 @@ func (q *Queue) Retry(id int64) error {
 }
 
 func (q *Queue) MoveToFront(id int64) error {
-	// Set created_at to one second before the oldest queued download,
-	// with year-2000 as a floor, so it becomes the first item in FIFO order.
 	dl, err := q.store.GetDownload(id)
 	if err != nil {
 		return err
 	}
 
 	floor := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	target := floor
 
 	queued, err := q.store.GetDownloads("queued")
 	if err != nil {
 		return err
 	}
+
+	// Find the minimum created_at among other queued items
+	minTime := time.Now()
+	hasOthers := false
 	for _, item := range queued {
-		if item.ID != id && item.CreatedAt.Before(target) {
-			target = item.CreatedAt
+		if item.ID != id {
+			if !hasOthers || item.CreatedAt.Before(minTime) {
+				minTime = item.CreatedAt
+				hasOthers = true
+			}
 		}
 	}
-	if target.After(floor) {
-		target = target.Add(-time.Second)
+
+	var target time.Time
+	if !hasOthers {
+		target = floor
+	} else {
+		candidate := minTime.Add(-time.Second)
+		if candidate.Before(floor) {
+			target = floor
+		} else {
+			target = candidate
+		}
 	}
 
 	dl.CreatedAt = target
