@@ -233,3 +233,34 @@ func TestQueue_Reorder(t *testing.T) {
 		t.Errorf("expected download ID=%d (moved to front), got ID=%d", dl2.ID, next.ID)
 	}
 }
+
+func TestQueue_MoveToFront_MultiplePromotions(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	q := New(store, 3)
+
+	srv := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	dl1, _ := q.Add(srv.ID, "#t", "bot1", 1, "first.mkv", 100)
+	dl2, _ := q.Add(srv.ID, "#t", "bot2", 2, "second.mkv", 100)
+	dl3, _ := q.Add(srv.ID, "#t", "bot3", 3, "third.mkv", 100)
+
+	// Promote dl3 to front, then dl2 to front
+	// Expected order: dl2, dl3, dl1
+	if err := q.MoveToFront(dl3.ID); err != nil {
+		t.Fatalf("first MoveToFront failed: %v", err)
+	}
+	if err := q.MoveToFront(dl2.ID); err != nil {
+		t.Fatalf("second MoveToFront failed: %v", err)
+	}
+
+	next := q.Next()
+	if next == nil {
+		t.Fatal("expected a download")
+	}
+	if next.ID != dl2.ID {
+		t.Errorf("expected dl2 at front after double promotion, got id %d (%s)", next.ID, next.Filename)
+	}
+	_ = dl1
+}
