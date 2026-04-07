@@ -243,7 +243,9 @@ func (p *Parser) updatePatternStats(patternID int64, matched bool) {
 			}
 		}
 
-		p.store.UpdateParsePattern(&pat)
+		if err := p.store.UpdateParsePattern(&pat); err != nil {
+			log.Printf("WARN: failed to persist pattern stats for %q: %v", pat.Name, err)
+		}
 		break
 	}
 }
