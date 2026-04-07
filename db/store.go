@@ -20,9 +20,14 @@ type Store interface {
 	DeleteChannel(id int64) error
 
 	// Downloads
+	// GetDownloads returns downloads filtered by status, ordered by created_at DESC.
+	// Pass an empty string to get all downloads regardless of status.
+	// The queue package relies on DESC ordering and reverses for FIFO iteration.
 	GetDownloads(status string) ([]Download, error)
 	GetDownload(id int64) (*Download, error)
 	CreateDownload(d *Download) error
+	// UpdateDownload persists all fields of d, including created_at.
+	// Writing created_at is intentional and required for MoveToFront queue reordering.
 	UpdateDownload(d *Download) error
 
 	// Search Results

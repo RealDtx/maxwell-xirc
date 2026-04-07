@@ -39,6 +39,50 @@ func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, fil
 	return dl, nil
 }
 
+// NextAndMarkDownloading returns the next queued download to process and atomically
+// marks it as downloading under the queue lock. This prevents TOCTOU races where
+// two callers could both get the same download from Next() and start it.
+// Returns nil if no download is available (max concurrent reached or queue empty).
+func (q *Queue) NextAndMarkDownloading() (*db.Download, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	active, err := q.store.GetDownloads("downloading")
+	if err != nil {
+		return nil, err
+	}
+	if len(active) >= q.maxConcurrent {
+		return nil, nil
+	}
+
+	activeBots := make(map[string]bool)
+	for _, dl := range active {
+		activeBots[dl.BotNick] = true
+	}
+
+	queued, err := q.store.GetDownloads("queued")
+	if err != nil {
+		return nil, err
+	}
+
+	for i := len(queued) - 1; i >= 0; i-- {
+		dl := queued[i]
+		if activeBots[dl.BotNick] {
+			continue
+		}
+		// Atomically mark as downloading
+		now := time.Now()
+		dl.Status = "downloading"
+		dl.StartedAt = &now
+		if err := q.store.UpdateDownload(&dl); err != nil {
+			return nil, err
+		}
+		return &dl, nil
+	}
+
+	return nil, nil
+}
+
 func (q *Queue) Next() *db.Download {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -145,12 +189,30 @@ func (q *Queue) Retry(id int64) error {
 }
 
 func (q *Queue) MoveToFront(id int64) error {
-	// Set created_at to a time before all others to make it "oldest" (first in FIFO)
+	// Set created_at to one second before the oldest queued download,
+	// with year-2000 as a floor, so it becomes the first item in FIFO order.
 	dl, err := q.store.GetDownload(id)
 	if err != nil {
 		return err
 	}
-	dl.CreatedAt = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	floor := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	target := floor
+
+	queued, err := q.store.GetDownloads("queued")
+	if err != nil {
+		return err
+	}
+	for _, item := range queued {
+		if item.ID != id && item.CreatedAt.Before(target) {
+			target = item.CreatedAt
+		}
+	}
+	if target.After(floor) {
+		target = target.Add(-time.Second)
+	}
+
+	dl.CreatedAt = target
 	return q.store.UpdateDownload(dl)
 }
 
