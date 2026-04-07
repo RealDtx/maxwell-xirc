@@ -69,6 +69,13 @@ func TestParseDCCSend_InvalidFormat(t *testing.T) {
 	}
 }
 
+func TestParseDCCSend_InvalidPort(t *testing.T) {
+	_, err := ParseDCCSend(`DCC SEND file.mkv 3232235777 99999 1500000000`)
+	if err == nil {
+		t.Error("expected error for out-of-range port")
+	}
+}
+
 func TestIntToIP(t *testing.T) {
 	tests := []struct {
 		input    uint32
