@@ -34,9 +34,10 @@ type RawClient struct {
 	onDisconnect func()
 	onRaw        func(line string)
 
-	mu   sync.Mutex
-	conn net.Conn
-	done chan struct{}
+	mu         sync.Mutex
+	conn       net.Conn
+	done       chan struct{}
+	closeOnce  sync.Once
 }
 
 // RawClientConfig holds connection parameters.
@@ -76,7 +77,8 @@ func (c *RawClient) Nick() string                                 { return c.nic
 func (c *RawClient) dial() (net.Conn, error) {
 	if c.useTLS {
 		host, _, _ := net.SplitHostPort(c.addr)
-		return tls.Dial("tcp", c.addr, &tls.Config{ServerName: host})
+		dialer := &net.Dialer{Timeout: 30 * time.Second}
+		return tls.DialWithDialer(dialer, "tcp", c.addr, &tls.Config{ServerName: host})
 	}
 	return net.DialTimeout("tcp", c.addr, 30*time.Second)
 }
@@ -98,7 +100,6 @@ func (c *RawClient) Connect() error {
 	}
 	c.mu.Lock()
 	c.conn = conn
-	c.done = make(chan struct{})
 	c.mu.Unlock()
 
 	defer func() {
@@ -134,7 +135,11 @@ func (c *RawClient) Connect() error {
 
 		switch parsed.command {
 		case "PING":
-			c.send(conn, "PONG :%s", parsed.trailing)
+			token := parsed.trailing
+			if token == "" && len(parsed.params) > 0 {
+				token = parsed.params[0]
+			}
+			c.send(conn, "PONG :%s", token)
 
 		case "CAP":
 			// CAP * ACK :sasl — server confirmed SASL capability
@@ -213,11 +218,7 @@ func (c *RawClient) Close() {
 		fmt.Fprintf(c.conn, "QUIT :bye\r\n") //nolint:errcheck
 		c.conn.Close()
 	}
-	select {
-	case <-c.done:
-	default:
-		close(c.done)
-	}
+	c.closeOnce.Do(func() { close(c.done) })
 }
 
 func (c *RawClient) Join(channel, key string) {
