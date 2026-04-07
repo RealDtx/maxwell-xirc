@@ -74,10 +74,10 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		log.Println("shutting down...")
-		p.Stop()
-		eng.Stop()
-		ircMgr.Shutdown()
 		httpServer.Close()
+		p.Stop()
+		ircMgr.Shutdown()
+		eng.Stop()
 	}()
 
 	log.Printf("xirc starting on %s", addr)

@@ -8,6 +8,11 @@ import (
 )
 
 func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	status := r.URL.Query().Get("status")
 
 	downloads, err := s.store.GetDownloads(status)
@@ -22,6 +27,11 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req struct {
 		ServerID   int64  `json:"server_id"`
 		Channel    string `json:"channel"`
@@ -32,6 +42,11 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.ServerID == 0 {
+		writeError(w, http.StatusBadRequest, "server_id is required")
 		return
 	}
 
@@ -46,10 +61,15 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, dl)
+	writeJSON(w, http.StatusCreated, dl)
 }
 
 func (s *Server) handleCancelDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req struct {
 		DownloadID int64 `json:"download_id"`
 	}
@@ -58,29 +78,29 @@ func (s *Server) handleCancelDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.engine != nil {
-		if err := s.engine.Queue().Cancel(req.DownloadID); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	} else {
-		// Fallback: operate directly on store
-		dl, err := s.store.GetDownload(req.DownloadID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		dl.Status = "cancelled"
-		if err := s.store.UpdateDownload(dl); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
+	if req.DownloadID == 0 {
+		writeError(w, http.StatusBadRequest, "download_id is required")
+		return
+	}
+
+	if s.engine == nil {
+		writeError(w, http.StatusInternalServerError, "download engine not initialized")
+		return
+	}
+	if err := s.engine.Queue().Cancel(req.DownloadID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
 func (s *Server) handleRetryDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req struct {
 		DownloadID int64 `json:"download_id"`
 	}
@@ -89,38 +109,39 @@ func (s *Server) handleRetryDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.engine != nil {
-		if err := s.engine.Queue().Retry(req.DownloadID); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	} else {
-		// Fallback: operate directly on store
-		dl, err := s.store.GetDownload(req.DownloadID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		dl.Status = "queued"
-		dl.ErrorMessage = ""
-		dl.DownloadedBytes = 0
-		dl.StartedAt = nil
-		dl.CompletedAt = nil
-		if err := s.store.UpdateDownload(dl); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
+	if req.DownloadID == 0 {
+		writeError(w, http.StatusBadRequest, "download_id is required")
+		return
+	}
+
+	if s.engine == nil {
+		writeError(w, http.StatusInternalServerError, "download engine not initialized")
+		return
+	}
+	if err := s.engine.Queue().Retry(req.DownloadID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
 }
 
 func (s *Server) handleMoveDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req struct {
 		DownloadID int64 `json:"download_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.DownloadID == 0 {
+		writeError(w, http.StatusBadRequest, "download_id is required")
 		return
 	}
 
