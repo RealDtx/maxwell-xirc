@@ -40,6 +40,8 @@ func NewTransfer(offer *DCCOffer, destPath string, progressCh chan TransferProgr
 }
 
 func (t *Transfer) SetResumeOffset(offset int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.resumeOffset = offset
 }
 
@@ -87,7 +89,10 @@ func (t *Transfer) Start() error {
 			return fmt.Errorf("creating part file: %w", err)
 		}
 	}
-	defer file.Close()
+
+	if t.progressCh != nil {
+		defer close(t.progressCh)
+	}
 
 	t.startTime = time.Now()
 	t.bytesReceived = t.resumeOffset
@@ -100,6 +105,7 @@ func (t *Transfer) Start() error {
 		n, readErr := conn.Read(buf)
 		if n > 0 {
 			if _, writeErr := file.Write(buf[:n]); writeErr != nil {
+				file.Close()
 				return fmt.Errorf("writing to file: %w", writeErr)
 			}
 
@@ -156,6 +162,7 @@ func (t *Transfer) Start() error {
 			if readErr == io.EOF {
 				break
 			}
+			file.Close()
 			return fmt.Errorf("reading from connection: %w", readErr)
 		}
 	}
@@ -178,7 +185,6 @@ func (t *Transfer) Start() error {
 		}:
 		default:
 		}
-		close(t.progressCh)
 	}
 
 	// Rename .part to final
