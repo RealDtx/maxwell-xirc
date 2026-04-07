@@ -13,7 +13,11 @@ func GetAvailableSpace(dir string) (int64, error) {
 	if err := syscall.Statfs(dir, &stat); err != nil {
 		return 0, fmt.Errorf("statfs %s: %w", dir, err)
 	}
-	return int64(stat.Bavail) * int64(stat.Bsize), nil
+	avail := int64(stat.Bavail) * int64(stat.Bsize)
+	if avail < 0 {
+		return 0, fmt.Errorf("statfs %s: overflow computing available bytes", dir)
+	}
+	return avail, nil
 }
 
 // ParseSize converts human-readable size strings (e.g., "1GB", "500MB") to bytes.
@@ -63,7 +67,7 @@ func CheckDiskSpace(dir string, filesize int64, minFreeSpace string) error {
 	}
 
 	var margin int64
-	if minFreeSpace != "" && minFreeSpace != "0" {
+	if minFreeSpace != "" {
 		margin, err = ParseSize(minFreeSpace)
 		if err != nil {
 			return fmt.Errorf("invalid min_free_space: %w", err)
@@ -71,6 +75,9 @@ func CheckDiskSpace(dir string, filesize int64, minFreeSpace string) error {
 	}
 
 	needed := filesize + margin
+	if needed < filesize {
+		return fmt.Errorf("disk space check overflow: filesize %d + margin %d overflows", filesize, margin)
+	}
 	if avail < needed {
 		return fmt.Errorf("insufficient disk space: need %d bytes (file %d + margin %d), have %d",
 			needed, filesize, margin, avail)
