@@ -26,13 +26,14 @@ type ChannelPair struct {
 }
 
 type Connection struct {
-	mu       sync.RWMutex
-	server   *db.Server
-	channels []db.Channel
-	bus      *EventBus
-	client   IRCClient
-	status   ConnectionStatus
-	stopCh   chan struct{}
+	mu        sync.RWMutex
+	server    *db.Server
+	channels  []db.Channel
+	bus       *EventBus
+	client    IRCClient
+	status    ConnectionStatus
+	stopCh    chan struct{}
+	stopOnce  sync.Once
 }
 
 // newIRCClient creates the appropriate IRCClient for the given server config.
@@ -209,36 +210,37 @@ func (c *Connection) connectLoop() {
 		c.mu.Unlock()
 
 		err := client.Connect()
-		if err == nil {
-			// Clean disconnect (e.g. via Disconnect() → Close()).
-			return
-		}
-
 		select {
 		case <-c.stopCh:
-			return
+			return // clean shutdown, not a failure
 		default:
 		}
 
-		delay := backoff[len(backoff)-1]
-		if attempt < len(backoff) {
-			delay = backoff[attempt]
-		}
-		attempt++
+		if err != nil {
+			delay := backoff[len(backoff)-1]
+			if attempt < len(backoff) {
+				delay = backoff[attempt]
+			}
+			attempt++
 
-		log.Printf("[%s] connection failed: %v, retrying in %ds", c.server.Name, err, delay)
-		c.setStatus(StatusDisconnected)
+			log.Printf("[%s] connection failed: %v, retrying in %ds", c.server.Name, err, delay)
+			c.setStatus(StatusDisconnected)
 
-		select {
-		case <-time.After(delay * time.Second):
-		case <-c.stopCh:
-			return
+			select {
+			case <-time.After(delay * time.Second):
+			case <-c.stopCh:
+				return
+			}
+			continue
 		}
+
+		// err == nil: clean disconnect (e.g. via Disconnect() → Close()).
+		return
 	}
 }
 
 func (c *Connection) Disconnect() {
-	close(c.stopCh)
+	c.stopOnce.Do(func() { close(c.stopCh) })
 
 	c.mu.RLock()
 	client := c.client

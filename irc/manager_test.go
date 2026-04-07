@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/maxwell-xirc/xirc/db"
@@ -11,9 +12,22 @@ type mockStore struct {
 	channels map[int64][]db.Channel
 }
 
-func (m *mockStore) GetServers() ([]db.Server, error)                 { return m.servers, nil }
-func (m *mockStore) GetServer(id int64) (*db.Server, error)           { return nil, nil }
-func (m *mockStore) CreateServer(s *db.Server) error                  { return nil }
+func (m *mockStore) GetServers() ([]db.Server, error) { return m.servers, nil }
+func (m *mockStore) GetServer(id int64) (*db.Server, error) {
+	for i := range m.servers {
+		if m.servers[i].ID == id {
+			return &m.servers[i], nil
+		}
+	}
+	return nil, fmt.Errorf("server %d not found", id)
+}
+func (m *mockStore) CreateServer(s *db.Server) error {
+	if s.ID == 0 {
+		s.ID = int64(len(m.servers) + 1)
+	}
+	m.servers = append(m.servers, *s)
+	return nil
+}
 func (m *mockStore) UpdateServer(s *db.Server) error                  { return nil }
 func (m *mockStore) DeleteServer(id int64) error                      { return nil }
 func (m *mockStore) GetChannels(serverID int64) ([]db.Channel, error) { return m.channels[serverID], nil }
