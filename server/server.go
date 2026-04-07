@@ -6,18 +6,21 @@ import (
 
 	"github.com/maxwell-xirc/xirc/db"
 	"github.com/maxwell-xirc/xirc/irc"
+	"github.com/maxwell-xirc/xirc/parser"
 )
 
 type Server struct {
 	store  db.Store
 	ircMgr *irc.Manager
+	parser *parser.Parser
 	mux    *http.ServeMux
 }
 
-func New(store db.Store, ircMgr *irc.Manager) *Server {
+func New(store db.Store, ircMgr *irc.Manager, p *parser.Parser) *Server {
 	s := &Server{
 		store:  store,
 		ircMgr: ircMgr,
+		parser: p,
 		mux:    http.NewServeMux(),
 	}
 	s.routes()
@@ -37,6 +40,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/irc/disconnect", s.handleIRCDisconnect)
 	s.mux.HandleFunc("/api/irc/message", s.handleIRCSendMessage)
 	s.mux.HandleFunc("/api/irc/raw", s.handleIRCSendRaw)
+
+	// Search endpoints
+	s.mux.HandleFunc("/api/search/results", s.handleGetSearchResults)
+	s.mux.HandleFunc("/api/search/start", s.handleStartSearch)
+	s.mux.HandleFunc("/api/search/saved", s.handleSavedSearches)
+	s.mux.HandleFunc("/api/search/saved/", s.handleSavedSearchByID)
+	s.mux.HandleFunc("/api/search/patterns", s.handleParsePatterns)
+	s.mux.HandleFunc("/api/search/patterns/", s.handleParsePatternByID)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
