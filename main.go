@@ -13,6 +13,7 @@ import (
 	"github.com/maxwell-xirc/xirc/db"
 	ircpkg "github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/parser"
+	"github.com/maxwell-xirc/xirc/queue"
 	"github.com/maxwell-xirc/xirc/server"
 )
 
@@ -55,9 +56,12 @@ func main() {
 	p := parser.New(store, bus)
 	p.Start()
 
+	eng := queue.NewEngine(store, bus, &cfg.Storage, cfg.Downloads.MaxConcurrent)
+	eng.Start()
+
 	ircMgr.ConnectAutoConnect()
 
-	srv := server.New(store, ircMgr, p)
+	srv := server.New(store, ircMgr, p, eng)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{
@@ -71,6 +75,7 @@ func main() {
 		<-sigCh
 		log.Println("shutting down...")
 		p.Stop()
+		eng.Stop()
 		ircMgr.Shutdown()
 		httpServer.Close()
 	}()

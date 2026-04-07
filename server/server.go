@@ -7,20 +7,23 @@ import (
 	"github.com/maxwell-xirc/xirc/db"
 	"github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/parser"
+	"github.com/maxwell-xirc/xirc/queue"
 )
 
 type Server struct {
 	store  db.Store
 	ircMgr *irc.Manager
 	parser *parser.Parser
+	engine *queue.Engine
 	mux    *http.ServeMux
 }
 
-func New(store db.Store, ircMgr *irc.Manager, p *parser.Parser) *Server {
+func New(store db.Store, ircMgr *irc.Manager, p *parser.Parser, eng *queue.Engine) *Server {
 	s := &Server{
 		store:  store,
 		ircMgr: ircMgr,
 		parser: p,
+		engine: eng,
 		mux:    http.NewServeMux(),
 	}
 	s.routes()
@@ -48,6 +51,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/search/saved/", s.handleSavedSearchByID)
 	s.mux.HandleFunc("/api/search/patterns", s.handleParsePatterns)
 	s.mux.HandleFunc("/api/search/patterns/", s.handleParsePatternByID)
+
+	// Download endpoints
+	s.mux.HandleFunc("/api/downloads", s.handleGetDownloads)
+	s.mux.HandleFunc("/api/downloads/request", s.handleRequestDownload)
+	s.mux.HandleFunc("/api/downloads/cancel", s.handleCancelDownload)
+	s.mux.HandleFunc("/api/downloads/retry", s.handleRetryDownload)
+	s.mux.HandleFunc("/api/downloads/move", s.handleMoveDownload)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
