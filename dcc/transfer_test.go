@@ -179,6 +179,7 @@ func TestTransfer_ProgressReporting(t *testing.T) {
 
 	// Verify at least one progress update received
 	progressReceived := false
+	var lastProgress TransferProgress
 	for {
 		select {
 		case p, ok := <-progressCh:
@@ -186,17 +187,17 @@ func TestTransfer_ProgressReporting(t *testing.T) {
 				goto done
 			}
 			progressReceived = true
-			// Verify final progress has correct BytesReceived
-			if p.BytesReceived == transfer.BytesReceived() {
-				t.Logf("Final progress update: %d bytes", p.BytesReceived)
-			}
+			lastProgress = p
 		default:
 			goto done
 		}
 	}
 done:
 	if !progressReceived {
-		t.Logf("No progress updates received, but transfer completed with %d bytes", transfer.BytesReceived())
+		t.Errorf("expected progress updates, but received none")
+	}
+	if lastProgress.BytesReceived != int64(len(testData)) {
+		t.Errorf("expected final progress %d, got %d", len(testData), lastProgress.BytesReceived)
 	}
 }
 
