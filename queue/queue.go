@@ -219,6 +219,9 @@ func (q *Queue) MoveToFront(id int64) error {
 	} else {
 		candidate := minTime.Add(-time.Second)
 		if candidate.Before(floor) {
+			// Note: if multiple items are promoted and both reach the floor,
+			// their ordering becomes non-deterministic. In practice this requires
+			// as many MoveToFront calls as there are seconds since year 2000.
 			target = floor
 		} else {
 			target = candidate
