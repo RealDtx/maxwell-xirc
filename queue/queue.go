@@ -1,0 +1,183 @@
+package queue
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/maxwell-xirc/xirc/db"
+)
+
+type Queue struct {
+	mu            sync.Mutex
+	store         db.Store
+	maxConcurrent int
+}
+
+func New(store db.Store, maxConcurrent int) *Queue {
+	return &Queue{
+		store:         store,
+		maxConcurrent: maxConcurrent,
+	}
+}
+
+func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64) (*db.Download, error) {
+	dl := &db.Download{
+		ServerID:   serverID,
+		Channel:    channel,
+		BotNick:    botNick,
+		PackNumber: packNumber,
+		Filename:   filename,
+		Filesize:   filesize,
+		Status:     "queued",
+	}
+
+	if err := q.store.CreateDownload(dl); err != nil {
+		return nil, fmt.Errorf("creating download: %w", err)
+	}
+
+	return dl, nil
+}
+
+func (q *Queue) Next() *db.Download {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	// Check active count
+	active, err := q.store.GetDownloads("downloading")
+	if err != nil {
+		return nil
+	}
+	if len(active) >= q.maxConcurrent {
+		return nil
+	}
+
+	// Get bots that are currently downloading
+	activeBots := make(map[string]bool)
+	for _, dl := range active {
+		activeBots[dl.BotNick] = true
+	}
+
+	// Get queued downloads (oldest first — GetDownloads returns DESC, so reverse)
+	queued, err := q.store.GetDownloads("queued")
+	if err != nil {
+		return nil
+	}
+
+	// Walk from oldest to newest (end of slice since GetDownloads is DESC)
+	for i := len(queued) - 1; i >= 0; i-- {
+		dl := queued[i]
+		if activeBots[dl.BotNick] {
+			continue // One per bot
+		}
+		return &dl
+	}
+
+	return nil
+}
+
+func (q *Queue) MarkDownloading(id int64) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	dl.Status = "downloading"
+	dl.StartedAt = &now
+	return q.store.UpdateDownload(dl)
+}
+
+func (q *Queue) MarkCompleted(id int64, destPath string, peakSpeed, avgSpeed int64) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	dl.Status = "completed"
+	dl.CompletedAt = &now
+	dl.DestinationPath = destPath
+	dl.DownloadedBytes = dl.Filesize
+	dl.PeakSpeed = peakSpeed
+	dl.AverageSpeed = avgSpeed
+	return q.store.UpdateDownload(dl)
+}
+
+func (q *Queue) MarkFailed(id int64, errMsg string) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.Status = "failed"
+	dl.ErrorMessage = errMsg
+	return q.store.UpdateDownload(dl)
+}
+
+func (q *Queue) MarkNeedsAction(id int64, msg string) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.Status = "needs_action"
+	dl.ErrorMessage = msg
+	return q.store.UpdateDownload(dl)
+}
+
+func (q *Queue) Cancel(id int64) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.Status = "cancelled"
+	return q.store.UpdateDownload(dl)
+}
+
+func (q *Queue) Retry(id int64) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.Status = "queued"
+	dl.ErrorMessage = ""
+	dl.DownloadedBytes = 0
+	dl.StartedAt = nil
+	dl.CompletedAt = nil
+	return q.store.UpdateDownload(dl)
+}
+
+func (q *Queue) MoveToFront(id int64) error {
+	// Set created_at to a time before all others to make it "oldest" (first in FIFO)
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.CreatedAt = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	return q.store.UpdateDownload(dl)
+}
+
+func (q *Queue) UpdateProgress(id int64, bytesReceived, peakSpeed, avgSpeed int64) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.DownloadedBytes = bytesReceived
+	dl.PeakSpeed = peakSpeed
+	dl.AverageSpeed = avgSpeed
+	return q.store.UpdateDownload(dl)
+}
+
+// RequeueInterrupted sets all "downloading" status downloads back to "queued".
+// Called on app startup to recover from unclean shutdown.
+func (q *Queue) RequeueInterrupted() error {
+	downloads, err := q.store.GetDownloads("downloading")
+	if err != nil {
+		return err
+	}
+	for _, dl := range downloads {
+		dl.Status = "queued"
+		dl.StartedAt = nil
+		if err := q.store.UpdateDownload(&dl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
