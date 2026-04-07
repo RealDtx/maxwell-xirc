@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,26 +22,25 @@ type PendingRequest struct {
 }
 
 type Engine struct {
-	mu              sync.RWMutex
-	queue           *Queue
-	store           db.Store
-	bus             *irc.EventBus
-	storageCfg      *config.StorageConfig
-	eventCh         <-chan irc.Event
-	stopCh          chan struct{}
-	pendingByBot    map[string]*PendingRequest // key: "serverID:botNick"
-	activeTransfers map[int64]chan struct{}     // key: downloadID, value: cancel channel
+	mu           sync.RWMutex
+	wg           sync.WaitGroup
+	queue        *Queue
+	store        db.Store
+	bus          *irc.EventBus
+	storageCfg   *config.StorageConfig
+	eventCh      <-chan irc.Event
+	stopCh       chan struct{}
+	pendingByBot map[string]*PendingRequest // key: "serverID:botNick"
 }
 
 func NewEngine(store db.Store, bus *irc.EventBus, storageCfg *config.StorageConfig, maxConcurrent int) *Engine {
 	return &Engine{
-		queue:           New(store, maxConcurrent),
-		store:           store,
-		bus:             bus,
-		storageCfg:      storageCfg,
-		stopCh:          make(chan struct{}),
-		pendingByBot:    make(map[string]*PendingRequest),
-		activeTransfers: make(map[int64]chan struct{}),
+		queue:        New(store, maxConcurrent),
+		store:        store,
+		bus:          bus,
+		storageCfg:   storageCfg,
+		stopCh:       make(chan struct{}),
+		pendingByBot: make(map[string]*PendingRequest),
 	}
 }
 
@@ -56,12 +56,7 @@ func (e *Engine) Start() {
 func (e *Engine) Stop() {
 	close(e.stopCh)
 	e.bus.Unsubscribe(e.eventCh)
-
-	e.mu.Lock()
-	for _, cancel := range e.activeTransfers {
-		close(cancel)
-	}
-	e.mu.Unlock()
+	e.wg.Wait()
 }
 
 func pendingKey(serverID int64, botNick string) string {
@@ -85,9 +80,6 @@ func (e *Engine) GetPendingRequest(serverID int64, botNick string) *PendingReque
 }
 
 func (e *Engine) loop() {
-	progressTicker := time.NewTicker(5 * time.Second)
-	defer progressTicker.Stop()
-
 	for {
 		select {
 		case <-e.stopCh:
@@ -99,8 +91,6 @@ func (e *Engine) loop() {
 			if ev.Type == irc.EventIRCMessage {
 				e.handleMessage(ev)
 			}
-		case <-progressTicker.C:
-			// Periodic progress flush is handled per-transfer
 		}
 	}
 }
@@ -125,16 +115,19 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		return // Not a DCC SEND, ignore
 	}
 
-	pending := e.GetPendingRequest(ev.ServerID, ev.Nick)
+	// Atomic read-and-remove from pending
+	e.mu.Lock()
+	key := pendingKey(ev.ServerID, ev.Nick)
+	pending := e.pendingByBot[key]
+	if pending != nil {
+		delete(e.pendingByBot, key)
+	}
+	e.mu.Unlock()
+
 	if pending == nil {
 		log.Printf("received unexpected DCC SEND from %s — no pending request", ev.Nick)
 		return
 	}
-
-	// Remove from pending
-	e.mu.Lock()
-	delete(e.pendingByBot, pendingKey(ev.ServerID, ev.Nick))
-	e.mu.Unlock()
 
 	// Handle passive DCC
 	if offer.Passive {
@@ -191,7 +184,11 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	destPath := filepath.Join(e.storageCfg.TempDir, offer.Filename)
 
 	// Start transfer in goroutine
-	go e.runTransfer(pending.DownloadID, offer, destPath, resumeOffset)
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.runTransfer(pending.DownloadID, offer, destPath, resumeOffset)
+	}()
 }
 
 func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath string, resumeOffset int64) {
@@ -201,19 +198,11 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		tr.SetResumeOffset(resumeOffset)
 	}
 
-	cancelCh := make(chan struct{})
-	e.mu.Lock()
-	e.activeTransfers[downloadID] = cancelCh
-	e.mu.Unlock()
-
-	defer func() {
-		e.mu.Lock()
-		delete(e.activeTransfers, downloadID)
-		e.mu.Unlock()
-	}()
-
 	// Progress reporting goroutine
+	var progressDone sync.WaitGroup
+	progressDone.Add(1)
 	go func() {
+		defer progressDone.Done()
 		var lastFlush time.Time
 		for p := range progressCh {
 			// Publish to WebSocket
@@ -239,6 +228,7 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	}()
 
 	err := tr.Start()
+	progressDone.Wait() // drain progress before marking terminal state
 	if err != nil {
 		log.Printf("transfer failed for download %d: %v", downloadID, err)
 		e.queue.MarkFailed(downloadID, err.Error())
@@ -268,9 +258,9 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 
 func (e *Engine) checkBotHintMessage(serverID int64, botNick, message string) {
 	hints := []string{"passive", "firewall", "can't connect", "dcc rejected", "unable to connect"}
-	msgLower := toLower(message)
+	msgLower := strings.ToLower(message)
 	for _, hint := range hints {
-		if contains(msgLower, hint) {
+		if strings.Contains(msgLower, hint) {
 			pending := e.GetPendingRequest(serverID, botNick)
 			if pending != nil {
 				e.queue.MarkNeedsAction(pending.DownloadID,
@@ -287,29 +277,4 @@ func (e *Engine) checkBotHintMessage(serverID int64, botNick, message string) {
 			break
 		}
 	}
-}
-
-func toLower(s string) string {
-	b := make([]byte, len(s))
-	for i := range s {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 32
-		}
-		b[i] = c
-	}
-	return string(b)
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
