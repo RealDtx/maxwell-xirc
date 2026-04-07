@@ -12,6 +12,7 @@ import (
 	"github.com/maxwell-xirc/xirc/config"
 	"github.com/maxwell-xirc/xirc/db"
 	ircpkg "github.com/maxwell-xirc/xirc/irc"
+	"github.com/maxwell-xirc/xirc/parser"
 	"github.com/maxwell-xirc/xirc/server"
 )
 
@@ -39,6 +40,11 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
+	// Seed default parse patterns
+	if err := parser.SeedPatterns(store); err != nil {
+		log.Printf("warning: failed to seed patterns: %v", err)
+	}
+
 	bus := ircpkg.NewEventBus()
 	ircMgr := ircpkg.NewManager(store, bus)
 
@@ -46,9 +52,12 @@ func main() {
 		log.Printf("warning: failed to load IRC servers: %v", err)
 	}
 
+	p := parser.New(store, bus)
+	p.Start()
+
 	ircMgr.ConnectAutoConnect()
 
-	srv := server.New(store, ircMgr)
+	srv := server.New(store, ircMgr, p)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{
@@ -61,6 +70,7 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		log.Println("shutting down...")
+		p.Stop()
 		ircMgr.Shutdown()
 		httpServer.Close()
 	}()
