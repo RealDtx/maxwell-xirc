@@ -91,22 +91,26 @@ func TestEngine_QueueProcessing(t *testing.T) {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	// Verify Next() returns the oldest queued download
-	next := engine.queue.Next()
+	// Verify NextAndMarkDownloading() returns the oldest queued download
+	next, err := engine.queue.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
 	if next == nil {
-		t.Fatal("expected Next() to return a download")
+		t.Fatal("expected NextAndMarkDownloading() to return a download")
 	}
 
 	if next.ID != dl1.ID {
 		t.Errorf("expected oldest download (ID=%d), got ID=%d", dl1.ID, next.ID)
 	}
 
-	// Mark first as downloading and verify Next() returns second
-	engine.queue.MarkDownloading(dl1.ID)
-
-	next = engine.queue.Next()
+	// Mark second as downloading and verify NextAndMarkDownloading() returns it
+	next, err = engine.queue.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
 	if next == nil {
-		t.Fatal("expected Next() to return second download")
+		t.Fatal("expected NextAndMarkDownloading() to return second download")
 	}
 
 	if next.ID != dl2.ID {

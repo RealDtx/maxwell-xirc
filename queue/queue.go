@@ -83,54 +83,6 @@ func (q *Queue) NextAndMarkDownloading() (*db.Download, error) {
 	return nil, nil
 }
 
-func (q *Queue) Next() *db.Download {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	// Check active count
-	active, err := q.store.GetDownloads("downloading")
-	if err != nil {
-		return nil
-	}
-	if len(active) >= q.maxConcurrent {
-		return nil
-	}
-
-	// Get bots that are currently downloading
-	activeBots := make(map[string]bool)
-	for _, dl := range active {
-		activeBots[dl.BotNick] = true
-	}
-
-	// Get queued downloads (oldest first — GetDownloads returns DESC, so reverse)
-	queued, err := q.store.GetDownloads("queued")
-	if err != nil {
-		return nil
-	}
-
-	// Walk from oldest to newest (end of slice since GetDownloads is DESC)
-	for i := len(queued) - 1; i >= 0; i-- {
-		dl := queued[i]
-		if activeBots[dl.BotNick] {
-			continue // One per bot
-		}
-		return &dl
-	}
-
-	return nil
-}
-
-func (q *Queue) MarkDownloading(id int64) error {
-	dl, err := q.store.GetDownload(id)
-	if err != nil {
-		return err
-	}
-	now := time.Now()
-	dl.Status = "downloading"
-	dl.StartedAt = &now
-	return q.store.UpdateDownload(dl)
-}
-
 func (q *Queue) MarkCompleted(id int64, destPath string, peakSpeed, avgSpeed int64) error {
 	dl, err := q.store.GetDownload(id)
 	if err != nil {

@@ -153,7 +153,10 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	}
 	dl.Filename = offer.Filename
 	dl.Filesize = offer.Size
-	e.store.UpdateDownload(dl)
+	if err := e.store.UpdateDownload(dl); err != nil {
+		log.Printf("failed to update download %d with offer details: %v", pending.DownloadID, err)
+		// Non-fatal: continue with the transfer attempt even if metadata update fails
+	}
 
 	// Check disk space
 	destDir := e.storageCfg.DownloadsDir // File router will move it later
