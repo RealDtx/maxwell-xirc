@@ -90,9 +90,12 @@ func TestQueue_NextReturnsOldestQueued(t *testing.T) {
 	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048)
 	_, _ = q.Add(1, "#channel", "BotA", 3, "file3.txt", 4096)
 
-	next := q.Next()
+	next, err := q.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
 	if next == nil {
-		t.Fatal("expected Next() to return a download")
+		t.Fatal("expected NextAndMarkDownloading() to return a download")
 	}
 	if next.ID != dl1.ID {
 		t.Errorf("expected oldest download (ID=%d), got ID=%d", dl1.ID, next.ID)
@@ -106,26 +109,32 @@ func TestQueue_RespectsMaxConcurrent(t *testing.T) {
 	q := New(store, 2)
 
 	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024)
-	dl2, _ := q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048)
+	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048)
 	dl3, _ := q.Add(1, "#channel", "BotC", 3, "file3.txt", 4096)
 
 	// Mark first two as downloading
-	q.MarkDownloading(dl1.ID)
-	q.MarkDownloading(dl2.ID)
+	_, _ = q.NextAndMarkDownloading()
+	_, _ = q.NextAndMarkDownloading()
 
-	// Next() should return nil since we're at maxConcurrent=2
-	next := q.Next()
+	// NextAndMarkDownloading() should return nil since we're at maxConcurrent=2
+	next, err := q.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
 	if next != nil {
-		t.Error("expected Next() to return nil when at maxConcurrent limit")
+		t.Error("expected NextAndMarkDownloading() to return nil when at maxConcurrent limit")
 	}
 
 	// Mark one as completed
 	q.MarkCompleted(dl1.ID, "/path/to/file", 100, 50)
 
-	// Now Next() should return the third download
-	next = q.Next()
+	// Now NextAndMarkDownloading() should return the third download
+	next, err = q.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
 	if next == nil {
-		t.Fatal("expected Next() to return a download after one completes")
+		t.Fatal("expected NextAndMarkDownloading() to return a download after one completes")
 	}
 	if next.ID != dl3.ID {
 		t.Errorf("expected download ID=%d, got ID=%d", dl3.ID, next.ID)
@@ -139,18 +148,20 @@ func TestQueue_OnePerBot(t *testing.T) {
 	q := New(store, 10) // High concurrency limit
 
 	// Add three downloads from BotA
-	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024)
-	dl2, _ := q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048)
+	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024)
+	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048)
 	dl3, _ := q.Add(1, "#channel", "BotB", 3, "file3.txt", 4096)
-	_ = dl2 // acknowledge that we're not using it in this test
 
 	// Mark first BotA download as downloading
-	q.MarkDownloading(dl1.ID)
+	_, _ = q.NextAndMarkDownloading()
 
-	// Next() should skip dl2 (from same bot) and return dl3 (from BotB)
-	next := q.Next()
+	// NextAndMarkDownloading() should skip dl2 (from same bot) and return dl3 (from BotB)
+	next, err := q.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
 	if next == nil {
-		t.Fatal("expected Next() to return a download")
+		t.Fatal("expected NextAndMarkDownloading() to return a download")
 	}
 	if next.ID != dl3.ID {
 		t.Errorf("expected download from BotB (ID=%d), got ID=%d", dl3.ID, next.ID)
@@ -183,7 +194,7 @@ func TestQueue_Retry(t *testing.T) {
 	q := New(store, 2)
 
 	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024)
-	q.MarkDownloading(dl.ID)
+	_, _ = q.NextAndMarkDownloading()
 	q.MarkFailed(dl.ID, "connection timeout")
 
 	err := q.Retry(dl.ID)
@@ -224,10 +235,13 @@ func TestQueue_Reorder(t *testing.T) {
 		t.Fatalf("MoveToFront failed: %v", err)
 	}
 
-	// Next() should now return dl2 (moved to front)
-	next := q.Next()
+	// NextAndMarkDownloading() should now return dl2 (moved to front)
+	next, err := q.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
 	if next == nil {
-		t.Fatal("expected Next() to return a download")
+		t.Fatal("expected NextAndMarkDownloading() to return a download")
 	}
 	if next.ID != dl2.ID {
 		t.Errorf("expected download ID=%d (moved to front), got ID=%d", dl2.ID, next.ID)
@@ -255,7 +269,10 @@ func TestQueue_MoveToFront_MultiplePromotions(t *testing.T) {
 		t.Fatalf("second MoveToFront failed: %v", err)
 	}
 
-	next := q.Next()
+	next, err := q.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
 	if next == nil {
 		t.Fatal("expected a download")
 	}
