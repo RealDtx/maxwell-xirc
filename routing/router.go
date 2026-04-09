@@ -52,7 +52,9 @@ func MoveFile(srcPath, destDir string) (string, error) {
 	if err := copyFile(srcPath, destPath); err != nil {
 		return "", err
 	}
-	os.Remove(srcPath)
+	if err := os.Remove(srcPath); err != nil {
+		return destPath, fmt.Errorf("removing source after copy: %w", err)
+	}
 	return destPath, nil
 }
 
@@ -67,9 +69,8 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-
 	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
 		return err
 	}
 	return out.Close()
