@@ -34,6 +34,9 @@ func MatchRule(filename string, rules []db.FileRoutingRule) string {
 // MoveFile moves a file from srcPath to destDir, creating destDir if needed.
 // Returns the final path. Tries rename first (fast, same filesystem),
 // falls back to copy+delete for cross-filesystem moves.
+// On a cross-filesystem move where the copy succeeds but source removal fails,
+// the returned path will be non-empty (the destination file is valid) alongside
+// the non-nil error. Callers should treat the destination as valid in this case.
 func MoveFile(srcPath, destDir string) (string, error) {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return "", fmt.Errorf("creating destination dir: %w", err)
@@ -71,6 +74,7 @@ func copyFile(src, dst string) error {
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
+		os.Remove(dst) // best-effort cleanup of partial write
 		return err
 	}
 	return out.Close()

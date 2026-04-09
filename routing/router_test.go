@@ -128,3 +128,28 @@ func TestMoveFile_CreatesDestDir(t *testing.T) {
 	}
 	_ = destPath
 }
+
+func TestCopyFile(t *testing.T) {
+	dir, err := ioutil.TempDir("", "copyfile_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	src := filepath.Join(dir, "src.txt")
+	dst := filepath.Join(dir, "dst.txt")
+	ioutil.WriteFile(src, []byte("hello world"), 0644)
+
+	if err := copyFile(src, dst); err != nil {
+		t.Fatalf("copyFile failed: %v", err)
+	}
+
+	data, _ := ioutil.ReadFile(dst)
+	if string(data) != "hello world" {
+		t.Errorf("expected 'hello world', got %q", string(data))
+	}
+	// Source must still exist (copyFile does not remove src)
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		t.Error("copyFile should not remove the source file")
+	}
+}
