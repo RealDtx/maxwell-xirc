@@ -2,3 +2,4 @@ xirc
 data/
 *.db
 .superpowers/
+.worktrees/
