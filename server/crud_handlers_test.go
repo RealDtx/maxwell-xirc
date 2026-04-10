@@ -217,6 +217,33 @@ func TestDeleteChannel(t *testing.T) {
 	}
 }
 
+func TestUpdateServer_ZeroID(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("PUT", "/api/servers/0", strings.NewReader(`{"name":"x","host":"h","port":6667,"nickname":"n"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for zero ID, got %d", w.Code)
+	}
+}
+
+func TestDeleteServer_ZeroID(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("DELETE", "/api/servers/0", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for zero ID, got %d", w.Code)
+	}
+}
+
 func TestMethodNotAllowed_Servers(t *testing.T) {
 	srv, _, cleanup := newTestServerWithStore(t)
 	defer cleanup()

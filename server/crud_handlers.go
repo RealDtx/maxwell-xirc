@@ -107,7 +107,7 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 	idStr := path.Base(r.URL.Path)
 	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
+	if err != nil || id == 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
@@ -130,7 +130,7 @@ func (s *Server) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	idStr := path.Base(r.URL.Path)
 	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
+	if err != nil || id == 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
