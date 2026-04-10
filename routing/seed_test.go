@@ -9,28 +9,32 @@ import (
 	"github.com/maxwell-xirc/xirc/db"
 )
 
-func newTestStore(t *testing.T) db.Store {
+func newTestStore(t *testing.T) (db.Store, func()) {
 	t.Helper()
 	dir, err := ioutil.TempDir("", "seed_test")
 	if err != nil {
-		t.Fatalf("failed: %v", err)
+		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	store, err := db.NewSQLiteStore(filepath.Join(dir, "test.db"))
 	if err != nil {
 		os.RemoveAll(dir)
-		t.Fatalf("failed: %v", err)
+		t.Fatalf("failed to open store: %v", err)
 	}
-	store.Migrate()
-	// We can't use t.Cleanup in Go 1.13, so we just defer in tests
-	// Store the dir in a channel or just rely on test process cleanup
-	// Actually use a finalizer approach: just return store without cleanup
-	// The OS will clean up temp files after the test process exits
-	return store
+	if err := store.Migrate(); err != nil {
+		store.Close()
+		os.RemoveAll(dir)
+		t.Fatalf("migrate failed: %v", err)
+	}
+	cleanup := func() {
+		store.Close()
+		os.RemoveAll(dir)
+	}
+	return store, cleanup
 }
 
 func TestSeedRoutingRules(t *testing.T) {
-	store := newTestStore(t)
-	defer store.Close()
+	store, cleanup := newTestStore(t)
+	defer cleanup()
 
 	err := SeedRoutingRules(store, "/srv/dlna/media", "/srv/downloads")
 	if err != nil {
@@ -55,11 +59,15 @@ func TestSeedRoutingRules(t *testing.T) {
 }
 
 func TestSeedRoutingRules_Idempotent(t *testing.T) {
-	store := newTestStore(t)
-	defer store.Close()
+	store, cleanup := newTestStore(t)
+	defer cleanup()
 
-	SeedRoutingRules(store, "/media", "/dl")
-	SeedRoutingRules(store, "/media", "/dl")
+	if err := SeedRoutingRules(store, "/media", "/dl"); err != nil {
+		t.Fatalf("first seed failed: %v", err)
+	}
+	if err := SeedRoutingRules(store, "/media", "/dl"); err != nil {
+		t.Fatalf("second seed failed: %v", err)
+	}
 
 	rules, _ := store.GetFileRoutingRules()
 	// Count should not double

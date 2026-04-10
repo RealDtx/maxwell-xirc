@@ -2,6 +2,9 @@ package routing
 
 import "github.com/maxwell-xirc/xirc/db"
 
+// SeedRoutingRules inserts default file routing rules into the store if they don't already exist.
+// Rules are keyed by pattern — existing patterns are never updated, only absent ones are inserted.
+// Call this on startup after migration to ensure baseline routing rules are present.
 func SeedRoutingRules(store db.Store, mediaDir, downloadsDir string) error {
 	existing, err := store.GetFileRoutingRules()
 	if err != nil {
