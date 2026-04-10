@@ -150,6 +150,10 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if ch.ServerID == 0 {
+		writeError(w, http.StatusBadRequest, "server_id is required")
+		return
+	}
 	if err := s.store.CreateChannel(&ch); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -170,6 +174,10 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	var ch db.Channel
 	if err := json.NewDecoder(r.Body).Decode(&ch); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if ch.ServerID == 0 {
+		writeError(w, http.StatusBadRequest, "server_id is required")
 		return
 	}
 	ch.ID = id
