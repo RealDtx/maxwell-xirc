@@ -476,6 +476,24 @@ func (s *SQLiteStore) GetFileRoutingRules() ([]FileRoutingRule, error) {
 	return rules, rows.Err()
 }
 
+func (s *SQLiteStore) GetAllFileRoutingRules() ([]FileRoutingRule, error) {
+	rows, err := s.db.Query("SELECT id, pattern, destination_dir, priority, builtin, enabled FROM file_routing_rules ORDER BY priority DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rules := []FileRoutingRule{}
+	for rows.Next() {
+		var r FileRoutingRule
+		if err := rows.Scan(&r.ID, &r.Pattern, &r.DestinationDir, &r.Priority, &r.Builtin, &r.Enabled); err != nil {
+			return nil, err
+		}
+		rules = append(rules, r)
+	}
+	return rules, rows.Err()
+}
+
 func (s *SQLiteStore) GetFileRoutingRuleByID(id int64) (*FileRoutingRule, error) {
 	var r FileRoutingRule
 	err := s.db.QueryRow(
