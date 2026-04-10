@@ -54,6 +54,7 @@ func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error        { return
 func (m *mockStore) GetPostHooks(scope string, scopeID *int64) ([]db.PostHook, error) {
 	return nil, nil
 }
+func (m *mockStore) GetPostHookByID(id int64) (*db.PostHook, error)     { return nil, nil }
 func (m *mockStore) CreatePostHook(h *db.PostHook) error                { return nil }
 func (m *mockStore) UpdatePostHook(h *db.PostHook) error                { return nil }
 func (m *mockStore) DeletePostHook(id int64) error                      { return nil }

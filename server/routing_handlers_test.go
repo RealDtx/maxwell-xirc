@@ -244,6 +244,32 @@ func TestMethodNotAllowed_Hooks(t *testing.T) {
 	}
 }
 
+func TestUpdateRoutingRule_NotFound(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	body := `{"pattern":"*.mkv","destination_dir":"/media","priority":100,"enabled":true}`
+	req, _ := http.NewRequest(http.MethodPut, "/api/routing/rules/9999", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rr.Code)
+	}
+}
+
+func TestDeleteRoutingRule_NotFound(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	req, _ := http.NewRequest(http.MethodDelete, "/api/routing/rules/9999", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rr.Code)
+	}
+}
+
 // intToStr converts an int64 to a decimal string.
 func intToStr(n int64) string {
 	return strconv.FormatInt(n, 10)

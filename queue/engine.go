@@ -266,11 +266,19 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	// Run post-download hooks
 	dl, dlErr := e.store.GetDownload(downloadID)
 	var hooks []db.PostHook
-	globalHooks, _ := e.store.GetPostHooks("", nil)
-	hooks = append(hooks, globalHooks...)
+	globalHooks, err := e.store.GetPostHooks("", nil)
+	if err != nil {
+		log.Printf("failed to load global hooks for download %d: %v", downloadID, err)
+	} else {
+		hooks = append(hooks, globalHooks...)
+	}
 	if dlErr == nil && dl != nil {
-		serverHooks, _ := e.store.GetPostHooks("server", &dl.ServerID)
-		hooks = append(hooks, serverHooks...)
+		serverHooks, err := e.store.GetPostHooks("server", &dl.ServerID)
+		if err != nil {
+			log.Printf("failed to load server hooks for download %d: %v", downloadID, err)
+		} else {
+			hooks = append(hooks, serverHooks...)
+		}
 	}
 	hCtx := routing.HookContext{
 		FilePath: finalPath,
