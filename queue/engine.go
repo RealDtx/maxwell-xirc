@@ -255,10 +255,6 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		if destDir := routing.MatchRule(offer.Filename, rules); destDir != "" {
 			if moved, err := routing.MoveFile(destPath, destDir); err != nil {
 				log.Printf("routing move failed for download %d: %v", downloadID, err)
-				// Use whatever path MoveFile returned (may be valid on partial cross-fs copy)
-				if moved != "" {
-					finalPath = moved
-				}
 			} else {
 				finalPath = moved
 			}
@@ -269,32 +265,40 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 
 	// Run post-download hooks
 	dl, dlErr := e.store.GetDownload(downloadID)
-	if hooks, err := e.store.GetPostHooks("", nil); err == nil {
-		for _, hook := range hooks {
-			if !hook.Enabled {
-				continue
-			}
-			ctx := routing.HookContext{
-				FilePath: finalPath,
-				Filename: offer.Filename,
-				Filesize: offer.Size,
-			}
-			if dlErr == nil && dl != nil {
-				ctx.BotNick = dl.BotNick
-				ctx.Channel = dl.Channel
-				ctx.Server = fmt.Sprintf("%d", dl.ServerID)
-				ctx.Pack = dl.PackNumber
-			}
-			result := routing.RunHook(hook, ctx)
-			if result.Error != "" {
-				log.Printf("hook %q failed for download %d: %s", hook.Name, downloadID, result.Error)
-			}
-			if result.NewPath != "" {
-				finalPath = result.NewPath
-			}
+	var hooks []db.PostHook
+	globalHooks, _ := e.store.GetPostHooks("", nil)
+	hooks = append(hooks, globalHooks...)
+	if dlErr == nil && dl != nil {
+		serverHooks, _ := e.store.GetPostHooks("server", &dl.ServerID)
+		hooks = append(hooks, serverHooks...)
+	}
+	hCtx := routing.HookContext{
+		FilePath: finalPath,
+		Filename: offer.Filename,
+		Filesize: offer.Size,
+	}
+	if dlErr == nil && dl != nil {
+		hCtx.BotNick = dl.BotNick
+		hCtx.Channel = dl.Channel
+		hCtx.Pack = dl.PackNumber
+		if srv, err := e.store.GetServer(dl.ServerID); err == nil && srv != nil {
+			hCtx.Server = srv.Host
+		} else {
+			hCtx.Server = fmt.Sprintf("%d", dl.ServerID)
 		}
-	} else {
-		log.Printf("failed to load hooks for download %d: %v", downloadID, err)
+	}
+	for _, hook := range hooks {
+		if !hook.Enabled {
+			continue
+		}
+		result := routing.RunHook(hook, hCtx)
+		if result.Error != "" {
+			log.Printf("hook %q failed for download %d: %s", hook.Name, downloadID, result.Error)
+		}
+		if result.NewPath != "" {
+			finalPath = result.NewPath
+			hCtx.FilePath = finalPath
+		}
 	}
 
 	e.bus.Publish(irc.Event{

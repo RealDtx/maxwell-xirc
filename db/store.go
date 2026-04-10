@@ -52,6 +52,7 @@ type Store interface {
 
 	// File Routing Rules
 	GetFileRoutingRules() ([]FileRoutingRule, error)
+	GetFileRoutingRuleByID(id int64) (*FileRoutingRule, error)
 	CreateFileRoutingRule(r *FileRoutingRule) error
 	UpdateFileRoutingRule(r *FileRoutingRule) error
 	DeleteFileRoutingRule(id int64) error

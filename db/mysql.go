@@ -575,6 +575,17 @@ func (s *MySQLStore) GetFileRoutingRules() ([]FileRoutingRule, error) {
 	return rules, rows.Err()
 }
 
+func (s *MySQLStore) GetFileRoutingRuleByID(id int64) (*FileRoutingRule, error) {
+	var r FileRoutingRule
+	err := s.db.QueryRow(
+		"SELECT id, pattern, destination_dir, priority, builtin, enabled FROM file_routing_rules WHERE id=?", id,
+	).Scan(&r.ID, &r.Pattern, &r.DestinationDir, &r.Priority, &r.Builtin, &r.Enabled)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &r, err
+}
+
 func (s *MySQLStore) CreateFileRoutingRule(r *FileRoutingRule) error {
 	result, err := s.db.Exec(
 		"INSERT INTO file_routing_rules (pattern, destination_dir, priority, builtin, enabled) VALUES (?, ?, ?, ?, ?)",
