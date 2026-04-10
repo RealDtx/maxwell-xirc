@@ -1,0 +1,86 @@
+package ws
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/maxwell-xirc/xirc/irc"
+)
+
+func TestHub_BroadcastsEvents(t *testing.T) {
+	bus := irc.NewEventBus()
+	hub := NewHub(bus)
+	hub.Start()
+	defer hub.Stop()
+
+	clientCh := make(chan []byte, 10)
+	hub.Register(clientCh)
+	defer hub.Unregister(clientCh)
+
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: 1,
+		Channel:  "#test",
+		Data:     "hello",
+	})
+
+	select {
+	case msg := <-clientCh:
+		var ev irc.Event
+		if err := json.Unmarshal(msg, &ev); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if ev.Type != irc.EventIRCMessage {
+			t.Errorf("expected type irc_message, got %s", ev.Type)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcast")
+	}
+}
+
+func TestHub_MultipleClients(t *testing.T) {
+	bus := irc.NewEventBus()
+	hub := NewHub(bus)
+	hub.Start()
+	defer hub.Stop()
+
+	ch1 := make(chan []byte, 10)
+	ch2 := make(chan []byte, 10)
+	hub.Register(ch1)
+	hub.Register(ch2)
+	defer hub.Unregister(ch1)
+	defer hub.Unregister(ch2)
+
+	bus.Publish(irc.Event{Type: irc.EventNotification, Data: "test"})
+
+	for _, ch := range []chan []byte{ch1, ch2} {
+		select {
+		case <-ch:
+			// Good
+		case <-time.After(time.Second):
+			t.Fatal("timed out")
+		}
+	}
+}
+
+func TestHub_UnregisterStopsReceiving(t *testing.T) {
+	bus := irc.NewEventBus()
+	hub := NewHub(bus)
+	hub.Start()
+	defer hub.Stop()
+
+	ch := make(chan []byte, 10)
+	hub.Register(ch)
+	hub.Unregister(ch)
+
+	bus.Publish(irc.Event{Type: irc.EventNotification, Data: "test"})
+
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-ch:
+		t.Error("received after unregister")
+	default:
+		// Good
+	}
+}
