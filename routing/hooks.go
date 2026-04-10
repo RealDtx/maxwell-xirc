@@ -40,6 +40,8 @@ type renameConfig struct {
 	Replace string `json:"replace"`
 }
 
+// RunHook executes the given hook with the provided context.
+// The caller is responsible for checking hook.Enabled before calling.
 func RunHook(hook db.PostHook, ctx HookContext) HookResult {
 	switch hook.HookType {
 	case "script":
