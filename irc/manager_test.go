@@ -57,10 +57,11 @@ func (m *mockStore) GetPostHooks(scope string, scopeID *int64) ([]db.PostHook, e
 func (m *mockStore) CreatePostHook(h *db.PostHook) error                { return nil }
 func (m *mockStore) UpdatePostHook(h *db.PostHook) error                { return nil }
 func (m *mockStore) DeletePostHook(id int64) error                      { return nil }
-func (m *mockStore) GetFileRoutingRules() ([]db.FileRoutingRule, error) { return nil, nil }
-func (m *mockStore) CreateFileRoutingRule(r *db.FileRoutingRule) error  { return nil }
-func (m *mockStore) UpdateFileRoutingRule(r *db.FileRoutingRule) error  { return nil }
-func (m *mockStore) DeleteFileRoutingRule(id int64) error               { return nil }
+func (m *mockStore) GetFileRoutingRules() ([]db.FileRoutingRule, error)            { return nil, nil }
+func (m *mockStore) GetFileRoutingRuleByID(id int64) (*db.FileRoutingRule, error)  { return nil, nil }
+func (m *mockStore) CreateFileRoutingRule(r *db.FileRoutingRule) error             { return nil }
+func (m *mockStore) UpdateFileRoutingRule(r *db.FileRoutingRule) error             { return nil }
+func (m *mockStore) DeleteFileRoutingRule(id int64) error                          { return nil }
 func (m *mockStore) Close() error                                       { return nil }
 func (m *mockStore) Migrate() error                                     { return nil }
 

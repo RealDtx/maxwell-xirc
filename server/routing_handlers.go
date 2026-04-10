@@ -51,6 +51,15 @@ func (s *Server) handleRoutingRuleByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodPut:
+		existing, err := s.store.GetFileRoutingRuleByID(id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if existing == nil {
+			writeError(w, http.StatusNotFound, "rule not found")
+			return
+		}
 		var rule db.FileRoutingRule
 		if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body")
@@ -64,20 +73,18 @@ func (s *Server) handleRoutingRuleByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, rule)
 
 	case http.MethodDelete:
-		// Load the rule to check if it's a builtin catch-all
-		rules, err := s.store.GetFileRoutingRules()
+		existing, err := s.store.GetFileRoutingRuleByID(id)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		for _, rule := range rules {
-			if rule.ID == id {
-				if rule.Builtin && rule.Pattern == "*" {
-					writeError(w, http.StatusForbidden, "cannot delete builtin catch-all rule")
-					return
-				}
-				break
-			}
+		if existing == nil {
+			writeError(w, http.StatusNotFound, "rule not found")
+			return
+		}
+		if existing.Builtin && existing.Pattern == "*" {
+			writeError(w, http.StatusForbidden, "cannot delete builtin catch-all rule")
+			return
 		}
 		if err := s.store.DeleteFileRoutingRule(id); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
