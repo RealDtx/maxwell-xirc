@@ -31,7 +31,7 @@ func (s *Server) handleServerByID(w http.ResponseWriter, r *http.Request) {
 		}
 		idStr := strings.TrimSuffix(suffix, "/channels")
 		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
+		if err != nil || id == 0 {
 			writeError(w, http.StatusBadRequest, "invalid id")
 			return
 		}
@@ -101,7 +101,7 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 	if s.ircMgr != nil {
 		s.ircMgr.ReloadServer(srv.ID)
 	}
-	writeJSON(w, http.StatusOK, srv)
+	writeJSON(w, http.StatusCreated, srv)
 }
 
 func (s *Server) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
@@ -157,13 +157,13 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	if s.ircMgr != nil {
 		s.ircMgr.ReloadServer(ch.ServerID)
 	}
-	writeJSON(w, http.StatusOK, ch)
+	writeJSON(w, http.StatusCreated, ch)
 }
 
 func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	idStr := path.Base(r.URL.Path)
 	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
+	if err != nil || id == 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
@@ -186,7 +186,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 	idStr := path.Base(r.URL.Path)
 	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
+	if err != nil || id == 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
