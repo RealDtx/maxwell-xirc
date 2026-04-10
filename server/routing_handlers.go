@@ -13,7 +13,7 @@ import (
 func (s *Server) handleRoutingRules(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		rules, err := s.store.GetFileRoutingRules()
+		rules, err := s.store.GetAllFileRoutingRules()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -175,6 +175,15 @@ func (s *Server) handleHookByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, hook)
 
 	case http.MethodDelete:
+		existing, err := s.store.GetPostHookByID(id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if existing == nil {
+			writeError(w, http.StatusNotFound, "hook not found")
+			return
+		}
 		if err := s.store.DeletePostHook(id); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

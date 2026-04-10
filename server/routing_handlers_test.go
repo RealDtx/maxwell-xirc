@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -273,4 +274,62 @@ func TestDeleteRoutingRule_NotFound(t *testing.T) {
 // intToStr converts an int64 to a decimal string.
 func intToStr(n int64) string {
 	return strconv.FormatInt(n, 10)
+}
+
+func TestUpdateHook(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	h := &db.PostHook{Name: "test", Scope: "", HookType: "rename", Config: "{}", Enabled: true}
+	store.CreatePostHook(h)
+
+	body := fmt.Sprintf(`{"id":%d,"name":"updated","scope":"","hook_type":"rename","config":"{}","enabled":true}`, h.ID)
+	req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("/api/hooks/%d", h.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestUpdateHook_NotFound(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	body := `{"name":"x","scope":"","hook_type":"rename","config":"{}","enabled":true}`
+	req, _ := http.NewRequest(http.MethodPut, "/api/hooks/9999", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rr.Code)
+	}
+}
+
+func TestDeleteHook(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	h := &db.PostHook{Name: "test", Scope: "", HookType: "rename", Config: "{}", Enabled: true}
+	store.CreatePostHook(h)
+
+	req, _ := http.NewRequest(http.MethodDelete, fmt.Sprintf("/api/hooks/%d", h.ID), nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestDeleteHook_NotFound(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	req, _ := http.NewRequest(http.MethodDelete, "/api/hooks/9999", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rr.Code)
+	}
 }
