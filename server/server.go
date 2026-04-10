@@ -70,6 +70,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/hooks", s.handleHooks)
 	s.mux.HandleFunc("/api/hooks/", s.handleHookByID)
 
+	// Server/channel CRUD
+	s.mux.HandleFunc("/api/servers", s.handleServers)
+	s.mux.HandleFunc("/api/servers/", s.handleServerByID)
+	s.mux.HandleFunc("/api/channels", s.handleChannels)
+	s.mux.HandleFunc("/api/channels/", s.handleChannelByID)
+
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
 }
