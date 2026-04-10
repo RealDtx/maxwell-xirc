@@ -13,6 +13,7 @@ import (
 	"github.com/maxwell-xirc/xirc/dcc"
 	"github.com/maxwell-xirc/xirc/db"
 	"github.com/maxwell-xirc/xirc/irc"
+	"github.com/maxwell-xirc/xirc/routing"
 )
 
 type PendingRequest struct {
@@ -247,12 +248,61 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	}
 
 	e.queue.MarkCompleted(downloadID, destPath, tr.PeakSpeed(), tr.AverageSpeed())
+
+	// Apply file routing rules
+	finalPath := destPath
+	if rules, err := e.store.GetFileRoutingRules(); err == nil {
+		if destDir := routing.MatchRule(offer.Filename, rules); destDir != "" {
+			if moved, err := routing.MoveFile(destPath, destDir); err != nil {
+				log.Printf("routing move failed for download %d: %v", downloadID, err)
+				// Use whatever path MoveFile returned (may be valid on partial cross-fs copy)
+				if moved != "" {
+					finalPath = moved
+				}
+			} else {
+				finalPath = moved
+			}
+		}
+	} else {
+		log.Printf("failed to load routing rules for download %d: %v", downloadID, err)
+	}
+
+	// Run post-download hooks
+	dl, dlErr := e.store.GetDownload(downloadID)
+	if hooks, err := e.store.GetPostHooks("", nil); err == nil {
+		for _, hook := range hooks {
+			if !hook.Enabled {
+				continue
+			}
+			ctx := routing.HookContext{
+				FilePath: finalPath,
+				Filename: offer.Filename,
+				Filesize: offer.Size,
+			}
+			if dlErr == nil && dl != nil {
+				ctx.BotNick = dl.BotNick
+				ctx.Channel = dl.Channel
+				ctx.Server = fmt.Sprintf("%d", dl.ServerID)
+				ctx.Pack = dl.PackNumber
+			}
+			result := routing.RunHook(hook, ctx)
+			if result.Error != "" {
+				log.Printf("hook %q failed for download %d: %s", hook.Name, downloadID, result.Error)
+			}
+			if result.NewPath != "" {
+				finalPath = result.NewPath
+			}
+		}
+	} else {
+		log.Printf("failed to load hooks for download %d: %v", downloadID, err)
+	}
+
 	e.bus.Publish(irc.Event{
 		Type: irc.EventDownloadStatus,
 		Data: map[string]interface{}{
 			"download_id": downloadID,
 			"status":      "completed",
-			"path":        destPath,
+			"path":        finalPath,
 			"peak_speed":  tr.PeakSpeed(),
 			"avg_speed":   tr.AverageSpeed(),
 		},
