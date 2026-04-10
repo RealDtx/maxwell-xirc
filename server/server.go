@@ -78,6 +78,9 @@ func (s *Server) routes() {
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
+
+	// Static file serving (must be last — catch-all)
+	s.setupStaticFiles()
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
