@@ -14,6 +14,7 @@ import (
 	ircpkg "github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/parser"
 	"github.com/maxwell-xirc/xirc/queue"
+	"github.com/maxwell-xirc/xirc/routing"
 	"github.com/maxwell-xirc/xirc/server"
 )
 
@@ -44,6 +45,10 @@ func main() {
 	// Seed default parse patterns
 	if err := parser.SeedPatterns(store); err != nil {
 		log.Printf("warning: failed to seed patterns: %v", err)
+	}
+
+	if err := routing.SeedRoutingRules(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {
+		log.Printf("warning: failed to seed routing rules: %v", err)
 	}
 
 	bus := ircpkg.NewEventBus()

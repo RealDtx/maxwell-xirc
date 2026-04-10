@@ -58,6 +58,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/downloads/cancel", s.handleCancelDownload)
 	s.mux.HandleFunc("/api/downloads/retry", s.handleRetryDownload)
 	s.mux.HandleFunc("/api/downloads/move", s.handleMoveDownload)
+
+	// Routing rule endpoints
+	s.mux.HandleFunc("/api/routing/rules", s.handleRoutingRules)
+	s.mux.HandleFunc("/api/routing/rules/", s.handleRoutingRuleByID)
+
+	// Hook endpoints
+	s.mux.HandleFunc("/api/hooks", s.handleHooks)
+	s.mux.HandleFunc("/api/hooks/", s.handleHookByID)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
