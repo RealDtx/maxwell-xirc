@@ -66,6 +66,7 @@ func (s *Server) handleRoutingRuleByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rule.ID = id
+		rule.Builtin = existing.Builtin  // Preserve immutable field
 		if err := s.store.UpdateFileRoutingRule(&rule); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -155,6 +156,15 @@ func (s *Server) handleHookByID(w http.ResponseWriter, r *http.Request) {
 		var hook db.PostHook
 		if err := json.NewDecoder(r.Body).Decode(&hook); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		existing, err := s.store.GetPostHookByID(id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if existing == nil {
+			writeError(w, http.StatusNotFound, "hook not found")
 			return
 		}
 		hook.ID = id

@@ -46,6 +46,7 @@ type Store interface {
 
 	// Post Hooks
 	GetPostHooks(scope string, scopeID *int64) ([]PostHook, error)
+	GetPostHookByID(id int64) (*PostHook, error)
 	CreatePostHook(h *PostHook) error
 	UpdatePostHook(h *PostHook) error
 	DeletePostHook(id int64) error

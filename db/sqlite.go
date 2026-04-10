@@ -412,6 +412,25 @@ func (s *SQLiteStore) GetPostHooks(scope string, scopeID *int64) ([]PostHook, er
 	return hooks, rows.Err()
 }
 
+func (s *SQLiteStore) GetPostHookByID(id int64) (*PostHook, error) {
+	var h PostHook
+	var scopeID sql.NullInt64
+	err := s.db.QueryRow(
+		"SELECT id, name, scope, scope_id, hook_type, config, enabled FROM post_hooks WHERE id=?", id,
+	).Scan(&h.ID, &h.Name, &h.Scope, &scopeID, &h.HookType, &h.Config, &h.Enabled)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if scopeID.Valid {
+		v := scopeID.Int64
+		h.ScopeID = &v
+	}
+	return &h, nil
+}
+
 func (s *SQLiteStore) CreatePostHook(h *PostHook) error {
 	result, err := s.db.Exec(
 		"INSERT INTO post_hooks (name, scope, scope_id, hook_type, config, enabled) VALUES (?, ?, ?, ?, ?, ?)",
