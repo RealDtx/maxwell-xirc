@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/maxwell-xirc/xirc/db"
@@ -63,7 +64,15 @@ func TestRunScriptHook_EnvVars(t *testing.T) {
 	outFile := filepath.Join(dir, "env_out")
 
 	scriptPath := filepath.Join(dir, "env_hook.sh")
-	ioutil.WriteFile(scriptPath, []byte("#!/bin/sh\necho $XIRC_FILENAME > "+outFile+"\n"), 0755)
+	script := "#!/bin/sh\n" +
+		"echo \"$XIRC_FILE\" >> " + outFile + "\n" +
+		"echo \"$XIRC_FILENAME\" >> " + outFile + "\n" +
+		"echo \"$XIRC_BOT\" >> " + outFile + "\n" +
+		"echo \"$XIRC_SERVER\" >> " + outFile + "\n" +
+		"echo \"$XIRC_CHANNEL\" >> " + outFile + "\n" +
+		"echo \"$XIRC_FILESIZE\" >> " + outFile + "\n" +
+		"echo \"$XIRC_PACK\" >> " + outFile + "\n"
+	ioutil.WriteFile(scriptPath, []byte(script), 0755)
 
 	hook := db.PostHook{
 		HookType: "script",
@@ -80,11 +89,32 @@ func TestRunScriptHook_EnvVars(t *testing.T) {
 		Pack:     10,
 	}
 
-	RunHook(hook, ctx)
+	result := RunHook(hook, ctx)
+	if result.Error != "" {
+		t.Fatalf("hook failed: %s", result.Error)
+	}
 
-	data, _ := ioutil.ReadFile(outFile)
-	if string(data) != "movie.mkv\n" {
-		t.Errorf("expected XIRC_FILENAME=movie.mkv, got %q", string(data))
+	data, err := ioutil.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) != 7 {
+		t.Fatalf("expected 7 lines of output, got %d: %q", len(lines), string(data))
+	}
+	expected := []string{
+		"/tmp/movie.mkv", // XIRC_FILE
+		"movie.mkv",      // XIRC_FILENAME
+		"bot1",           // XIRC_BOT
+		"srv1",           // XIRC_SERVER
+		"#ch",            // XIRC_CHANNEL
+		"500",            // XIRC_FILESIZE
+		"10",             // XIRC_PACK
+	}
+	for i, exp := range expected {
+		if lines[i] != exp {
+			t.Errorf("line %d: expected %q, got %q", i+1, exp, lines[i])
+		}
 	}
 }
 
@@ -170,7 +200,7 @@ func TestRunScriptHook_Timeout(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	scriptPath := filepath.Join(dir, "slow.sh")
-	ioutil.WriteFile(scriptPath, []byte("#!/bin/sh\nsleep 30\n"), 0755)
+	ioutil.WriteFile(scriptPath, []byte("#!/bin/sh\nsleep 5\n"), 0755)
 
 	hook := db.PostHook{
 		HookType: "script",
