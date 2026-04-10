@@ -16,6 +16,7 @@ import (
 	"github.com/maxwell-xirc/xirc/queue"
 	"github.com/maxwell-xirc/xirc/routing"
 	"github.com/maxwell-xirc/xirc/server"
+	wsPkg "github.com/maxwell-xirc/xirc/ws"
 )
 
 func main() {
@@ -64,9 +65,12 @@ func main() {
 	eng := queue.NewEngine(store, bus, &cfg.Storage, cfg.Downloads.MaxConcurrent)
 	eng.Start()
 
+	hub := wsPkg.NewHub(bus)
+	hub.Start()
+
 	ircMgr.ConnectAutoConnect()
 
-	srv := server.New(store, ircMgr, p, eng)
+	srv := server.New(store, ircMgr, p, eng, hub)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{
@@ -82,6 +86,7 @@ func main() {
 		httpServer.Close()
 		p.Stop()
 		ircMgr.Shutdown()
+		hub.Stop()
 		eng.Stop()
 	}()
 

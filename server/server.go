@@ -8,6 +8,7 @@ import (
 	"github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/parser"
 	"github.com/maxwell-xirc/xirc/queue"
+	ws "github.com/maxwell-xirc/xirc/ws"
 )
 
 type Server struct {
@@ -15,15 +16,17 @@ type Server struct {
 	ircMgr *irc.Manager
 	parser *parser.Parser
 	engine *queue.Engine
+	wsHub  *ws.Hub
 	mux    *http.ServeMux
 }
 
-func New(store db.Store, ircMgr *irc.Manager, p *parser.Parser, eng *queue.Engine) *Server {
+func New(store db.Store, ircMgr *irc.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub) *Server {
 	s := &Server{
 		store:  store,
 		ircMgr: ircMgr,
 		parser: p,
 		engine: eng,
+		wsHub:  hub,
 		mux:    http.NewServeMux(),
 	}
 	s.routes()
@@ -66,6 +69,9 @@ func (s *Server) routes() {
 	// Hook endpoints
 	s.mux.HandleFunc("/api/hooks", s.handleHooks)
 	s.mux.HandleFunc("/api/hooks/", s.handleHookByID)
+
+	// WebSocket endpoint
+	s.mux.HandleFunc("/ws", s.handleWebSocket)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
