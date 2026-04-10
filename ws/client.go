@@ -27,7 +27,6 @@ func ServeClient(hub *Hub, conn *websocket.Conn) {
 
 	// Reader goroutine — reads and discards (or handles future commands)
 	go func() {
-		defer conn.Close()
 		conn.SetReadDeadline(time.Now().Add(pongWait))
 		conn.SetPongHandler(func(string) error {
 			conn.SetReadDeadline(time.Now().Add(pongWait))
