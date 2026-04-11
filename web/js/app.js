@@ -30,14 +30,9 @@ document.addEventListener('alpine:init', () => {
             return serverId + ':' + channel;
         },
 
-        activeMessages() {
+        currentChannelMessages() {
             if (!this.activeServer || !this.activeChannel) return [];
             return this.ircMessages[this.channelKey(this.activeServer, this.activeChannel)] || [];
-        },
-
-        currentChannelMessages() {
-            const key = this.channelKey(this.activeServer, this.activeChannel);
-            return this.ircMessages[key] || [];
         },
 
         // --- Navigation ---
@@ -69,6 +64,7 @@ document.addEventListener('alpine:init', () => {
             if (text.startsWith('/')) {
                 await api.sendRaw(this.activeServer, text.slice(1));
             } else {
+                if (!this.activeChannel) return;
                 await api.sendMessage(this.activeServer, this.activeChannel, text);
             }
         },

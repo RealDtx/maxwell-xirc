@@ -191,7 +191,7 @@
                 </div>
 
                 <!-- IRC console panel -->
-                <div class="irc-console" x-show="showIrcConsole">
+                <div class="irc-console" x-show="showIrcConsole && activeChannel">
                     <div class="irc-messages" x-ref="ircLog">
                         <template x-for="(msg, i) in currentChannelMessages()" :key="i">
                             <div class="irc-message">
