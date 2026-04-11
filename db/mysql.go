@@ -327,7 +327,7 @@ func (s *MySQLStore) DeleteChannel(id int64) error {
 // --- Downloads ---
 
 func (s *MySQLStore) GetDownloads(status string) ([]Download, error) {
-	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at FROM downloads"
+	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only FROM downloads"
 	var rows *sql.Rows
 	var err error
 	if status != "" {
@@ -343,12 +343,14 @@ func (s *MySQLStore) GetDownloads(status string) ([]Download, error) {
 	downloads := []Download{}
 	for rows.Next() {
 		var dl Download
+		var statsOnly int
 		if err := rows.Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 			&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 			&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-			&dl.CreatedAt); err != nil {
+			&dl.CreatedAt, &statsOnly); err != nil {
 			return nil, err
 		}
+		dl.StatsOnly = statsOnly == 1
 		downloads = append(downloads, dl)
 	}
 	return downloads, rows.Err()
@@ -356,15 +358,17 @@ func (s *MySQLStore) GetDownloads(status string) ([]Download, error) {
 
 func (s *MySQLStore) GetDownload(id int64) (*Download, error) {
 	var dl Download
+	var statsOnly int
 	err := s.db.QueryRow(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at FROM downloads WHERE id=?", id,
+		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only FROM downloads WHERE id=?", id,
 	).Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 		&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 		&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-		&dl.CreatedAt)
+		&dl.CreatedAt, &statsOnly)
 	if err != nil {
 		return nil, err
 	}
+	dl.StatsOnly = statsOnly == 1
 	return &dl, nil
 }
 
@@ -687,7 +691,7 @@ func (s *MySQLStore) GetDownloadStatsSummary() (*DownloadStatsSummary, error) {
 	row := s.db.QueryRow(`
         SELECT
             COUNT(*),
-            SUM(CASE WHEN status='completed' OR status='stats_only' THEN 1 ELSE 0 END),
+            COALESCE(SUM(CASE WHEN status='completed' OR status='stats_only' THEN 1 ELSE 0 END), 0),
             COALESCE(SUM(size_bytes),0),
             COALESCE(SUM(CASE WHEN stats_only=0 AND status='completed' THEN size_bytes ELSE 0 END),0)
         FROM download_stats`)
