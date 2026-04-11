@@ -9,6 +9,8 @@ document.addEventListener('alpine:init', () => {
         searchQuery: '',
         searchResults: [],
         searchRunning: false,
+        savedSearches: [],
+        searchSort: { col: 'pack_number', dir: 'asc' },
         downloads: [],
         ircMessages: {},
         ircInput: '',
@@ -69,15 +71,97 @@ document.addEventListener('alpine:init', () => {
             this.searchResults = [];
             try {
                 await api.startSearch(this.activeServer, this.activeChannel, this.searchQuery);
-                // TODO(Task 5): startSearch triggers async bot replies over IRC.
-                // getSearchResults here returns immediate DB results only — Task 5 will add polling/streaming.
-                const res = await api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
-                this.searchResults = res.results || [];
+                // Poll up to 5 times with 1s delay; stop early when results arrive.
+                var results = [];
+                for (var attempt = 0; attempt < 5; attempt++) {
+                    await new Promise(function(resolve) { setTimeout(resolve, 1000); });
+                    var res = await api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
+                    results = res.results || [];
+                    if (results.length > 0) break;
+                }
+                this.searchResults = results;
             } catch (e) {
                 console.error('search error', e);
             } finally {
                 this.searchRunning = false;
             }
+        },
+
+        async loadSavedSearches() {
+            try {
+                var res = await api.getSavedSearches();
+                this.savedSearches = res.saved_searches || res.searches || [];
+            } catch (e) {
+                console.error('loadSavedSearches error', e);
+            }
+        },
+
+        async bookmarkSearch() {
+            if (!this.searchQuery.trim()) return;
+            try {
+                await api.createSavedSearch({
+                    query: this.searchQuery,
+                    server_id: this.activeServer,
+                    channel: this.activeChannel,
+                });
+                await this.loadSavedSearches();
+            } catch (e) {
+                console.error('bookmarkSearch error', e);
+            }
+        },
+
+        applySavedSearch(query) {
+            if (!query) return;
+            this.searchQuery = query;
+            this.runSearch();
+        },
+
+        sortBy(col) {
+            if (this.searchSort.col === col) {
+                this.searchSort.dir = this.searchSort.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.searchSort = { col: col, dir: 'asc' };
+            }
+        },
+
+        sortIndicator(col) {
+            if (this.searchSort.col !== col) return '';
+            return this.searchSort.dir === 'asc' ? ' ▲' : ' ▼';
+        },
+
+        sortedResults() {
+            var col = this.searchSort.col;
+            var dir = this.searchSort.dir;
+            var arr = this.searchResults.slice();
+            arr.sort(function(a, b) {
+                var av = a[col];
+                var bv = b[col];
+                if (av == null) av = '';
+                if (bv == null) bv = '';
+                var cmp;
+                if (typeof av === 'number' && typeof bv === 'number') {
+                    cmp = av - bv;
+                } else {
+                    av = String(av).toLowerCase();
+                    bv = String(bv).toLowerCase();
+                    cmp = av < bv ? -1 : av > bv ? 1 : 0;
+                }
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            return arr;
+        },
+
+        downloadPack(row) {
+            api.requestDownload({
+                server_id: this.activeServer,
+                channel: this.activeChannel,
+                bot_nick: row.bot_nick,
+                pack_number: row.pack_number,
+            }).catch(function(e) { console.error('download request error', e); });
+        },
+
+        teachParser(rawLine) {
+            alert(rawLine);
         },
 
         requestDownload(result) {
@@ -225,6 +309,9 @@ document.addEventListener('alpine:init', () => {
 
             // Load downloads
             await this.loadDownloads();
+
+            // Load saved searches
+            await this.loadSavedSearches();
 
             // Start WebSocket
             this.wsConnect();
