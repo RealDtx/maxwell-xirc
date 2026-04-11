@@ -277,7 +277,7 @@
                                                 </template>
                                             </td>
                                             <td x-text="dl.status === 'downloading' && dl.speed ? formatSpeed(dl.speed) : '-'"></td>
-                                            <td x-text="dl.status==='downloading' ? formatETA(Math.max(0, dl.bytes_total - dl.bytes_received), dl.speed) : '-'"></td>
+                                            <td x-text="dl.status==='downloading' ? formatETA(Math.max(0, dl.total_size - dl.bytes_received), dl.speed) : '-'"></td>
                                             <td style="white-space:nowrap;">
                                                 <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
                                                     <span>

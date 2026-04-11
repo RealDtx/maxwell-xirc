@@ -207,7 +207,7 @@ document.addEventListener('alpine:init', () => {
         async loadDownloads() {
             try {
                 const res = await api.getDownloads();
-                this.downloads = res.downloads || [];
+                this.downloads = Array.isArray(res) ? res : [];
             } catch (e) {
                 console.error('loadDownloads error', e);
             }
@@ -226,8 +226,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         downloadProgress(dl) {
-            if (!dl.bytes_total || dl.bytes_total === 0) return 0;
-            return Math.round((dl.bytes_received / dl.bytes_total) * 100);
+            if (!dl.total_size) return 0;
+            return Math.round((dl.bytes_received / dl.total_size) * 100);
         },
 
         // --- WebSocket ---
@@ -274,7 +274,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         _handleWsEvent(data) {
-            const type = data.event_type;
+            const type = data.type;
 
             if (type === 'irc_message') {
                 const key = this.channelKey(data.server_id, data.channel);
@@ -298,20 +298,20 @@ document.addEventListener('alpine:init', () => {
                     });
                 }
             } else if (type === 'download_progress') {
-                const dl = this.downloads.find(d => d.id === data.download_id);
+                const p = data.data;
+                const dl = this.downloads.find(d => d.id === p.download_id);
                 if (dl) {
-                    dl.bytes_received = data.bytes_received;
-                    dl.bytes_total = data.bytes_total;
-                    dl.speed = data.speed;
+                    dl.bytes_received = p.bytes_received;
+                    dl.total_size = p.total_size;
+                    dl.speed = p.speed;
                 }
             } else if (type === 'download_complete') {
                 this.loadDownloads();
             } else if (type === 'download_failed') {
                 this.loadDownloads();
-            } else if (type === 'irc_connected') {
-                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: 'connected' });
-            } else if (type === 'irc_disconnected') {
-                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: 'disconnected' });
+            } else if (type === 'connection_status') {
+                const status = data.data;  // "connected" / "disconnected" / "connecting"
+                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: status });
             }
         },
 
@@ -319,7 +319,7 @@ document.addEventListener('alpine:init', () => {
 
         loadSettingsData() {
             return Promise.all([
-                api.getServers().then(r => { this.settingsServers = r.servers || []; }),
+                api.getServers().then(r => { this.settingsServers = Array.isArray(r) ? r : []; }),
                 api.getRoutingRules().then(r => { this.routingRules = Array.isArray(r) ? r : []; }),
                 api.getHooks().then(r => { this.hooks = Array.isArray(r) ? r : []; }),
             ]);
@@ -327,7 +327,7 @@ document.addEventListener('alpine:init', () => {
 
         loadSettingsChannels(serverId) {
             this.settingsServerId = serverId;
-            return api.getChannels(serverId).then(r => { this.settingsChannels = r.channels || []; });
+            return api.getChannels(serverId).then(r => { this.settingsChannels = Array.isArray(r) ? r : []; });
         },
 
         openServerForm(server) {
@@ -424,7 +424,7 @@ document.addEventListener('alpine:init', () => {
             // Load servers
             try {
                 const res = await api.getServers();
-                this.servers = res.servers || [];
+                this.servers = Array.isArray(res) ? res : [];
                 if (this.servers.length > 0) {
                     this.expandedServers[this.servers[0].id] = true;
                 }
@@ -435,9 +435,10 @@ document.addEventListener('alpine:init', () => {
             // Load IRC status and merge channels into server objects
             try {
                 const res = await api.getIRCStatus();
+                const statuses = Array.isArray(res) ? res : [];
                 const statusMap = {};
-                for (const s of (res.servers || [])) {
-                    statusMap[s.server_id] = s;
+                for (const s of statuses) {
+                    statusMap[s.server_id] = { status: s.status, channels: s.channels, name: s.server_name };
                 }
                 this.ircStatus = statusMap;
                 // Merge channels from IRC status into servers array
