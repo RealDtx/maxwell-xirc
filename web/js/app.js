@@ -35,6 +35,11 @@ document.addEventListener('alpine:init', () => {
             return this.ircMessages[this.channelKey(this.activeServer, this.activeChannel)] || [];
         },
 
+        currentChannelMessages() {
+            const key = this.channelKey(this.activeServer, this.activeChannel);
+            return this.ircMessages[key] || [];
+        },
+
         // --- Navigation ---
 
         setView(view) {
@@ -57,11 +62,15 @@ document.addEventListener('alpine:init', () => {
 
         // --- IRC actions ---
 
-        sendMessage() {
-            const msg = this.ircInput.trim();
-            if (!msg || !this.activeServer || !this.activeChannel) return;
-            api.sendMessage(this.activeServer, this.activeChannel, msg);
+        async sendIrc() {
+            const text = this.ircInput.trim();
+            if (!text || !this.activeServer) return;
             this.ircInput = '';
+            if (text.startsWith('/')) {
+                await api.sendRaw(this.activeServer, text.slice(1));
+            } else {
+                await api.sendMessage(this.activeServer, this.activeChannel, text);
+            }
         },
 
         // --- Search ---
@@ -250,6 +259,13 @@ document.addEventListener('alpine:init', () => {
                 // Keep buffer bounded
                 if (this.ircMessages[key].length > 500) {
                     this.ircMessages[key].splice(0, this.ircMessages[key].length - 500);
+                }
+                // Auto-scroll if this message is for the active channel
+                if (data.server_id === this.activeServer && data.channel === this.activeChannel) {
+                    this.$nextTick(() => {
+                        const el = this.$refs && this.$refs.ircLog;
+                        if (el) el.scrollTop = el.scrollHeight;
+                    });
                 }
             } else if (type === 'download_progress') {
                 const dl = this.downloads.find(d => d.id === data.download_id);
