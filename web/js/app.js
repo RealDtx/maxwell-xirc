@@ -27,10 +27,10 @@ document.addEventListener('alpine:init', () => {
         settingsServerId: null,
         routingRules: [],
         hooks: [],
-        serverForm: { id: null, name: '', host: '', port: 6667, nick: '', password: '', tls: false },
+        serverForm: { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true },
         channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', auto_join: false },
-        routingForm: { id: null, pattern: '', destination_path: '', priority: 0 },
-        hookForm: { id: null, event_type: 'download_complete', command: '', enabled: true },
+        routingForm: { id: null, pattern: '', destination_dir: '', priority: 0 },
+        hookForm: { id: null, name: '', scope: 'global', hook_type: 'script', config: '', enabled: true },
         showServerForm: false,
         showChannelForm: false,
         showRoutingForm: false,
@@ -57,6 +57,10 @@ document.addEventListener('alpine:init', () => {
         setView(view) {
             this.activeView = view;
             if (view === 'settings') {
+                this.showServerForm = false;
+                this.showChannelForm = false;
+                this.showRoutingForm = false;
+                this.showHookForm = false;
                 this.loadSettingsData();
             }
         },
@@ -329,7 +333,7 @@ document.addEventListener('alpine:init', () => {
         openServerForm(server) {
             this.serverForm = server
                 ? Object.assign({}, server)
-                : { id: null, name: '', host: '', port: 6667, nick: '', password: '', tls: false };
+                : { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true };
             this.showServerForm = true;
         },
 
@@ -340,12 +344,12 @@ document.addEventListener('alpine:init', () => {
             return p.then(() => {
                 this.showServerForm = false;
                 return this.loadSettingsData();
-            });
+            }).catch(console.error);
         },
 
         deleteServer(id) {
             if (!confirm('Delete server?')) return;
-            return api.deleteServer(id).then(() => this.loadSettingsData());
+            return api.deleteServer(id).then(() => this.loadSettingsData()).catch(console.error);
         },
 
         openChannelForm(channel) {
@@ -362,18 +366,18 @@ document.addEventListener('alpine:init', () => {
             return p.then(() => {
                 this.showChannelForm = false;
                 return this.loadSettingsChannels(this.settingsServerId);
-            });
+            }).catch(console.error);
         },
 
         deleteChannel(id) {
             if (!confirm('Delete channel?')) return;
-            return api.deleteChannel(id).then(() => this.loadSettingsChannels(this.settingsServerId));
+            return api.deleteChannel(id).then(() => this.loadSettingsChannels(this.settingsServerId)).catch(console.error);
         },
 
         openRoutingForm(rule) {
             this.routingForm = rule
                 ? Object.assign({}, rule)
-                : { id: null, pattern: '', destination_path: '', priority: 0 };
+                : { id: null, pattern: '', destination_dir: '', priority: 0 };
             this.showRoutingForm = true;
         },
 
@@ -384,18 +388,18 @@ document.addEventListener('alpine:init', () => {
             return p.then(() => {
                 this.showRoutingForm = false;
                 return this.loadSettingsData();
-            });
+            }).catch(console.error);
         },
 
         deleteRoutingRule(id) {
             if (!confirm('Delete routing rule?')) return;
-            return api.deleteRoutingRule(id).then(() => this.loadSettingsData());
+            return api.deleteRoutingRule(id).then(() => this.loadSettingsData()).catch(console.error);
         },
 
         openHookForm(hook) {
             this.hookForm = hook
                 ? Object.assign({}, hook)
-                : { id: null, event_type: 'download_complete', command: '', enabled: true };
+                : { id: null, name: '', scope: 'global', hook_type: 'script', config: '', enabled: true };
             this.showHookForm = true;
         },
 
@@ -406,12 +410,12 @@ document.addEventListener('alpine:init', () => {
             return p.then(() => {
                 this.showHookForm = false;
                 return this.loadSettingsData();
-            });
+            }).catch(console.error);
         },
 
         deleteHook(id) {
             if (!confirm('Delete hook?')) return;
-            return api.deleteHook(id).then(() => this.loadSettingsData());
+            return api.deleteHook(id).then(() => this.loadSettingsData()).catch(console.error);
         },
 
         // --- Init ---

@@ -344,8 +344,8 @@
                                                 <td x-text="s.name"></td>
                                                 <td x-text="s.host"></td>
                                                 <td x-text="s.port"></td>
-                                                <td x-text="s.nick"></td>
-                                                <td x-text="s.tls ? 'Yes' : 'No'"></td>
+                                                <td x-text="s.nickname"></td>
+                                                <td x-text="s.ssl ? 'Yes' : 'No'"></td>
                                                 <td style="white-space:nowrap;">
                                                     <button class="btn btn-sm" @click="openServerForm(s)">Edit</button>
                                                     <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteServer(s.id)">Delete</button>
@@ -377,16 +377,19 @@
                                     </div>
                                     <div class="form-group">
                                         <label>Nick</label>
-                                        <input type="text" x-model="serverForm.nick" placeholder="mynick">
+                                        <input type="text" x-model="serverForm.nickname" placeholder="mynick">
                                     </div>
                                     <div class="form-group">
-                                        <label>Password</label>
-                                        <input type="password" x-model="serverForm.password" placeholder="(optional)">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>TLS</label>
+                                        <label>SSL</label>
                                         <label class="toggle">
-                                            <input type="checkbox" x-model="serverForm.tls">
+                                            <input type="checkbox" x-model="serverForm.ssl">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Auto Connect</label>
+                                        <label class="toggle">
+                                            <input type="checkbox" x-model="serverForm.auto_connect">
                                             <span class="toggle-slider"></span>
                                         </label>
                                     </div>
@@ -496,7 +499,7 @@
                                         <template x-for="r in routingRules" :key="r.id">
                                             <tr>
                                                 <td x-text="r.pattern"></td>
-                                                <td x-text="r.destination_path"></td>
+                                                <td x-text="r.destination_dir"></td>
                                                 <td x-text="r.priority"></td>
                                                 <td style="white-space:nowrap;">
                                                     <button class="btn btn-sm" @click="openRoutingForm(r)">Edit</button>
@@ -520,8 +523,8 @@
                                         <input type="text" x-model="routingForm.pattern" placeholder="*.mkv">
                                     </div>
                                     <div class="form-group">
-                                        <label>Destination Path</label>
-                                        <input type="text" x-model="routingForm.destination_path" placeholder="/mnt/media/video">
+                                        <label>Destination Dir</label>
+                                        <input type="text" x-model="routingForm.destination_dir" placeholder="/mnt/media/video">
                                     </div>
                                     <div class="form-group">
                                         <label>Priority</label>
@@ -545,8 +548,9 @@
                                 <table style="margin-top:12px;">
                                     <thead>
                                         <tr>
-                                            <th>Event</th>
-                                            <th>Command</th>
+                                            <th>Name</th>
+                                            <th>Type</th>
+                                            <th>Config</th>
                                             <th>Enabled</th>
                                             <th>Actions</th>
                                         </tr>
@@ -554,8 +558,9 @@
                                     <tbody>
                                         <template x-for="h in hooks" :key="h.id">
                                             <tr>
-                                                <td x-text="h.event_type"></td>
-                                                <td x-text="h.command"></td>
+                                                <td x-text="h.name"></td>
+                                                <td x-text="h.hook_type"></td>
+                                                <td x-text="h.config"></td>
                                                 <td x-text="h.enabled ? 'Yes' : 'No'"></td>
                                                 <td style="white-space:nowrap;">
                                                     <button class="btn btn-sm" @click="openHookForm(h)">Edit</button>
@@ -575,15 +580,19 @@
                                 <div style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px;">
                                     <h3 style="margin:0 0 16px;" x-text="hookForm.id ? 'Edit Hook' : 'Add Hook'"></h3>
                                     <div class="form-group">
-                                        <label>Event Type</label>
-                                        <select x-model="hookForm.event_type" style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
-                                            <option value="download_complete">download_complete</option>
-                                            <option value="download_failed">download_failed</option>
+                                        <label>Name</label>
+                                        <input type="text" x-model="hookForm.name" placeholder="My Hook">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Type</label>
+                                        <select x-model="hookForm.hook_type" style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
+                                            <option value="script">Script</option>
+                                            <option value="rename">Rename</option>
                                         </select>
                                     </div>
                                     <div class="form-group">
-                                        <label>Command</label>
-                                        <input type="text" x-model="hookForm.command" placeholder="/usr/local/bin/notify.sh">
+                                        <label>Config</label>
+                                        <input type="text" x-model="hookForm.config" placeholder="JSON config or rename pattern">
                                     </div>
                                     <div class="form-group">
                                         <label>Enabled</label>
