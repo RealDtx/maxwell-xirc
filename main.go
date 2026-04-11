@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/maxwell-xirc/xirc/config"
 	"github.com/maxwell-xirc/xirc/db"
+	"github.com/maxwell-xirc/xirc/internal/exitcodes"
 	ircpkg "github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/notify"
 	"github.com/maxwell-xirc/xirc/parser"
@@ -21,6 +23,42 @@ import (
 )
 
 var version = "dev"
+
+func checkDirectories(store db.Store) {
+	rules, err := store.GetAllFileRoutingRules()
+	if err != nil {
+		log.Printf("warning: could not load routing rules for dir check: %v", err)
+		return
+	}
+
+	seen := map[string]bool{}
+	for _, r := range rules {
+		if r.DestinationDir == "" || seen[r.DestinationDir] {
+			continue
+		}
+		seen[r.DestinationDir] = true
+
+		probe := r.DestinationDir + "/.xirc_write_check"
+		f, err := os.Create(probe)
+		if err == nil {
+			f.Close()
+			os.Remove(probe)
+			log.Printf("startup: verified writable: %s", r.DestinationDir)
+			continue
+		}
+
+		if os.IsPermission(err) || errors.Is(err, syscall.EROFS) {
+			log.Printf("FATAL (config): destination dir %q not writable by xirc user — fix ownership or ACL, then restart (exit 78)", r.DestinationDir)
+			os.Exit(exitcodes.ExitConfig)
+		}
+		if os.IsNotExist(err) {
+			log.Printf("FATAL (config): destination dir %q does not exist — create it and grant access, then restart (exit 78)", r.DestinationDir)
+			os.Exit(exitcodes.ExitConfig)
+		}
+		log.Printf("FATAL (transient): destination dir %q check failed: %v — will retry on restart (exit 1)", r.DestinationDir, err)
+		os.Exit(exitcodes.ExitTransient)
+	}
+}
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
@@ -45,6 +83,8 @@ func main() {
 	if err := store.Migrate(); err != nil {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
+
+	checkDirectories(store)
 
 	// Seed default parse patterns
 	if err := parser.SeedPatterns(store); err != nil {
