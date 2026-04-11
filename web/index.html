@@ -4,9 +4,253 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>xirc</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/utils.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/app.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body>
-    <h1>xirc</h1>
-    <p>Loading...</p>
+<body x-data="appStore">
+<div class="app">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">xirc</div>
+
+        <div class="server-tree">
+            <template x-for="server in servers" :key="server.id">
+                <div>
+                    <!-- Server row -->
+                    <div
+                        class="server-item"
+                        :class="{ active: activeServer === server.id && activeView === 'channel' }"
+                        @click="toggleServer(server.id)"
+                    >
+                        <span
+                            class="status-dot"
+                            :class="serverStatus(server.id)"
+                        ></span>
+                        <span x-text="server.name"></span>
+                    </div>
+
+                    <!-- Channels under this server -->
+                    <template x-if="isExpanded(server.id)">
+                        <div>
+                            <template x-for="ch in (server.channels || [])" :key="ch">
+                                <div
+                                    class="channel-item"
+                                    :class="{ active: activeServer === server.id && activeChannel === ch && activeView === 'channel' }"
+                                    @click="selectChannel(server.id, ch)"
+                                    x-text="ch"
+                                ></div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+
+        <!-- Bottom nav -->
+        <nav class="sidebar-nav">
+            <a
+                :class="{ active: activeView === 'downloads' }"
+                @click="setView('downloads')"
+            >Downloads</a>
+            <a
+                :class="{ active: activeView === 'settings' }"
+                @click="setView('settings')"
+            >Settings</a>
+        </nav>
+
+        <!-- Disk usage bar (placeholder) -->
+        <div>
+            <div class="disk-label">Disk</div>
+            <div class="disk-bar">
+                <div class="disk-bar-fill ok" style="width: 0%"></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+
+        <!-- Channel view -->
+        <template x-if="activeView === 'channel'">
+            <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <div class="content-header">
+                    <span x-text="activeChannel || 'Select a channel'"></span>
+                    <template x-if="activeChannel">
+                        <button
+                            class="btn btn-sm"
+                            style="margin-left:auto"
+                            @click="showIrcConsole = !showIrcConsole"
+                            x-text="showIrcConsole ? 'Hide Console' : 'Show Console'"
+                        ></button>
+                    </template>
+                </div>
+
+                <div class="content-body" style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;">
+                    <!-- Search bar -->
+                    <template x-if="activeChannel">
+                        <div>
+                            <div class="search-bar">
+                                <input
+                                    type="text"
+                                    placeholder="Search for files..."
+                                    x-model="searchQuery"
+                                    @keydown.enter="runSearch()"
+                                >
+                                <button
+                                    class="btn btn-primary"
+                                    @click="runSearch()"
+                                    :disabled="searchRunning"
+                                    x-text="searchRunning ? 'Searching...' : 'Search'"
+                                ></button>
+                            </div>
+
+                            <!-- Search results table -->
+                            <template x-if="searchResults.length > 0">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Bot</th>
+                                            <th>Pack</th>
+                                            <th>Filename</th>
+                                            <th>Size</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="(r, i) in searchResults" :key="i">
+                                            <tr :class="{ unparsed: !r.filename }">
+                                                <td x-text="r.bot_nick || r.nick || '-'"></td>
+                                                <td x-text="r.pack_number || r.pack || '-'"></td>
+                                                <td x-text="r.filename || r.raw || '-'"></td>
+                                                <td x-text="r.size_bytes ? formatSize(r.size_bytes) : (r.size || '-')"></td>
+                                                <td>
+                                                    <button
+                                                        class="btn btn-primary btn-sm"
+                                                        @click="requestDownload(r)"
+                                                    >Get</button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </template>
+
+                            <template x-if="searchResults.length === 0 && !searchRunning">
+                                <p style="color: var(--text-muted); font-size:13px;">No results. Enter a query and press Search.</p>
+                            </template>
+                        </div>
+                    </template>
+
+                    <template x-if="!activeChannel">
+                        <p style="color: var(--text-muted); font-size:13px;">Select a channel from the sidebar to begin.</p>
+                    </template>
+                </div>
+
+                <!-- IRC console (toggled) -->
+                <template x-if="showIrcConsole && activeChannel">
+                    <div class="irc-console" style="height:220px; flex-shrink:0; border-top:1px solid var(--border);">
+                        <div class="irc-messages" id="irc-messages-box">
+                            <template x-for="(msg, i) in activeMessages()" :key="i">
+                                <div class="irc-message">
+                                    <span class="time" x-text="formatTime(msg.timestamp)"></span>
+                                    <span class="nick" x-text="'<' + msg.nick + '>'"></span>
+                                    <span x-text="' ' + msg.message"></span>
+                                </div>
+                            </template>
+                        </div>
+                        <div class="irc-input">
+                            <input
+                                type="text"
+                                placeholder="Send message..."
+                                x-model="ircInput"
+                                @keydown.enter="sendMessage()"
+                            >
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <!-- Downloads view -->
+        <template x-if="activeView === 'downloads'">
+            <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <div class="content-header">
+                    <span>Downloads</span>
+                    <button class="btn btn-sm" style="margin-left:auto" @click="loadDownloads()">Refresh</button>
+                </div>
+                <div class="content-body">
+                    <template x-if="downloads.length > 0">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Status</th>
+                                    <th>Progress</th>
+                                    <th>Size</th>
+                                    <th>Speed</th>
+                                    <th>ETA</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="dl in downloads" :key="dl.id">
+                                    <tr>
+                                        <td x-text="dl.filename || dl.file_name || '-'"></td>
+                                        <td>
+                                            <span
+                                                class="badge"
+                                                :class="'badge-' + dl.status"
+                                                x-text="dl.status"
+                                            ></span>
+                                        </td>
+                                        <td>
+                                            <div class="progress">
+                                                <div
+                                                    class="progress-fill"
+                                                    :style="'width:' + downloadProgress(dl) + '%'"
+                                                ></div>
+                                            </div>
+                                        </td>
+                                        <td x-text="dl.bytes_total ? formatSize(dl.bytes_total) : '-'"></td>
+                                        <td x-text="dl.speed ? formatSpeed(dl.speed) : '-'"></td>
+                                        <td x-text="(dl.bytes_total && dl.bytes_received && dl.speed) ? formatETA(dl.bytes_total - dl.bytes_received, dl.speed) : '-'"></td>
+                                        <td style="white-space:nowrap;">
+                                            <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
+                                                <button class="btn btn-danger btn-sm" @click="cancelDownload(dl.id)">Cancel</button>
+                                            </template>
+                                            <template x-if="dl.status === 'failed'">
+                                                <button class="btn btn-primary btn-sm" @click="retryDownload(dl.id)">Retry</button>
+                                            </template>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </template>
+                    <template x-if="downloads.length === 0">
+                        <p style="color: var(--text-muted); font-size:13px;">No downloads.</p>
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <!-- Settings view -->
+        <template x-if="activeView === 'settings'">
+            <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <div class="content-header">
+                    <span>Settings</span>
+                </div>
+                <div class="content-body">
+                    <p style="color: var(--text-muted); font-size:13px;">Settings will be implemented in a later task.</p>
+                </div>
+            </div>
+        </template>
+
+    </main>
+</div>
 </body>
 </html>
