@@ -712,6 +712,58 @@
             </div>
         </template>
 
+        <!-- Server view -->
+        <template x-if="activeView === 'server'">
+            <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <div class="content-header" style="display:flex; align-items:center; gap:12px;">
+                    <h2 style="margin:0; font-size:1.1rem; font-weight:600;" x-text="activeServerObj && activeServerObj.name"></h2>
+                    <span style="font-size:11px; padding:2px 8px; border-radius:9999px;"
+                          :style="{
+                              background: serverStatus(activeServer) === 'connected' ? 'var(--success-bg, #14532d)' : serverStatus(activeServer) === 'connecting' ? 'var(--warning-bg, #713f12)' : 'var(--danger-bg, #7f1d1d)',
+                              color: serverStatus(activeServer) === 'connected' ? 'var(--success-text, #bbf7d0)' : serverStatus(activeServer) === 'connecting' ? 'var(--warning-text, #fef08a)' : 'var(--danger-text, #fecaca)'
+                          }"
+                          x-text="serverStatus(activeServer)"></span>
+                </div>
+
+                <!-- Stats card -->
+                <div style="padding:12px 16px; display:grid; grid-template-columns:repeat(3,1fr); gap:10px; border-bottom:1px solid var(--border); font-size:13px;">
+                    <div style="background:var(--bg-secondary); border-radius:6px; padding:10px;">
+                        <div style="color:var(--text-muted); font-size:11px; margin-bottom:4px;">Connected since</div>
+                        <div x-text="ircStatus[activeServer] && ircStatus[activeServer].connected_at ? formatDate(ircStatus[activeServer].connected_at) : '—'"></div>
+                    </div>
+                    <div style="background:var(--bg-secondary); border-radius:6px; padding:10px;">
+                        <div style="color:var(--text-muted); font-size:11px; margin-bottom:4px;">Reconnects</div>
+                        <div x-text="ircStatus[activeServer] ? ircStatus[activeServer].reconnect_count || 0 : 0"></div>
+                    </div>
+                    <div style="background:var(--bg-secondary); border-radius:6px; padding:10px;">
+                        <div style="color:var(--text-muted); font-size:11px; margin-bottom:4px;">Lag</div>
+                        <div x-text="ircStatus[activeServer] && ircStatus[activeServer].lag_ms ? ircStatus[activeServer].lag_ms + ' ms' : '—'"></div>
+                    </div>
+                </div>
+
+                <!-- Raw IRC log -->
+                <div style="flex:1; overflow-y:auto; font-family:monospace; font-size:12px; padding:10px; display:flex; flex-direction:column; gap:2px;"
+                     x-ref="serverLog"
+                     @scroll="$el.scrollTop <= 20 && activeServerObj && loadMoreServerMessages(activeServerObj.id)">
+                    <template x-for="(msg, idx) in serverMessages[activeServer] || []" :key="idx">
+                        <div style="display:flex; gap:8px;">
+                            <span style="color:var(--text-muted); flex-shrink:0;" x-text="formatTime(msg.timestamp)"></span>
+                            <span style="color:var(--accent, #60a5fa); flex-shrink:0;" x-text="msg.nick ? '&lt;' + msg.nick + '&gt;' : '*'"></span>
+                            <span style="color:var(--text-primary); word-break:break-all;" x-text="msg.text || msg.message"></span>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Connect/Disconnect buttons (advanced mode) -->
+                <div x-show="appMode === 'advanced'" style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px;">
+                    <button @click="api.connectServer(activeServer).catch(console.error)"
+                            class="btn btn-primary btn-sm">Connect</button>
+                    <button @click="api.disconnectServer(activeServer).catch(console.error)"
+                            class="btn btn-danger btn-sm">Disconnect</button>
+                </div>
+            </div>
+        </template>
+
     </main>
 </div>
 </body>

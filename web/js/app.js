@@ -453,8 +453,14 @@ document.addEventListener('alpine:init', () => {
             } else if (type === 'download_failed') {
                 this.loadDownloads();
             } else if (type === 'connection_status') {
-                const status = data.data;  // "connected" / "disconnected" / "connecting"
-                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: status });
+                const d = data.data;
+                const status = typeof d === 'string' ? d : d.status;
+                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, {
+                    status: status,
+                    connected_at: d.connected_at || (this.ircStatus[data.server_id] || {}).connected_at,
+                    reconnect_count: d.reconnect_count !== undefined ? d.reconnect_count : (this.ircStatus[data.server_id] || {}).reconnect_count,
+                    lag_ms: d.lag_ms !== undefined ? d.lag_ms : (this.ircStatus[data.server_id] || {}).lag_ms,
+                });
             } else if (type === 'error_event') {
                 this.errors.unshift(data.data || data);
                 if (this.errors.length > 200) this.errors.pop();
@@ -693,7 +699,14 @@ document.addEventListener('alpine:init', () => {
                 const statuses = Array.isArray(res) ? res : [];
                 const statusMap = {};
                 for (const s of statuses) {
-                    statusMap[s.server_id] = { status: s.status, channels: s.channels, name: s.server_name };
+                    statusMap[s.server_id] = {
+                        status: s.status,
+                        channels: s.channels,
+                        name: s.server_name,
+                        connected_at: s.connected_at,
+                        reconnect_count: s.reconnect_count,
+                        lag_ms: s.lag_ms,
+                    };
                 }
                 this.ircStatus = statusMap;
                 // Merge channels from IRC status into servers array
