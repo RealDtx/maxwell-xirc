@@ -88,4 +88,8 @@ const api = {
     createHook(h)                { return this.post('/hooks', h); },
     updateHook(id, h)            { return this.put('/hooks/' + id, h); },
     deleteHook(id)               { return this.del('/hooks/' + id); },
+
+    // Browse & Files
+    browseDir(path)  { return this.get('/browse?path=' + encodeURIComponent(path || '/')); },
+    listFiles(dir)   { return this.get('/files?dir=' + encodeURIComponent(dir)); },
 };
