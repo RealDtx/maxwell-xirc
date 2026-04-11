@@ -1,0 +1,40 @@
+services:
+  xirc:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: xirc
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8085:8085"
+    volumes:
+      - ../data:/app/data
+      - /srv/dlna/media:/srv/dlna/media
+      - /srv/downloads:/srv/downloads
+    environment:
+      - TZ=Europe/Berlin
+    networks:
+      - xirc
+
+  db:
+    image: mariadb:11
+    container_name: xirc-db
+    restart: unless-stopped
+    profiles:
+      - mariadb
+    environment:
+      - MYSQL_ROOT_PASSWORD=changeme
+      - MYSQL_DATABASE=xirc
+      - MYSQL_USER=xirc
+      - MYSQL_PASSWORD=changeme
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - xirc
+
+networks:
+  xirc:
+    driver: bridge
+
+volumes:
+  db_data:
