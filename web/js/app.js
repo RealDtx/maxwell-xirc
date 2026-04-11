@@ -11,6 +11,7 @@ document.addEventListener('alpine:init', () => {
         searchRunning: false,
         savedSearches: [],
         searchSort: { col: 'pack_number', dir: 'asc' },
+        searchToken: 0,
         downloads: [],
         ircMessages: {},
         ircInput: '',
@@ -67,6 +68,7 @@ document.addEventListener('alpine:init', () => {
 
         async runSearch() {
             if (!this.activeServer || !this.activeChannel || !this.searchQuery.trim()) return;
+            const token = ++this.searchToken;
             this.searchRunning = true;
             this.searchResults = [];
             try {
@@ -76,21 +78,22 @@ document.addEventListener('alpine:init', () => {
                 for (var attempt = 0; attempt < 5; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     var res = await api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
-                    results = res.results || [];
+                    results = res || [];
                     if (results.length > 0) break;
                 }
+                if (token !== this.searchToken) return;
                 this.searchResults = results;
             } catch (e) {
                 console.error('search error', e);
             } finally {
-                this.searchRunning = false;
+                if (token === this.searchToken) this.searchRunning = false;
             }
         },
 
         async loadSavedSearches() {
             try {
                 var res = await api.getSavedSearches();
-                this.savedSearches = res.saved_searches || res.searches || [];
+                this.savedSearches = Array.isArray(res) ? res : [];
             } catch (e) {
                 console.error('loadSavedSearches error', e);
             }
@@ -162,14 +165,6 @@ document.addEventListener('alpine:init', () => {
 
         teachParser(rawLine) {
             alert(rawLine);
-        },
-
-        requestDownload(result) {
-            api.requestDownload({
-                server_id: this.activeServer,
-                bot_nick: result.bot_nick || result.nick,
-                pack_number: result.pack_number || result.pack,
-            }).catch(e => console.error('download request error', e));
         },
 
         // --- Downloads ---

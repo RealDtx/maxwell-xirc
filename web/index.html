@@ -130,19 +130,19 @@
                                         <tr>
                                             <th @click="sortBy('pack_number')" x-text="'Pack #' + sortIndicator('pack_number')"></th>
                                             <th @click="sortBy('filename')" x-text="'Filename' + sortIndicator('filename')"></th>
-                                            <th @click="sortBy('size_bytes')" x-text="'Size' + sortIndicator('size_bytes')"></th>
+                                            <th @click="sortBy('filesize')" x-text="'Size' + sortIndicator('filesize')"></th>
                                             <th @click="sortBy('bot_nick')" x-text="'Bot' + sortIndicator('bot_nick')"></th>
-                                            <th @click="sortBy('download_count')" x-text="'Downloads' + sortIndicator('download_count')"></th>
+                                            <th @click="sortBy('downloads_count')" x-text="'Downloads' + sortIndicator('downloads_count')"></th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <template x-for="(r, i) in sortedResults()" :key="i">
-                                            <tr :class="{ unparsed: r.unparsed }">
+                                            <tr :class="{ unparsed: !r.parsed }">
                                                 <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
                                                 <td>
                                                     <span x-text="r.filename || r.raw_line || '-'"></span>
-                                                    <template x-if="r.unparsed">
+                                                    <template x-if="!r.parsed">
                                                         <a
                                                             href="#"
                                                             style="margin-left:8px; font-size:11px; color:var(--warning);"
@@ -150,13 +150,14 @@
                                                         >teach parser</a>
                                                     </template>
                                                 </td>
-                                                <td x-text="r.size_bytes ? formatSize(r.size_bytes) : '-'"></td>
+                                                <td x-text="r.filesize || '-'"></td>
                                                 <td x-text="r.bot_nick || '-'"></td>
-                                                <td x-text="r.download_count != null ? r.download_count : '-'"></td>
+                                                <td x-text="r.downloads_count != null ? r.downloads_count : '-'"></td>
                                                 <td>
                                                     <button
                                                         class="btn btn-primary btn-sm"
                                                         @click="downloadPack(r)"
+                                                        :disabled="!r.parsed"
                                                     >Download</button>
                                                 </td>
                                             </tr>
