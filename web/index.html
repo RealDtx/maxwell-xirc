@@ -220,58 +220,86 @@
                     <span>Downloads</span>
                     <button class="btn btn-sm" style="margin-left:auto" @click="loadDownloads()">Refresh</button>
                 </div>
-                <div class="content-body">
-                    <template x-if="downloads.length > 0">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Filename</th>
-                                    <th>Status</th>
-                                    <th>Progress</th>
-                                    <th>Size</th>
-                                    <th>Speed</th>
-                                    <th>ETA</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template x-for="dl in downloads" :key="dl.id">
+                <div class="content-body" style="display:flex; flex-direction:column; gap:0; overflow:hidden;">
+                    <!-- Filter tabs -->
+                    <div class="tabs">
+                        <div class="tab" :class="{ active: downloadFilter === 'all' }" @click="downloadFilter = 'all'">All</div>
+                        <div class="tab" :class="{ active: downloadFilter === 'queued' }" @click="downloadFilter = 'queued'">Queued</div>
+                        <div class="tab" :class="{ active: downloadFilter === 'downloading' }" @click="downloadFilter = 'downloading'">Downloading</div>
+                        <div class="tab" :class="{ active: downloadFilter === 'completed' }" @click="downloadFilter = 'completed'">Completed</div>
+                        <div class="tab" :class="{ active: downloadFilter === 'failed' }" @click="downloadFilter = 'failed'">Failed</div>
+                    </div>
+                    <!-- Downloads table -->
+                    <div style="overflow-y:auto; flex:1;">
+                        <template x-if="filteredDownloads().length > 0">
+                            <table>
+                                <thead>
                                     <tr>
-                                        <td x-text="dl.filename || dl.file_name || '-'"></td>
-                                        <td>
-                                            <span
-                                                class="badge"
-                                                :class="'badge-' + dl.status"
-                                                x-text="dl.status"
-                                            ></span>
-                                        </td>
-                                        <td>
-                                            <div class="progress">
-                                                <div
-                                                    class="progress-fill"
-                                                    :style="'width:' + downloadProgress(dl) + '%'"
-                                                ></div>
-                                            </div>
-                                        </td>
-                                        <td x-text="dl.bytes_total ? formatSize(dl.bytes_total) : '-'"></td>
-                                        <td x-text="dl.speed ? formatSpeed(dl.speed) : '-'"></td>
-                                        <td x-text="(dl.bytes_total && dl.bytes_received && dl.speed) ? formatETA(dl.bytes_total - dl.bytes_received, dl.speed) : '-'"></td>
-                                        <td style="white-space:nowrap;">
-                                            <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
-                                                <button class="btn btn-danger btn-sm" @click="cancelDownload(dl.id)">Cancel</button>
-                                            </template>
-                                            <template x-if="dl.status === 'failed'">
-                                                <button class="btn btn-primary btn-sm" @click="retryDownload(dl.id)">Retry</button>
-                                            </template>
-                                        </td>
+                                        <th>Status</th>
+                                        <th>Filename</th>
+                                        <th>Bot</th>
+                                        <th>Size</th>
+                                        <th>Progress</th>
+                                        <th>Speed</th>
+                                        <th>ETA</th>
+                                        <th></th>
                                     </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </template>
-                    <template x-if="downloads.length === 0">
-                        <p style="color: var(--text-muted); font-size:13px;">No downloads.</p>
-                    </template>
+                                </thead>
+                                <tbody>
+                                    <template x-for="dl in filteredDownloads()" :key="dl.id">
+                                        <tr>
+                                            <td>
+                                                <span
+                                                    class="badge"
+                                                    :class="'badge-' + dl.status"
+                                                    x-text="dl.status"
+                                                ></span>
+                                            </td>
+                                            <td x-text="dl.filename || '-'"></td>
+                                            <td>
+                                                <span class="tooltip">
+                                                    <span x-text="dl.bot_nick || '-'"></span>
+                                                    <span class="tooltip-text" x-text="dl.filesize || '-'"></span>
+                                                </span>
+                                            </td>
+                                            <td x-text="dl.filesize || '-'"></td>
+                                            <td>
+                                                <template x-if="dl.status === 'downloading'">
+                                                    <div class="progress">
+                                                        <div
+                                                            class="progress-fill"
+                                                            :style="'width:' + downloadProgress(dl) + '%'"
+                                                        ></div>
+                                                    </div>
+                                                </template>
+                                                <template x-if="dl.status !== 'downloading'">
+                                                    <span x-text="dl.status === 'completed' ? '100%' : '-'"></span>
+                                                </template>
+                                            </td>
+                                            <td x-text="dl.status === 'downloading' && dl.speed ? formatSpeed(dl.speed) : '-'"></td>
+                                            <td x-text="dl.status==='downloading' ? formatETA(Math.max(0, dl.bytes_total - dl.bytes_received), dl.speed) : '-'"></td>
+                                            <td style="white-space:nowrap;">
+                                                <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
+                                                    <span>
+                                                        <button class="btn btn-danger btn-sm" @click="cancelDownload(dl.id)">Cancel</button>
+                                                        <template x-if="dl.status === 'queued'">
+                                                            <button class="btn btn-sm" style="margin-left:4px" @click="moveToFront(dl.id)">Move to front</button>
+                                                        </template>
+                                                    </span>
+                                                </template>
+                                                <template x-if="dl.status === 'failed' || dl.status === 'needs_action'">
+                                                    <button class="btn btn-primary btn-sm" @click="retryDownload(dl.id)">Retry</button>
+                                                </template>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </template>
+                        <template x-if="filteredDownloads().length === 0">
+                            <p style="color: var(--text-muted); font-size:13px; padding:16px 0;">No downloads.</p>
+                        </template>
+                    </div>
                 </div>
             </div>
         </template>
