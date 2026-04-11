@@ -12,6 +12,7 @@ import (
 	"github.com/maxwell-xirc/xirc/config"
 	"github.com/maxwell-xirc/xirc/db"
 	ircpkg "github.com/maxwell-xirc/xirc/irc"
+	"github.com/maxwell-xirc/xirc/notify"
 	"github.com/maxwell-xirc/xirc/parser"
 	"github.com/maxwell-xirc/xirc/queue"
 	"github.com/maxwell-xirc/xirc/routing"
@@ -53,6 +54,9 @@ func main() {
 	}
 
 	bus := ircpkg.NewEventBus()
+	browserNotifier := notify.NewBrowserNotifier(bus)
+	_ = browserNotifier // Used by engine for explicit notifications
+
 	ircMgr := ircpkg.NewManager(store, bus)
 
 	if err := ircMgr.LoadFromStore(); err != nil {
