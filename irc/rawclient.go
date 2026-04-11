@@ -255,6 +255,18 @@ func (c *RawClient) Privmsg(target, message string) {
 	c.send(conn, "PRIVMSG %s :%s", target, message)
 }
 
+func (c *RawClient) SendLine(line string) {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return
+	}
+	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	fmt.Fprintf(conn, "%s\r\n", line) //nolint:errcheck
+	conn.SetWriteDeadline(time.Time{}) // clear deadline
+}
+
 // ircPrefix holds parsed prefix info.
 type ircPrefix struct {
 	nick string

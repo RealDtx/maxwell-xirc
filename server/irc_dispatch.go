@@ -12,6 +12,8 @@ func (s *Server) handleIRCDispatch(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(path, "/messages"):
 		s.handleIRCMessages(w, r)
+	case strings.HasSuffix(path, "/names"):
+		s.handleIRCNames(w, r)
 	default:
 		http.NotFound(w, r)
 	}
