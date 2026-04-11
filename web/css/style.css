@@ -303,3 +303,77 @@ tr:hover { background: rgba(255,255,255,0.02); }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+
+/* Mobile hamburger button */
+.hamburger-btn {
+    display: none;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 50;
+    padding: 8px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    cursor: pointer;
+}
+.hamburger-btn svg { display: block; }
+
+/* Mobile overlay */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(0,0,0,0.5);
+}
+
+/* Mode toggle footer */
+.sidebar-mode-toggle {
+    border-top: 1px solid var(--border);
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+.sidebar-mode-toggle .mode-btns { display: flex; gap: 4px; }
+.sidebar-mode-toggle button {
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    background: transparent;
+    color: var(--text-muted);
+}
+.sidebar-mode-toggle button:hover { color: var(--text-primary); }
+.sidebar-mode-toggle button.active { background: var(--accent); color: #fff; }
+
+/* Responsive: mobile sidebar */
+@media (max-width: 767px) {
+    .hamburger-btn { display: block; }
+    .sidebar-overlay { display: block; }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        z-index: 40;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
+    }
+    .sidebar.open { transform: translateX(0); }
+
+    .main { margin-left: 0 !important; }
+}
+
+@media (min-width: 768px) {
+    .hamburger-btn { display: none; }
+    .sidebar-overlay { display: none !important; }
+    .sidebar { transform: translateX(0) !important; }
+    .main { margin-left: 0; }
+}
