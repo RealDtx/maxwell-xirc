@@ -85,6 +85,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/browse", s.handleBrowse)
 	s.mux.HandleFunc("/api/files", s.handleFiles)
 
+	// Stats endpoints
+	s.mux.HandleFunc("/api/stats/downloads", s.handleDownloadStats)
+	s.mux.HandleFunc("/api/stats/history", s.handleDownloadHistory)
+
 	// Errors endpoint
 	s.mux.HandleFunc("/api/errors", s.handleGetErrors)
 

@@ -529,3 +529,69 @@ func (s *SQLiteStore) DeleteFileRoutingRule(id int64) error {
 	_, err := s.db.Exec("DELETE FROM file_routing_rules WHERE id=?", id)
 	return err
 }
+
+// --- Download Stats ---
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func (s *SQLiteStore) CreateDownloadStat(stat *DownloadStat) error {
+	_, err := s.db.Exec(
+		`INSERT INTO download_stats (filename,size_bytes,server_id,channel,bot_nick,pack_number,started_at,completed_at,status,stats_only)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		stat.Filename, stat.SizeBytes, stat.ServerID, stat.Channel, stat.BotNick,
+		stat.PackNumber, stat.StartedAt, stat.CompletedAt, stat.Status, boolToInt(stat.StatsOnly),
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetDownloadStatsSummary() (*DownloadStatsSummary, error) {
+	row := s.db.QueryRow(`
+        SELECT
+            COUNT(*),
+            SUM(CASE WHEN status='completed' OR status='stats_only' THEN 1 ELSE 0 END),
+            COALESCE(SUM(size_bytes),0),
+            COALESCE(SUM(CASE WHEN stats_only=0 AND status='completed' THEN size_bytes ELSE 0 END),0)
+        FROM download_stats`)
+	var total, success int64
+	var totalBytes, totalSaved int64
+	if err := row.Scan(&total, &success, &totalBytes, &totalSaved); err != nil {
+		return nil, err
+	}
+	var rate float64
+	if total > 0 {
+		rate = float64(success) / float64(total) * 100
+	}
+	return &DownloadStatsSummary{
+		TotalTransfers: total,
+		SuccessRate:    rate,
+		TotalBytes:     totalBytes,
+		TotalSaved:     totalSaved,
+	}, nil
+}
+
+func (s *SQLiteStore) GetDownloadHistory(offset, limit int) ([]DownloadStat, error) {
+	rows, err := s.db.Query(
+		`SELECT id,filename,size_bytes,server_id,channel,bot_nick,pack_number,started_at,completed_at,status,stats_only
+         FROM download_stats ORDER BY id DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DownloadStat
+	for rows.Next() {
+		var d DownloadStat
+		var statsOnly int
+		if err := rows.Scan(&d.ID, &d.Filename, &d.SizeBytes, &d.ServerID, &d.Channel,
+			&d.BotNick, &d.PackNumber, &d.StartedAt, &d.CompletedAt, &d.Status, &statsOnly); err != nil {
+			return nil, err
+		}
+		d.StatsOnly = statsOnly == 1
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}

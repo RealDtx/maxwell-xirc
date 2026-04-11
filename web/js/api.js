@@ -92,4 +92,10 @@ const api = {
     // Browse & Files
     browseDir(path)  { return this.get('/browse?path=' + encodeURIComponent(path || '/')); },
     listFiles(dir)   { return this.get('/files?dir=' + encodeURIComponent(dir)); },
+
+    // Stats
+    getDownloadStats()                { return this.get('/stats/downloads'); },
+    getDownloadHistory(offset, limit) {
+        return this.get(`/stats/history?offset=${offset||0}&limit=${limit||50}`);
+    },
 };
