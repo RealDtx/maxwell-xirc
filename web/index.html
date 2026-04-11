@@ -28,7 +28,7 @@
 
     <!-- Sidebar -->
     <aside class="sidebar" :class="sidebarOpen ? 'open' : ''">
-        <div class="sidebar-header">xirc</div>
+        <div class="sidebar-header" @click="setView('home')" style="cursor:pointer;">xirc</div>
 
         <div class="server-tree" x-show="appMode === 'advanced'">
             <template x-for="server in servers" :key="server.id">
@@ -65,6 +65,10 @@
 
         <!-- Bottom nav -->
         <nav class="sidebar-nav">
+            <a
+                :class="{ active: activeView === 'channel' }"
+                @click="activeView = 'channel'; sidebarOpen = false"
+            >Channels</a>
             <a
                 :class="{ active: activeView === 'downloads' }"
                 @click="setView('downloads'); sidebarOpen = false"
@@ -641,6 +645,68 @@
                             <p style="color:var(--text-muted); font-size:13px;">General settings coming soon.</p>
                         </div>
                     </template>
+
+                </div>
+            </div>
+        </template>
+
+
+        <!-- Home / Dashboard view -->
+        <template x-if="activeView === 'home'">
+            <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <div class="content-header">
+                    <span>Overview</span>
+                </div>
+                <div class="content-body" style="overflow-y:auto; flex:1;">
+
+                    <!-- Server status cards -->
+                    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-bottom:24px;">
+                        <template x-for="srv in servers" :key="srv.id">
+                            <div style="background:var(--bg-secondary); border-radius:6px; padding:16px; cursor:pointer;"
+                                 @click="selectServer(srv)">
+                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                                    <span style="font-weight:500;" x-text="srv.name"></span>
+                                    <span class="badge"
+                                          :class="'badge-' + serverStatus(srv.id)"
+                                          x-text="serverStatus(srv.id)"></span>
+                                </div>
+                                <div style="font-size:12px; color:var(--text-muted); display:flex; flex-direction:column; gap:4px;">
+                                    <template x-if="ircStatus[srv.id] && ircStatus[srv.id].connected_at">
+                                        <div x-text="'Connected since: ' + formatTime(ircStatus[srv.id].connected_at)"></div>
+                                    </template>
+                                    <div x-text="'Reconnects: ' + (ircStatus[srv.id] ? ircStatus[srv.id].reconnect_count || 0 : 0)"></div>
+                                    <template x-if="ircStatus[srv.id] && ircStatus[srv.id].lag_ms">
+                                        <div x-text="'Lag: ' + ircStatus[srv.id].lag_ms + 'ms'"></div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Error overview -->
+                    <div style="background:var(--bg-secondary); border-radius:6px; padding:16px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                            <span style="font-weight:500;">
+                                Recent Errors
+                                <span x-show="unreadErrors > 0"
+                                      style="margin-left:8px; background:var(--danger); color:#fff; font-size:11px; border-radius:9999px; padding:1px 6px;"
+                                      x-text="unreadErrors"></span>
+                            </span>
+                            <button @click="clearErrors()" class="btn btn-sm">Clear all</button>
+                        </div>
+                        <div x-show="errors.length === 0" style="color:var(--text-muted); font-size:13px;">No recent errors.</div>
+                        <div style="display:flex; flex-direction:column; gap:8px; max-height:256px; overflow-y:auto;">
+                            <template x-for="(err, idx) in errors.slice(0,20)" :key="idx">
+                                <div style="display:flex; align-items:flex-start; gap:8px; font-size:13px; background:var(--bg-input); border-radius:4px; padding:8px;">
+                                    <span style="color:var(--danger); flex-shrink:0;">&#9888;</span>
+                                    <div style="flex:1; min-width:0;">
+                                        <div style="color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="err.message"></div>
+                                        <div style="font-size:11px; color:var(--text-muted);" x-text="err.timestamp"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
 
                 </div>
             </div>
