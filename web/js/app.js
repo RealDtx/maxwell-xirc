@@ -13,11 +13,28 @@ document.addEventListener('alpine:init', () => {
         searchSort: { col: 'pack_number', dir: 'asc' },
         searchToken: 0,
         downloads: [],
+        downloadFilter: 'all',
         ircMessages: {},
         ircInput: '',
         showIrcConsole: false,
         ws: null,
         wsRetryTimer: null,
+
+        // Settings state
+        settingsTab: 'servers',
+        settingsServers: [],
+        settingsChannels: [],
+        settingsServerId: null,
+        routingRules: [],
+        hooks: [],
+        serverForm: { id: null, name: '', host: '', port: 6667, nick: '', password: '', tls: false },
+        channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', auto_join: false },
+        routingForm: { id: null, pattern: '', destination_path: '', priority: 0 },
+        hookForm: { id: null, event_type: 'download_complete', command: '', enabled: true },
+        showServerForm: false,
+        showChannelForm: false,
+        showRoutingForm: false,
+        showHookForm: false,
 
         // --- Computed helpers ---
 
@@ -39,6 +56,9 @@ document.addEventListener('alpine:init', () => {
 
         setView(view) {
             this.activeView = view;
+            if (view === 'settings') {
+                this.loadSettingsData();
+            }
         },
 
         selectChannel(serverId, channelName) {
@@ -174,6 +194,12 @@ document.addEventListener('alpine:init', () => {
 
         // --- Downloads ---
 
+        filteredDownloads() {
+            if (this.downloadFilter === 'all') return this.downloads;
+            if (this.downloadFilter === 'failed') return this.downloads.filter(d => d.status === 'failed' || d.status === 'needs_action');
+            return this.downloads.filter(d => d.status === this.downloadFilter);
+        },
+
         async loadDownloads() {
             try {
                 const res = await api.getDownloads();
@@ -189,6 +215,10 @@ document.addEventListener('alpine:init', () => {
 
         retryDownload(id) {
             api.retryDownload(id).then(() => this.loadDownloads()).catch(console.error);
+        },
+
+        moveToFront(id) {
+            api.moveDownload(id).then(() => this.loadDownloads()).catch(console.error);
         },
 
         downloadProgress(dl) {
@@ -279,6 +309,109 @@ document.addEventListener('alpine:init', () => {
             } else if (type === 'irc_disconnected') {
                 this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: 'disconnected' });
             }
+        },
+
+        // --- Settings ---
+
+        loadSettingsData() {
+            return Promise.all([
+                api.getServers().then(r => { this.settingsServers = r.servers || []; }),
+                api.getRoutingRules().then(r => { this.routingRules = Array.isArray(r) ? r : []; }),
+                api.getHooks().then(r => { this.hooks = Array.isArray(r) ? r : []; }),
+            ]);
+        },
+
+        loadSettingsChannels(serverId) {
+            this.settingsServerId = serverId;
+            return api.getChannels(serverId).then(r => { this.settingsChannels = r.channels || []; });
+        },
+
+        openServerForm(server) {
+            this.serverForm = server
+                ? Object.assign({}, server)
+                : { id: null, name: '', host: '', port: 6667, nick: '', password: '', tls: false };
+            this.showServerForm = true;
+        },
+
+        saveServer() {
+            const p = this.serverForm.id
+                ? api.updateServer(this.serverForm.id, this.serverForm)
+                : api.createServer(this.serverForm);
+            return p.then(() => {
+                this.showServerForm = false;
+                return this.loadSettingsData();
+            });
+        },
+
+        deleteServer(id) {
+            if (!confirm('Delete server?')) return;
+            return api.deleteServer(id).then(() => this.loadSettingsData());
+        },
+
+        openChannelForm(channel) {
+            this.channelForm = channel
+                ? Object.assign({}, channel)
+                : { id: null, server_id: this.settingsServerId, name: '', search_command: '', download_channel: '', auto_join: false };
+            this.showChannelForm = true;
+        },
+
+        saveChannel() {
+            const p = this.channelForm.id
+                ? api.updateChannel(this.channelForm.id, this.channelForm)
+                : api.createChannel(this.channelForm);
+            return p.then(() => {
+                this.showChannelForm = false;
+                return this.loadSettingsChannels(this.settingsServerId);
+            });
+        },
+
+        deleteChannel(id) {
+            if (!confirm('Delete channel?')) return;
+            return api.deleteChannel(id).then(() => this.loadSettingsChannels(this.settingsServerId));
+        },
+
+        openRoutingForm(rule) {
+            this.routingForm = rule
+                ? Object.assign({}, rule)
+                : { id: null, pattern: '', destination_path: '', priority: 0 };
+            this.showRoutingForm = true;
+        },
+
+        saveRoutingRule() {
+            const p = this.routingForm.id
+                ? api.updateRoutingRule(this.routingForm.id, this.routingForm)
+                : api.createRoutingRule(this.routingForm);
+            return p.then(() => {
+                this.showRoutingForm = false;
+                return this.loadSettingsData();
+            });
+        },
+
+        deleteRoutingRule(id) {
+            if (!confirm('Delete routing rule?')) return;
+            return api.deleteRoutingRule(id).then(() => this.loadSettingsData());
+        },
+
+        openHookForm(hook) {
+            this.hookForm = hook
+                ? Object.assign({}, hook)
+                : { id: null, event_type: 'download_complete', command: '', enabled: true };
+            this.showHookForm = true;
+        },
+
+        saveHook() {
+            const p = this.hookForm.id
+                ? api.updateHook(this.hookForm.id, this.hookForm)
+                : api.createHook(this.hookForm);
+            return p.then(() => {
+                this.showHookForm = false;
+                return this.loadSettingsData();
+            });
+        },
+
+        deleteHook(id) {
+            if (!confirm('Delete hook?')) return;
+            return api.deleteHook(id).then(() => this.loadSettingsData());
         },
 
         // --- Init ---
