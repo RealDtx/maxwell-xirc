@@ -1,0 +1,25 @@
+[Unit]
+Description=xirc - XDCC IRC Web Client
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xirc
+Group=xirc
+WorkingDirectory=/opt/xirc
+ExecStart=/opt/xirc/xirc --config /opt/xirc/config.yaml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/xirc/data /srv/dlna/media /srv/downloads
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
