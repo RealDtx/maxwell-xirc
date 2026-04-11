@@ -310,8 +310,304 @@
                 <div class="content-header">
                     <span>Settings</span>
                 </div>
-                <div class="content-body">
-                    <p style="color: var(--text-muted); font-size:13px;">Settings will be implemented in a later task.</p>
+                <div class="content-body" style="overflow-y:auto; flex:1;">
+
+                    <!-- Settings tab bar -->
+                    <div class="tabs">
+                        <div class="tab" :class="{ active: settingsTab === 'servers' }" @click="settingsTab = 'servers'">Servers</div>
+                        <div class="tab" :class="{ active: settingsTab === 'channels' }" @click="settingsTab = 'channels'">Channels</div>
+                        <div class="tab" :class="{ active: settingsTab === 'routing' }" @click="settingsTab = 'routing'">File Routing</div>
+                        <div class="tab" :class="{ active: settingsTab === 'hooks' }" @click="settingsTab = 'hooks'">Post-Hooks</div>
+                        <div class="tab" :class="{ active: settingsTab === 'general' }" @click="settingsTab = 'general'">General</div>
+                    </div>
+
+                    <!-- Servers tab -->
+                    <template x-if="settingsTab === 'servers'">
+                        <div style="padding-top:16px;">
+                            <button class="btn btn-primary btn-sm" @click="openServerForm(null)">Add Server</button>
+
+                            <template x-if="settingsServers.length > 0">
+                                <table style="margin-top:12px;">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Host</th>
+                                            <th>Port</th>
+                                            <th>Nick</th>
+                                            <th>TLS</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="s in settingsServers" :key="s.id">
+                                            <tr>
+                                                <td x-text="s.name"></td>
+                                                <td x-text="s.host"></td>
+                                                <td x-text="s.port"></td>
+                                                <td x-text="s.nick"></td>
+                                                <td x-text="s.tls ? 'Yes' : 'No'"></td>
+                                                <td style="white-space:nowrap;">
+                                                    <button class="btn btn-sm" @click="openServerForm(s)">Edit</button>
+                                                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteServer(s.id)">Delete</button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </template>
+                            <template x-if="settingsServers.length === 0">
+                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No servers configured.</p>
+                            </template>
+
+                            <!-- Server inline form -->
+                            <template x-if="showServerForm">
+                                <div style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px;">
+                                    <h3 style="margin:0 0 16px;" x-text="serverForm.id ? 'Edit Server' : 'Add Server'"></h3>
+                                    <div class="form-group">
+                                        <label>Name</label>
+                                        <input type="text" x-model="serverForm.name" placeholder="e.g. IRCNet">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Host</label>
+                                        <input type="text" x-model="serverForm.host" placeholder="irc.example.net">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Port</label>
+                                        <input type="number" x-model.number="serverForm.port" min="1" max="65535">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Nick</label>
+                                        <input type="text" x-model="serverForm.nick" placeholder="mynick">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Password</label>
+                                        <input type="password" x-model="serverForm.password" placeholder="(optional)">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>TLS</label>
+                                        <label class="toggle">
+                                            <input type="checkbox" x-model="serverForm.tls">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="margin-top:12px; display:flex; gap:8px;">
+                                        <button class="btn btn-primary btn-sm" @click="saveServer()">Save</button>
+                                        <button class="btn btn-sm" @click="showServerForm = false">Cancel</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Channels tab -->
+                    <template x-if="settingsTab === 'channels'">
+                        <div style="padding-top:16px;">
+                            <div class="form-group" style="max-width:320px;">
+                                <label>Server</label>
+                                <select @change="loadSettingsChannels(parseInt($event.target.value))" style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px; width:100%;">
+                                    <option value="">Select a server…</option>
+                                    <template x-for="s in settingsServers" :key="s.id">
+                                        <option :value="s.id" :selected="settingsServerId === s.id" x-text="s.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+
+                            <button class="btn btn-primary btn-sm" :disabled="!settingsServerId" @click="openChannelForm(null)">Add Channel</button>
+
+                            <template x-if="settingsServerId && settingsChannels.length > 0">
+                                <table style="margin-top:12px;">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Search Command</th>
+                                            <th>Download Channel</th>
+                                            <th>Auto-join</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="ch in settingsChannels" :key="ch.id">
+                                            <tr>
+                                                <td x-text="ch.name"></td>
+                                                <td x-text="ch.search_command || '-'"></td>
+                                                <td x-text="ch.download_channel || '-'"></td>
+                                                <td x-text="ch.auto_join ? 'Yes' : 'No'"></td>
+                                                <td style="white-space:nowrap;">
+                                                    <button class="btn btn-sm" @click="openChannelForm(ch)">Edit</button>
+                                                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteChannel(ch.id)">Delete</button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </template>
+                            <template x-if="settingsServerId && settingsChannels.length === 0">
+                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No channels configured for this server.</p>
+                            </template>
+
+                            <!-- Channel inline form -->
+                            <template x-if="showChannelForm">
+                                <div style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px;">
+                                    <h3 style="margin:0 0 16px;" x-text="channelForm.id ? 'Edit Channel' : 'Add Channel'"></h3>
+                                    <div class="form-group">
+                                        <label>Name</label>
+                                        <input type="text" x-model="channelForm.name" placeholder="#channel">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Search Command</label>
+                                        <input type="text" x-model="channelForm.search_command" placeholder="!search">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Download Channel</label>
+                                        <input type="text" x-model="channelForm.download_channel" placeholder="#download-channel">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Auto-join</label>
+                                        <label class="toggle">
+                                            <input type="checkbox" x-model="channelForm.auto_join">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="margin-top:12px; display:flex; gap:8px;">
+                                        <button class="btn btn-primary btn-sm" @click="saveChannel()">Save</button>
+                                        <button class="btn btn-sm" @click="showChannelForm = false">Cancel</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- File Routing tab -->
+                    <template x-if="settingsTab === 'routing'">
+                        <div style="padding-top:16px;">
+                            <button class="btn btn-primary btn-sm" @click="openRoutingForm(null)">Add Rule</button>
+
+                            <template x-if="routingRules.length > 0">
+                                <table style="margin-top:12px;">
+                                    <thead>
+                                        <tr>
+                                            <th>Pattern</th>
+                                            <th>Destination</th>
+                                            <th>Priority</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="r in routingRules" :key="r.id">
+                                            <tr>
+                                                <td x-text="r.pattern"></td>
+                                                <td x-text="r.destination_path"></td>
+                                                <td x-text="r.priority"></td>
+                                                <td style="white-space:nowrap;">
+                                                    <button class="btn btn-sm" @click="openRoutingForm(r)">Edit</button>
+                                                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteRoutingRule(r.id)">Delete</button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </template>
+                            <template x-if="routingRules.length === 0">
+                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No routing rules configured.</p>
+                            </template>
+
+                            <!-- Routing inline form -->
+                            <template x-if="showRoutingForm">
+                                <div style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px;">
+                                    <h3 style="margin:0 0 16px;" x-text="routingForm.id ? 'Edit Rule' : 'Add Rule'"></h3>
+                                    <div class="form-group">
+                                        <label>Pattern</label>
+                                        <input type="text" x-model="routingForm.pattern" placeholder="*.mkv">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Destination Path</label>
+                                        <input type="text" x-model="routingForm.destination_path" placeholder="/mnt/media/video">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Priority</label>
+                                        <input type="number" x-model.number="routingForm.priority">
+                                    </div>
+                                    <div style="margin-top:12px; display:flex; gap:8px;">
+                                        <button class="btn btn-primary btn-sm" @click="saveRoutingRule()">Save</button>
+                                        <button class="btn btn-sm" @click="showRoutingForm = false">Cancel</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Post-Hooks tab -->
+                    <template x-if="settingsTab === 'hooks'">
+                        <div style="padding-top:16px;">
+                            <button class="btn btn-primary btn-sm" @click="openHookForm(null)">Add Hook</button>
+
+                            <template x-if="hooks.length > 0">
+                                <table style="margin-top:12px;">
+                                    <thead>
+                                        <tr>
+                                            <th>Event</th>
+                                            <th>Command</th>
+                                            <th>Enabled</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="h in hooks" :key="h.id">
+                                            <tr>
+                                                <td x-text="h.event_type"></td>
+                                                <td x-text="h.command"></td>
+                                                <td x-text="h.enabled ? 'Yes' : 'No'"></td>
+                                                <td style="white-space:nowrap;">
+                                                    <button class="btn btn-sm" @click="openHookForm(h)">Edit</button>
+                                                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteHook(h.id)">Delete</button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </template>
+                            <template x-if="hooks.length === 0">
+                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No hooks configured.</p>
+                            </template>
+
+                            <!-- Hook inline form -->
+                            <template x-if="showHookForm">
+                                <div style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px;">
+                                    <h3 style="margin:0 0 16px;" x-text="hookForm.id ? 'Edit Hook' : 'Add Hook'"></h3>
+                                    <div class="form-group">
+                                        <label>Event Type</label>
+                                        <select x-model="hookForm.event_type" style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
+                                            <option value="download_complete">download_complete</option>
+                                            <option value="download_failed">download_failed</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Command</label>
+                                        <input type="text" x-model="hookForm.command" placeholder="/usr/local/bin/notify.sh">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Enabled</label>
+                                        <label class="toggle">
+                                            <input type="checkbox" x-model="hookForm.enabled">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div style="margin-top:12px; display:flex; gap:8px;">
+                                        <button class="btn btn-primary btn-sm" @click="saveHook()">Save</button>
+                                        <button class="btn btn-sm" @click="showHookForm = false">Cancel</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- General tab -->
+                    <template x-if="settingsTab === 'general'">
+                        <div style="padding-top:16px;">
+                            <p style="color:var(--text-muted); font-size:13px;">General settings coming soon.</p>
+                        </div>
+                    </template>
+
                 </div>
             </div>
         </template>
