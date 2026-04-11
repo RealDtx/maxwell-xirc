@@ -103,6 +103,10 @@ func main() {
 	msgBuf.Start()
 	defer msgBuf.Stop()
 
+	errBuf := ircpkg.NewErrorBuffer(bus, 200)
+	errBuf.Start()
+	defer errBuf.Stop()
+
 	ircMgr := ircpkg.NewManager(store, bus)
 
 	if err := ircMgr.LoadFromStore(); err != nil {
@@ -120,7 +124,7 @@ func main() {
 
 	ircMgr.ConnectAutoConnect()
 
-	srv := server.New(store, ircMgr, p, eng, hub, msgBuf)
+	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{

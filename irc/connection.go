@@ -224,6 +224,16 @@ func (c *Connection) connectLoop() {
 			attempt++
 
 			log.Printf("[%s] connection failed: %v, retrying in %ds", c.server.Name, err, delay)
+			c.bus.Publish(Event{
+				Type:     EventError,
+				ServerID: c.server.ID,
+				Data: ErrorEvent{
+					ErrorType: "irc_disconnect",
+					ServerID:  c.server.ID,
+					Message:   fmt.Sprintf("[%s] connection failed: %v", c.server.Name, err),
+					Timestamp: time.Now().Format(time.RFC3339),
+				},
+			})
 			c.setStatus(StatusDisconnected)
 
 			select {
