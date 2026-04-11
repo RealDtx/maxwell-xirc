@@ -13,18 +13,31 @@
 <body x-data="appStore">
 <div class="app">
 
+    <!-- Mobile hamburger -->
+    <button class="hamburger-btn"
+            @click="sidebarOpen = !sidebarOpen">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+    </button>
+    <!-- Mobile overlay -->
+    <div class="sidebar-overlay"
+         x-show="sidebarOpen"
+         @click="sidebarOpen = false"></div>
+
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" :class="sidebarOpen ? 'open' : ''">
         <div class="sidebar-header">xirc</div>
 
-        <div class="server-tree">
+        <div class="server-tree" x-show="appMode === 'advanced'">
             <template x-for="server in servers" :key="server.id">
                 <div>
                     <!-- Server row -->
                     <div
                         class="server-item"
                         :class="{ active: activeServer === server.id && activeView === 'channel' }"
-                        @click="toggleServer(server.id)"
+                        @click="toggleServer(server.id); sidebarOpen = false"
                     >
                         <span
                             class="status-dot"
@@ -40,7 +53,7 @@
                                 <div
                                     class="channel-item"
                                     :class="{ active: activeServer === server.id && activeChannel === ch && activeView === 'channel' }"
-                                    @click="selectChannel(server.id, ch)"
+                                    @click="selectChannel(server.id, ch); sidebarOpen = false"
                                     x-text="ch"
                                 ></div>
                             </template>
@@ -54,11 +67,12 @@
         <nav class="sidebar-nav">
             <a
                 :class="{ active: activeView === 'downloads' }"
-                @click="setView('downloads')"
+                @click="setView('downloads'); sidebarOpen = false"
             >Downloads</a>
             <a
+                x-show="appMode === 'advanced'"
                 :class="{ active: activeView === 'settings' }"
-                @click="setView('settings')"
+                @click="setView('settings'); sidebarOpen = false"
             >Settings</a>
         </nav>
 
@@ -67,6 +81,17 @@
             <div class="disk-label">Disk</div>
             <div class="disk-bar">
                 <div class="disk-bar-fill ok" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Mode toggle -->
+        <div class="sidebar-mode-toggle">
+            <span>Mode:</span>
+            <div class="mode-btns">
+                <button @click="setMode('simple')"
+                        :class="appMode === 'simple' ? 'active' : ''">Simple</button>
+                <button @click="setMode('advanced')"
+                        :class="appMode === 'advanced' ? 'active' : ''">Advanced</button>
             </div>
         </div>
     </aside>
