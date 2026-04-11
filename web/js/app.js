@@ -36,6 +36,50 @@ document.addEventListener('alpine:init', () => {
         showRoutingForm: false,
         showHookForm: false,
 
+        // Mode
+        appMode: localStorage.getItem('xirc_mode') || 'simple',
+
+        // Active server (for server view)
+        activeServerObj: null,
+
+        // Server view
+        serverMessages: {},  // keyed by server_id, value: [{timestamp,nick,text,msg_type}]
+        serverMsgLoading: {},
+
+        // Channel view
+        _channelLayout: {},   // NOTE: underscore prefix to avoid collision with channelLayout() method
+        activeChannelTab: {},
+        userLists: {},
+        userListLoading: {},
+        selectedUser: null,
+
+        // Dir picker
+        dirPickerOpen: false,
+        dirPickerPath: '/',
+        dirPickerEntries: [],
+        dirPickerCallback: null,
+
+        // File manager
+        fileManagerDir: null,
+        fileManagerFiles: [],
+        fileManagerLoading: false,
+
+        // Errors
+        errors: [],
+        unreadErrors: 0,
+
+        // Stats
+        statsSummary: null,
+        statsHistory: [],
+        statsHistoryOffset: 0,
+        statsLoading: false,
+
+        // Sidebar mobile
+        sidebarOpen: false,
+
+        // Stats-only setting
+        statsOnlyDefault: false,
+
         // --- Computed helpers ---
 
         serverStatus(serverId) {
@@ -77,6 +121,90 @@ document.addEventListener('alpine:init', () => {
 
         isExpanded(serverId) {
             return !!this.expandedServers[serverId];
+        },
+
+        setMode(mode) {
+            this.appMode = mode;
+            localStorage.setItem('xirc_mode', mode);
+        },
+
+        // --- Server view ---
+
+        async selectServer(server) {
+            this.activeServerObj = server;
+            this.activeServer = server.id;
+            this.activeChannel = null;
+            this.activeView = 'server';
+            await this.loadServerMessages(server.id);
+        },
+
+        async loadServerMessages(serverId) {
+            this.serverMsgLoading[serverId] = true;
+            try {
+                const msgs = await api.getIRCMessages(serverId, '', null, 200);
+                this.serverMessages[serverId] = Array.isArray(msgs) ? msgs : [];
+            } catch(e) {
+                console.error('loadServerMessages', e);
+            } finally {
+                this.serverMsgLoading[serverId] = false;
+            }
+        },
+
+        async loadMoreServerMessages(serverId) {
+            const existing = this.serverMessages[serverId] || [];
+            if (existing.length === 0) return;
+            const oldest = existing[0].timestamp;
+            try {
+                const msgs = await api.getIRCMessages(serverId, '', oldest, 200);
+                if (msgs && msgs.length > 0) {
+                    this.serverMessages[serverId] = msgs.concat(existing);
+                }
+            } catch(e) {
+                console.error('loadMoreServerMessages', e);
+            }
+        },
+
+        // --- Channel layout ---
+
+        channelLayout(key) {
+            return this._channelLayout[key] || 'single';
+        },
+        setChannelLayout(key, layout) {
+            this._channelLayout = Object.assign({}, this._channelLayout, {[key]: layout});
+            localStorage.setItem('xirc_layout_' + key, layout);
+        },
+        activeTab(key) {
+            return this.activeChannelTab[key] || 'search';
+        },
+        setActiveTab(key, tab) {
+            this.activeChannelTab = Object.assign({}, this.activeChannelTab, {[key]: tab});
+        },
+
+        // --- User list ---
+
+        async loadUserList(serverId, channel) {
+            const key = this.channelKey(serverId, channel);
+            this.userListLoading[key] = true;
+            try {
+                const res = await api.getIRCNames(serverId, channel);
+                this.userLists[key] = res && res.nicks ? res.nicks : [];
+            } catch(e) {
+                console.error('loadUserList', e);
+            } finally {
+                this.userListLoading[key] = false;
+            }
+        },
+
+        selectUser(nick) {
+            this.selectedUser = this.selectedUser === nick ? null : nick;
+        },
+
+        isUserSelected(nick) {
+            return this.selectedUser === nick;
+        },
+
+        userHighlightClass(nick) {
+            return this.selectedUser && nick === this.selectedUser ? 'bg-yellow-100 font-bold' : '';
         },
 
         // --- IRC actions ---
@@ -297,6 +425,20 @@ document.addEventListener('alpine:init', () => {
                         if (el) el.scrollTop = el.scrollHeight;
                     });
                 }
+                // Buffer server-level messages (no channel)
+                if (data.channel === '' || data.channel === null) {
+                    if (!this.serverMessages[data.server_id]) {
+                        this.serverMessages[data.server_id] = [];
+                    }
+                    this.serverMessages[data.server_id].push({
+                        nick: data.nick,
+                        message: data.message || (data.data && data.data.message) || '',
+                        timestamp: data.timestamp,
+                    });
+                    if (this.serverMessages[data.server_id].length > 500) {
+                        this.serverMessages[data.server_id].splice(0, this.serverMessages[data.server_id].length - 500);
+                    }
+                }
             } else if (type === 'download_progress') {
                 const p = data.data;
                 const dl = this.downloads.find(d => d.id === p.download_id);
@@ -312,7 +454,109 @@ document.addEventListener('alpine:init', () => {
             } else if (type === 'connection_status') {
                 const status = data.data;  // "connected" / "disconnected" / "connecting"
                 this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: status });
+            } else if (type === 'error_event') {
+                this.errors.unshift(data.data || data);
+                if (this.errors.length > 200) this.errors.pop();
+                this.unreadErrors++;
             }
+        },
+
+        // --- Dir picker ---
+
+        async openDirPicker(currentPath, callback) {
+            this.dirPickerCallback = callback;
+            this.dirPickerOpen = true;
+            await this.browseDir(currentPath || '/');
+        },
+
+        async browseDir(path) {
+            try {
+                const res = await api.browseDir(path);
+                this.dirPickerPath = res.path;
+                this.dirPickerEntries = res.entries || [];
+            } catch(e) {
+                console.error('browseDir', e);
+            }
+        },
+
+        async browseDirUp() {
+            const parent = this.dirPickerPath.split('/').slice(0, -1).join('/') || '/';
+            await this.browseDir(parent);
+        },
+
+        selectDir() {
+            if (this.dirPickerCallback) {
+                this.dirPickerCallback(this.dirPickerPath);
+            }
+            this.dirPickerOpen = false;
+            this.dirPickerCallback = null;
+        },
+
+        cancelDirPicker() {
+            this.dirPickerOpen = false;
+            this.dirPickerCallback = null;
+        },
+
+        // --- File manager ---
+
+        async loadFileManager(dir) {
+            this.fileManagerDir = dir;
+            this.fileManagerLoading = true;
+            try {
+                const res = await api.listFiles(dir);
+                this.fileManagerFiles = res && res.files ? res.files : [];
+            } catch(e) {
+                console.error('loadFileManager', e);
+            } finally {
+                this.fileManagerLoading = false;
+            }
+        },
+
+        // --- Stats ---
+
+        async loadStats() {
+            this.statsLoading = true;
+            try {
+                const [summary, history] = await Promise.all([
+                    api.getDownloadStats(),
+                    api.getDownloadHistory(0, 50),
+                ]);
+                this.statsSummary = summary;
+                this.statsHistory = Array.isArray(history) ? history : [];
+                this.statsHistoryOffset = 50;
+            } catch(e) {
+                console.error('loadStats', e);
+            } finally {
+                this.statsLoading = false;
+            }
+        },
+
+        async loadMoreHistory() {
+            try {
+                const more = await api.getDownloadHistory(this.statsHistoryOffset, 50);
+                if (more && more.length > 0) {
+                    this.statsHistory = this.statsHistory.concat(more);
+                    this.statsHistoryOffset += more.length;
+                }
+            } catch(e) {
+                console.error('loadMoreHistory', e);
+            }
+        },
+
+        // --- Errors ---
+
+        async loadErrors() {
+            try {
+                const errs = await api.getErrors(100);
+                this.errors = Array.isArray(errs) ? errs : [];
+            } catch(e) {
+                console.error('loadErrors', e);
+            }
+        },
+
+        clearErrors() {
+            this.errors = [];
+            this.unreadErrors = 0;
         },
 
         // --- Settings ---
@@ -421,6 +665,16 @@ document.addEventListener('alpine:init', () => {
         // --- Init ---
 
         async init() {
+            // Restore layout prefs from localStorage
+            this._channelLayout = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith('xirc_layout_')) {
+                    this._channelLayout[k.slice('xirc_layout_'.length)] = localStorage.getItem(k);
+                }
+            }
+            this.statsOnlyDefault = localStorage.getItem('xirc_stats_only') === 'true';
+
             // Load servers
             try {
                 const res = await api.getServers();
@@ -457,6 +711,9 @@ document.addEventListener('alpine:init', () => {
 
             // Load saved searches
             await this.loadSavedSearches();
+
+            // Load errors
+            await this.loadErrors();
 
             // Start WebSocket
             this.wsConnect();
