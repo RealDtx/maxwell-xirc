@@ -405,28 +405,29 @@ document.addEventListener('alpine:init', () => {
             const type = data.type;
 
             if (type === 'irc_message') {
-                const key = this.channelKey(data.server_id, data.channel);
-                if (!this.ircMessages[key]) {
-                    this.ircMessages[key] = [];
-                }
-                this.ircMessages[key].push({
-                    nick: data.nick,
-                    message: data.message,
-                    timestamp: data.timestamp,
-                });
-                // Keep buffer bounded
-                if (this.ircMessages[key].length > 500) {
-                    this.ircMessages[key].splice(0, this.ircMessages[key].length - 500);
-                }
-                // Auto-scroll if this message is for the active channel
-                if (data.server_id === this.activeServer && data.channel === this.activeChannel) {
-                    this.$nextTick(() => {
-                        const el = this.$refs && this.$refs.ircLog;
-                        if (el) el.scrollTop = el.scrollHeight;
+                if (data.channel && data.channel !== '') {
+                    const key = this.channelKey(data.server_id, data.channel);
+                    if (!this.ircMessages[key]) {
+                        this.ircMessages[key] = [];
+                    }
+                    this.ircMessages[key].push({
+                        nick: data.nick,
+                        message: data.message,
+                        timestamp: data.timestamp,
                     });
-                }
-                // Buffer server-level messages (no channel)
-                if (data.channel === '' || data.channel === null) {
+                    // Keep buffer bounded
+                    if (this.ircMessages[key].length > 500) {
+                        this.ircMessages[key].splice(0, this.ircMessages[key].length - 500);
+                    }
+                    // Auto-scroll if this message is for the active channel
+                    if (data.server_id === this.activeServer && data.channel === this.activeChannel) {
+                        this.$nextTick(() => {
+                            const el = this.$refs && this.$refs.ircLog;
+                            if (el) el.scrollTop = el.scrollHeight;
+                        });
+                    }
+                } else {
+                    // Server-level message (no channel): buffer in serverMessages only
                     if (!this.serverMessages[data.server_id]) {
                         this.serverMessages[data.server_id] = [];
                     }
