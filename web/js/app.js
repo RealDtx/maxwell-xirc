@@ -69,6 +69,8 @@ document.addEventListener('alpine:init', () => {
             this.searchResults = [];
             try {
                 await api.startSearch(this.activeServer, this.activeChannel, this.searchQuery);
+                // TODO(Task 5): startSearch triggers async bot replies over IRC.
+                // getSearchResults here returns immediate DB results only — Task 5 will add polling/streaming.
                 const res = await api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
                 this.searchResults = res.results || [];
             } catch (e) {
@@ -182,13 +184,9 @@ document.addEventListener('alpine:init', () => {
             } else if (type === 'download_failed') {
                 this.loadDownloads();
             } else if (type === 'irc_connected') {
-                if (this.ircStatus[data.server_id]) {
-                    this.ircStatus[data.server_id].status = 'connected';
-                }
+                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: 'connected' });
             } else if (type === 'irc_disconnected') {
-                if (this.ircStatus[data.server_id]) {
-                    this.ircStatus[data.server_id].status = 'disconnected';
-                }
+                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: 'disconnected' });
             }
         },
 
