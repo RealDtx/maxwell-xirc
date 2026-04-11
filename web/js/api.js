@@ -49,6 +49,9 @@ const api = {
         if (limit)  q += `&limit=${limit}`;
         return this.get(q);
     },
+    getIRCNames(serverId, channel) {
+        return this.get(`/irc/${serverId}/names?channel=${encodeURIComponent(channel)}`);
+    },
 
     // Search
     startSearch(serverId, channel, query) {
