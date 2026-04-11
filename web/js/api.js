@@ -43,6 +43,12 @@ const api = {
     disconnectServer(serverId)        { return this.post('/irc/disconnect', { server_id: serverId }); },
     sendMessage(serverId, target, msg){ return this.post('/irc/message', { server_id: serverId, target, message: msg }); },
     sendRaw(serverId, cmd)            { return this.post('/irc/raw', { server_id: serverId, command: cmd }); },
+    getIRCMessages(serverId, channel, before, limit) {
+        let q = `/irc/${serverId}/messages?channel=${encodeURIComponent(channel)}`;
+        if (before) q += `&before=${encodeURIComponent(before)}`;
+        if (limit)  q += `&limit=${limit}`;
+        return this.get(q);
+    },
 
     // Search
     startSearch(serverId, channel, query) {
