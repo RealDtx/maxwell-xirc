@@ -79,17 +79,30 @@
             <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
                 <div class="content-header">
                     <span x-text="activeChannel || 'Select a channel'"></span>
-                    <template x-if="activeChannel">
-                        <button
-                            class="btn btn-sm"
-                            style="margin-left:auto"
-                            @click="showIrcConsole = !showIrcConsole"
-                            x-text="showIrcConsole ? 'Hide Console' : 'Show Console'"
-                        ></button>
-                    </template>
                 </div>
 
-                <div class="content-body" style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;">
+                <!-- Tab bar (only shown when a channel is selected) -->
+                <template x-if="activeChannel">
+                    <div class="tabs">
+                        <div
+                            class="tab"
+                            :class="{ active: !showIrcConsole }"
+                            @click="showIrcConsole = false"
+                        >Search Results</div>
+                        <div
+                            class="tab"
+                            :class="{ active: showIrcConsole }"
+                            @click="showIrcConsole = true"
+                        >IRC Console</div>
+                    </div>
+                </template>
+
+                <!-- Search results panel -->
+                <div
+                    class="content-body"
+                    style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;"
+                    x-show="!showIrcConsole"
+                >
                     <!-- Search bar -->
                     <template x-if="activeChannel">
                         <div>
@@ -177,28 +190,26 @@
                     </template>
                 </div>
 
-                <!-- IRC console (toggled) -->
-                <template x-if="showIrcConsole && activeChannel">
-                    <div class="irc-console" style="height:220px; flex-shrink:0; border-top:1px solid var(--border);">
-                        <div class="irc-messages" id="irc-messages-box">
-                            <template x-for="(msg, i) in activeMessages()" :key="i">
-                                <div class="irc-message">
-                                    <span class="time" x-text="formatTime(msg.timestamp)"></span>
-                                    <span class="nick" x-text="'<' + msg.nick + '>'"></span>
-                                    <span x-text="' ' + msg.message"></span>
-                                </div>
-                            </template>
-                        </div>
-                        <div class="irc-input">
-                            <input
-                                type="text"
-                                placeholder="Send message..."
-                                x-model="ircInput"
-                                @keydown.enter="sendMessage()"
-                            >
-                        </div>
+                <!-- IRC console panel -->
+                <div class="irc-console" x-show="showIrcConsole">
+                    <div class="irc-messages" x-ref="ircLog">
+                        <template x-for="(msg, i) in currentChannelMessages()" :key="i">
+                            <div class="irc-message">
+                                <span class="time" x-text="formatTime(msg.timestamp)"></span>
+                                <span class="nick" x-text="msg.nick + ':'"></span>
+                                <span x-text="msg.message"></span>
+                            </div>
+                        </template>
                     </div>
-                </template>
+                    <div class="irc-input">
+                        <input
+                            type="text"
+                            placeholder="Type a message or /command..."
+                            x-model="ircInput"
+                            @keydown.enter="sendIrc()"
+                        >
+                    </div>
+                </div>
             </div>
         </template>
 
