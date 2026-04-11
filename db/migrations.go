@@ -1,6 +1,9 @@
 package db
 
-import "database/sql"
+import (
+	"database/sql"
+	"strings"
+)
 
 func migrationStatements() []string {
 	return []string{
@@ -110,12 +113,32 @@ func migrationStatements() []string {
 			builtin INTEGER NOT NULL DEFAULT 0,
 			enabled INTEGER NOT NULL DEFAULT 1
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS download_stats (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename     TEXT NOT NULL,
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    server_id    INTEGER NOT NULL DEFAULT 0,
+    channel      TEXT NOT NULL DEFAULT '',
+    bot_nick     TEXT NOT NULL DEFAULT '',
+    pack_number  INTEGER NOT NULL DEFAULT 0,
+    started_at   DATETIME,
+    completed_at DATETIME,
+    status       TEXT NOT NULL DEFAULT 'completed',
+    stats_only   INTEGER NOT NULL DEFAULT 0
+)`,
+
+		`ALTER TABLE downloads ADD COLUMN stats_only INTEGER NOT NULL DEFAULT 0`,
 	}
 }
 
 func runMigrations(db *sql.DB) error {
 	for _, stmt := range migrationStatements() {
 		if _, err := db.Exec(stmt); err != nil {
+			msg := err.Error()
+			if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "Duplicate column") {
+				continue
+			}
 			return err
 		}
 	}

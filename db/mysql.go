@@ -122,6 +122,22 @@ func mysqlMigrationStatements() []string {
 			builtin BOOLEAN NOT NULL DEFAULT FALSE,
 			enabled BOOLEAN NOT NULL DEFAULT TRUE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS download_stats (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    filename     VARCHAR(500) NOT NULL,
+    size_bytes   BIGINT NOT NULL DEFAULT 0,
+    server_id    BIGINT NOT NULL DEFAULT 0,
+    channel      VARCHAR(255) NOT NULL DEFAULT '',
+    bot_nick     VARCHAR(255) NOT NULL DEFAULT '',
+    pack_number  INT NOT NULL DEFAULT 0,
+    started_at   DATETIME,
+    completed_at DATETIME,
+    status       VARCHAR(50) NOT NULL DEFAULT 'completed',
+    stats_only   BOOLEAN NOT NULL DEFAULT FALSE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`ALTER TABLE downloads ADD COLUMN stats_only BOOLEAN NOT NULL DEFAULT FALSE`,
 	}
 }
 
@@ -154,6 +170,10 @@ func (s *MySQLStore) Close() error {
 func (s *MySQLStore) Migrate() error {
 	for _, stmt := range mysqlMigrationStatements() {
 		if _, err := s.db.Exec(stmt); err != nil {
+			msg := err.Error()
+			if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "Duplicate column") {
+				continue
+			}
 			return fmt.Errorf("migration failed: %w\nSQL: %s", err, stmt)
 		}
 	}
@@ -649,4 +669,63 @@ func (s *MySQLStore) UpdateFileRoutingRule(r *FileRoutingRule) error {
 func (s *MySQLStore) DeleteFileRoutingRule(id int64) error {
 	_, err := s.db.Exec("DELETE FROM file_routing_rules WHERE id=?", id)
 	return err
+}
+
+// --- Download Stats ---
+
+func (s *MySQLStore) CreateDownloadStat(stat *DownloadStat) error {
+	_, err := s.db.Exec(
+		`INSERT INTO download_stats (filename,size_bytes,server_id,channel,bot_nick,pack_number,started_at,completed_at,status,stats_only)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		stat.Filename, stat.SizeBytes, stat.ServerID, stat.Channel, stat.BotNick,
+		stat.PackNumber, stat.StartedAt, stat.CompletedAt, stat.Status, boolToInt(stat.StatsOnly),
+	)
+	return err
+}
+
+func (s *MySQLStore) GetDownloadStatsSummary() (*DownloadStatsSummary, error) {
+	row := s.db.QueryRow(`
+        SELECT
+            COUNT(*),
+            SUM(CASE WHEN status='completed' OR status='stats_only' THEN 1 ELSE 0 END),
+            COALESCE(SUM(size_bytes),0),
+            COALESCE(SUM(CASE WHEN stats_only=0 AND status='completed' THEN size_bytes ELSE 0 END),0)
+        FROM download_stats`)
+	var total, success int64
+	var totalBytes, totalSaved int64
+	if err := row.Scan(&total, &success, &totalBytes, &totalSaved); err != nil {
+		return nil, err
+	}
+	var rate float64
+	if total > 0 {
+		rate = float64(success) / float64(total) * 100
+	}
+	return &DownloadStatsSummary{
+		TotalTransfers: total,
+		SuccessRate:    rate,
+		TotalBytes:     totalBytes,
+		TotalSaved:     totalSaved,
+	}, nil
+}
+
+func (s *MySQLStore) GetDownloadHistory(offset, limit int) ([]DownloadStat, error) {
+	rows, err := s.db.Query(
+		`SELECT id,filename,size_bytes,server_id,channel,bot_nick,pack_number,started_at,completed_at,status,stats_only
+         FROM download_stats ORDER BY id DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DownloadStat
+	for rows.Next() {
+		var d DownloadStat
+		var statsOnly int
+		if err := rows.Scan(&d.ID, &d.Filename, &d.SizeBytes, &d.ServerID, &d.Channel,
+			&d.BotNick, &d.PackNumber, &d.StartedAt, &d.CompletedAt, &d.Status, &statsOnly); err != nil {
+			return nil, err
+		}
+		d.StatsOnly = statsOnly == 1
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }

@@ -2,6 +2,27 @@ package db
 
 import "time"
 
+type DownloadStat struct {
+	ID          int64      `json:"id"`
+	Filename    string     `json:"filename"`
+	SizeBytes   int64      `json:"size_bytes"`
+	ServerID    int64      `json:"server_id"`
+	Channel     string     `json:"channel"`
+	BotNick     string     `json:"bot_nick"`
+	PackNumber  int        `json:"pack_number"`
+	StartedAt   *time.Time `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+	Status      string     `json:"status"` // "completed", "failed", "cancelled", "stats_only"
+	StatsOnly   bool       `json:"stats_only"`
+}
+
+type DownloadStatsSummary struct {
+	TotalTransfers int64   `json:"total_transfers"`
+	SuccessRate    float64 `json:"success_rate"`
+	TotalBytes     int64   `json:"total_bytes"`
+	TotalSaved     int64   `json:"total_saved"` // bytes kept on disk (not stats_only)
+}
+
 type Server struct {
 	ID           int64     `json:"id"`
 	Name         string    `json:"name"`
@@ -46,6 +67,7 @@ type Download struct {
 	StartedAt       *time.Time `json:"started_at"`
 	CompletedAt     *time.Time `json:"completed_at"`
 	CreatedAt       time.Time  `json:"created_at"`
+	StatsOnly       bool       `json:"stats_only"`
 }
 
 type SearchResult struct {
