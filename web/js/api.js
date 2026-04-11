@@ -71,6 +71,11 @@ const api = {
     retryDownload(id)     { return this.post('/downloads/retry', { download_id: id }); },
     moveDownload(id)      { return this.post('/downloads/move', { download_id: id }); },
 
+    // Errors
+    getErrors(limit) {
+        return this.get('/errors' + (limit ? '?limit=' + limit : ''));
+    },
+
     // Routing & Hooks
     getRoutingRules()            { return this.get('/routing/rules'); },
     createRoutingRule(r)         { return this.post('/routing/rules', r); },

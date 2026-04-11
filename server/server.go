@@ -18,10 +18,11 @@ type Server struct {
 	engine *queue.Engine
 	wsHub  *ws.Hub
 	msgBuf *ircpkg.MessageBuffer
+	errBuf *ircpkg.ErrorBuffer
 	mux    *http.ServeMux
 }
 
-func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer) *Server {
+func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer) *Server {
 	s := &Server{
 		store:  store,
 		ircMgr: ircMgr,
@@ -29,6 +30,7 @@ func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.En
 		engine: eng,
 		wsHub:  hub,
 		msgBuf: msgBuf,
+		errBuf: errBuf,
 		mux:    http.NewServeMux(),
 	}
 	s.routes()
@@ -78,6 +80,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/servers/", s.handleServerByID)
 	s.mux.HandleFunc("/api/channels", s.handleChannels)
 	s.mux.HandleFunc("/api/channels/", s.handleChannelByID)
+
+	// Errors endpoint
+	s.mux.HandleFunc("/api/errors", s.handleGetErrors)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
