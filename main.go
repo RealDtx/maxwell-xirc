@@ -99,6 +99,10 @@ func main() {
 	browserNotifier := notify.NewBrowserNotifier(bus)
 	_ = browserNotifier // Used by engine for explicit notifications
 
+	msgBuf := ircpkg.NewMessageBuffer(bus, 1000)
+	msgBuf.Start()
+	defer msgBuf.Stop()
+
 	ircMgr := ircpkg.NewManager(store, bus)
 
 	if err := ircMgr.LoadFromStore(); err != nil {
@@ -116,7 +120,7 @@ func main() {
 
 	ircMgr.ConnectAutoConnect()
 
-	srv := server.New(store, ircMgr, p, eng, hub)
+	srv := server.New(store, ircMgr, p, eng, hub, msgBuf)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{

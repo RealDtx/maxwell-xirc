@@ -36,7 +36,7 @@ func newTestServerWithStore(t *testing.T) (*Server, db.Store, func()) {
 	ircMgr := irc.NewManager(store, bus)
 	p := parser.New(store, bus)
 
-	srv := New(store, ircMgr, p, nil, nil)
+	srv := New(store, ircMgr, p, nil, nil, nil)
 	return srv, store, cleanup
 }
 

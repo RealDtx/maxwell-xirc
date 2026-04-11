@@ -12,7 +12,7 @@ import (
 
 func TestGetIRCStatus(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil)
 
 	req := httptest.NewRequest("GET", "/api/irc/status", nil)
 	w := httptest.NewRecorder()
@@ -30,7 +30,7 @@ func TestGetIRCStatus(t *testing.T) {
 
 func TestPostIRCConnect_NoServer(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil)
 
 	req := httptest.NewRequest("POST", "/api/irc/connect", strings.NewReader(`{"server_id": 999}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -45,7 +45,7 @@ func TestPostIRCConnect_NoServer(t *testing.T) {
 
 func TestPostIRCSendMessage_NoServer(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil)
 
 	body := `{"server_id": 999, "target": "#test", "message": "hello"}`
 	req := httptest.NewRequest("POST", "/api/irc/message", strings.NewReader(body))
