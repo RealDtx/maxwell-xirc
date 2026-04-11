@@ -20,6 +20,8 @@ import (
 	wsPkg "github.com/maxwell-xirc/xirc/ws"
 )
 
+var version = "dev"
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	flag.Parse()
