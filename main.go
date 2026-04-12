@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/maxwell-xirc/xirc/config"
@@ -65,6 +67,71 @@ func checkDirectories(store db.Store) []string {
 	return bad
 }
 
+// isTerminal reports whether stdin is an interactive terminal.
+func isTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+// runCLIWizard presents the directory wizard on the terminal (or silently applies
+// defaults when stdin is not a terminal). It updates config.yaml and the DB,
+// then returns.
+func runCLIWizard(badDirs []string, store db.Store, state *server.SetupState) {
+	rules, err := store.GetAllFileRoutingRules()
+	if err != nil {
+		log.Printf("warning: could not load rules for wizard: %v", err)
+		rules = nil
+	}
+	suggestions := server.DefaultSuggestions(badDirs, rules, state.HomeDir)
+
+	var mappings []server.Mapping
+
+	if isTerminal() {
+		fmt.Fprintf(os.Stderr, "\nxirc: the following destination directories do not exist:\n\n")
+		for _, dir := range badDirs {
+			patterns := server.PatternsForDir(rules, dir)
+			fmt.Fprintf(os.Stderr, "  %s\n    → used by: %s\n", dir, strings.Join(patterns, " "))
+		}
+		fmt.Fprintf(os.Stderr, "\nEnter replacement paths (press Enter to accept suggestion):\n\n")
+
+		reader := bufio.NewReader(os.Stdin)
+		for _, dir := range badDirs {
+			sug := suggestions[dir]
+			fmt.Fprintf(os.Stderr, "  %s  [%s]: ", dir, sug)
+			line, _ := reader.ReadString('\n')
+			line = strings.TrimSpace(line)
+			if line == "" {
+				line = sug
+			}
+			mappings = append(mappings, server.Mapping{OldDir: dir, NewDir: line})
+		}
+
+		fmt.Fprintf(os.Stderr, "\nApply? [Y/n]: ")
+		confirm, _ := reader.ReadString('\n')
+		if strings.ToLower(strings.TrimSpace(confirm)) == "n" {
+			// User declined — reset to pure defaults
+			mappings = mappings[:0]
+			for _, dir := range badDirs {
+				mappings = append(mappings, server.Mapping{OldDir: dir, NewDir: suggestions[dir]})
+			}
+		}
+	} else {
+		// Non-interactive: apply defaults silently
+		for _, dir := range badDirs {
+			sug := suggestions[dir]
+			log.Printf("startup: applying default path %s → %s", dir, sug)
+			mappings = append(mappings, server.Mapping{OldDir: dir, NewDir: sug})
+		}
+	}
+
+	if err := server.ApplyMappings(mappings, store, state); err != nil {
+		log.Printf("warning: wizard failed to apply mappings: %v", err)
+	}
+}
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	flag.Parse()
@@ -89,8 +156,30 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "."
+		log.Printf("warning: could not determine home dir: %v", err)
+	}
+
 	badDirs := checkDirectories(store)
-	_ = badDirs
+
+	setupState := &server.SetupState{
+		Required:     len(badDirs) > 0,
+		BadDirs:      badDirs,
+		MediaDir:     cfg.Storage.MediaDir,
+		DownloadsDir: cfg.Storage.DownloadsDir,
+		HomeDir:      homeDir,
+		ConfigPath:   *configPath,
+	}
+
+	if len(badDirs) > 0 {
+		if isTerminal() {
+			runCLIWizard(badDirs, store, setupState)
+			setupState.Required = false // CLI path fixes dirs in-place; no web wizard needed
+		}
+		// Non-TTY: setupState.Required stays true; web wizard will handle it
+	}
 
 	// Seed default parse patterns
 	if err := parser.SeedPatterns(store); err != nil {
@@ -130,7 +219,7 @@ func main() {
 
 	ircMgr.ConnectAutoConnect()
 
-	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, nil)
+	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{
