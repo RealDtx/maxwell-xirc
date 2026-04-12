@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -206,5 +207,40 @@ func TestHandleRawLine_DoesNotPublishServerPrefixedPongLine(t *testing.T) {
 		t.Errorf("expected no event for server-prefixed PONG line, got %+v", ev)
 	case <-time.After(100 * time.Millisecond):
 		// correct: nothing published
+	}
+}
+
+func TestConnection_UpdateChannels_ThreadSafe(t *testing.T) {
+	bus := NewEventBus()
+	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "testbot", Enabled: true}
+	conn := NewConnection(srv, []db.Channel{
+		{ID: 1, ServerID: 1, Name: "#search", AutoJoin: true, Enabled: true},
+	}, bus)
+
+	newChannels := []db.Channel{
+		{ID: 2, ServerID: 1, Name: "#downloads", AutoJoin: true, Enabled: true},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			_ = conn.AllChannelNames()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			conn.UpdateChannels(newChannels)
+		}
+	}()
+
+	wg.Wait()
+
+	if len(conn.AllChannelNames()) == 0 {
+		t.Fatal("expected channel names after concurrent update/read")
 	}
 }

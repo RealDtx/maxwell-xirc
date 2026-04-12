@@ -131,21 +131,9 @@ func (m *Manager) GetStatuses() []ServerStatus {
 }
 
 func (m *Manager) ReloadServer(serverID int64) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Disconnect existing if present
-	if existing, ok := m.connections[serverID]; ok {
-		existing.Disconnect()
-		delete(m.connections, serverID)
-	}
-
 	srv, err := m.store.GetServer(serverID)
 	if err != nil {
 		return fmt.Errorf("loading server %d: %w", serverID, err)
-	}
-	if !srv.Enabled {
-		return nil
 	}
 
 	channels, err := m.store.GetChannels(serverID)
@@ -153,8 +141,43 @@ func (m *Manager) ReloadServer(serverID int64) error {
 		return fmt.Errorf("loading channels for server %d: %w", serverID, err)
 	}
 
+	m.mu.Lock()
+	var wasActive bool
+	if existing, ok := m.connections[serverID]; ok {
+		wasActive = existing.Status() != StatusDisconnected
+		existing.Disconnect()
+		delete(m.connections, serverID)
+	}
+	if !srv.Enabled {
+		m.mu.Unlock()
+		return nil
+	}
 	conn := NewConnection(srv, channels, m.bus)
 	m.connections[serverID] = conn
+	m.mu.Unlock()
+
+	if wasActive {
+		return conn.Connect()
+	}
+	return nil
+}
+
+// ReloadChannels refreshes the channel list for a server without
+// disconnecting the IRC connection. Use this for channel CRUD operations
+// when the server's connection settings haven't changed.
+func (m *Manager) ReloadChannels(serverID int64) error {
+	channels, err := m.store.GetChannels(serverID)
+	if err != nil {
+		return fmt.Errorf("loading channels for server %d: %w", serverID, err)
+	}
+
+	m.mu.RLock()
+	conn, ok := m.connections[serverID]
+	m.mu.RUnlock()
+
+	if ok {
+		conn.UpdateChannels(channels)
+	}
 	return nil
 }
 

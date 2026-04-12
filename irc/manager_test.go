@@ -120,6 +120,196 @@ func TestManager_GetStatus(t *testing.T) {
 	}
 }
 
+func TestManager_ReloadChannels_UpdatesChannelList(t *testing.T) {
+	store := &mockStore{
+		servers: []db.Server{
+			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
+		},
+		channels: map[int64][]db.Channel{
+			1: {{ID: 1, ServerID: 1, Name: "#orig", AutoJoin: true, Enabled: true}},
+		},
+	}
+
+	bus := NewEventBus()
+	mgr := NewManager(store, bus)
+	if err := mgr.LoadFromStore(); err != nil {
+		t.Fatalf("LoadFromStore: %v", err)
+	}
+
+	// Add a second channel to the store, then reload.
+	store.channels[1] = append(store.channels[1], db.Channel{ID: 2, ServerID: 1, Name: "#new", AutoJoin: true, Enabled: true})
+
+	if err := mgr.ReloadChannels(1); err != nil {
+		t.Fatalf("ReloadChannels: %v", err)
+	}
+
+	conn := mgr.GetConnection(1)
+	if conn == nil {
+		t.Fatal("expected connection")
+	}
+	names := conn.AllChannelNames()
+	found := map[string]bool{}
+	for _, n := range names {
+		found[n] = true
+	}
+	if !found["#orig"] || !found["#new"] {
+		t.Errorf("expected both channels after reload, got %v", names)
+	}
+}
+
+func TestManager_ReloadChannels_NoopForUnknownServer(t *testing.T) {
+	store := &mockStore{
+		servers:  []db.Server{},
+		channels: map[int64][]db.Channel{},
+	}
+
+	bus := NewEventBus()
+	mgr := NewManager(store, bus)
+
+	// Server 99 has no connection; ReloadChannels should not error.
+	if err := mgr.ReloadChannels(99); err != nil {
+		t.Fatalf("expected no error for unknown server, got %v", err)
+	}
+}
+
+func TestManager_ReloadChannels_DoesNotDisconnect(t *testing.T) {
+	store := &mockStore{
+		servers: []db.Server{
+			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
+		},
+		channels: map[int64][]db.Channel{
+			1: {{ID: 1, ServerID: 1, Name: "#test", AutoJoin: true, Enabled: true}},
+		},
+	}
+
+	bus := NewEventBus()
+	mgr := NewManager(store, bus)
+	if err := mgr.LoadFromStore(); err != nil {
+		t.Fatalf("LoadFromStore: %v", err)
+	}
+
+	conn := mgr.GetConnection(1)
+	conn.mu.Lock()
+	conn.status = StatusConnected
+	conn.mu.Unlock()
+
+	if err := mgr.ReloadChannels(1); err != nil {
+		t.Fatalf("ReloadChannels: %v", err)
+	}
+
+	// Connection must still be the same object and still connected.
+	if mgr.GetConnection(1) != conn {
+		t.Error("ReloadChannels replaced the connection; it should not have")
+	}
+	if conn.Status() != StatusConnected {
+		t.Errorf("expected still connected after ReloadChannels, got %s", conn.Status())
+	}
+}
+
+func TestManager_ReloadServer_DoesNotConnectIfWasDisconnected(t *testing.T) {
+	store := &mockStore{
+		servers: []db.Server{
+			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
+		},
+		channels: map[int64][]db.Channel{
+			1: {{ID: 1, ServerID: 1, Name: "#test", AutoJoin: true, Enabled: true}},
+		},
+	}
+
+	bus := NewEventBus()
+	mgr := NewManager(store, bus)
+	if err := mgr.LoadFromStore(); err != nil {
+		t.Fatalf("LoadFromStore: %v", err)
+	}
+
+	if err := mgr.ReloadServer(1); err != nil {
+		t.Fatalf("ReloadServer: %v", err)
+	}
+
+	conn := mgr.GetConnection(1)
+	if conn == nil {
+		t.Fatal("expected connection after reload")
+	}
+	if conn.Status() != StatusDisconnected {
+		t.Errorf("expected disconnected after reload of disconnected server, got %s", conn.Status())
+	}
+}
+
+func TestManager_ReloadServer_ReconnectsIfWasConnected(t *testing.T) {
+	store := &mockStore{
+		servers: []db.Server{
+			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
+		},
+		channels: map[int64][]db.Channel{
+			1: {{ID: 1, ServerID: 1, Name: "#test", AutoJoin: true, Enabled: true}},
+		},
+	}
+
+	bus := NewEventBus()
+	mgr := NewManager(store, bus)
+	if err := mgr.LoadFromStore(); err != nil {
+		t.Fatalf("LoadFromStore: %v", err)
+	}
+
+	// Simulate the connection being active (connected).
+	orig := mgr.GetConnection(1)
+	orig.mu.Lock()
+	orig.status = StatusConnected
+	orig.mu.Unlock()
+
+	if err := mgr.ReloadServer(1); err != nil {
+		t.Fatalf("ReloadServer: %v", err)
+	}
+
+	newConn := mgr.GetConnection(1)
+	if newConn == nil {
+		t.Fatal("expected new connection after reload")
+	}
+	if newConn == orig {
+		t.Fatal("expected a new connection object, got the same one")
+	}
+	// Connect() sets StatusConnecting synchronously before launching the goroutine.
+	if newConn.Status() != StatusConnecting {
+		t.Errorf("expected connecting after reload of active server, got %s", newConn.Status())
+	}
+
+	// Clean up: stop the connect loop.
+	newConn.Disconnect()
+}
+
+func TestManager_ReloadServer_ReconnectsIfWasConnecting(t *testing.T) {
+	store := &mockStore{
+		servers: []db.Server{
+			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
+		},
+		channels: map[int64][]db.Channel{
+			1: {},
+		},
+	}
+
+	bus := NewEventBus()
+	mgr := NewManager(store, bus)
+	if err := mgr.LoadFromStore(); err != nil {
+		t.Fatalf("LoadFromStore: %v", err)
+	}
+
+	orig := mgr.GetConnection(1)
+	orig.mu.Lock()
+	orig.status = StatusConnecting
+	orig.mu.Unlock()
+
+	if err := mgr.ReloadServer(1); err != nil {
+		t.Fatalf("ReloadServer: %v", err)
+	}
+
+	newConn := mgr.GetConnection(1)
+	if newConn.Status() != StatusConnecting {
+		t.Errorf("expected connecting after reload of connecting server, got %s", newConn.Status())
+	}
+
+	newConn.Disconnect()
+}
+
 func TestManager_GetConnection(t *testing.T) {
 	store := &mockStore{
 		servers: []db.Server{

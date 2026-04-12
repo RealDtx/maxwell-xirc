@@ -3,8 +3,8 @@ package irc
 import (
 	"fmt"
 	"log"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/maxwell-xirc/xirc/db"
@@ -124,6 +124,9 @@ func (c *Connection) setStatus(s ConnectionStatus) {
 }
 
 func (c *Connection) ChannelPairs() []ChannelPair {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	var pairs []ChannelPair
 	for _, ch := range c.channels {
 		if !ch.Enabled {
@@ -167,6 +170,39 @@ func (c *Connection) Connect() error {
 	return nil
 }
 
+// UpdateChannels replaces the channel list and, if currently connected,
+// joins any enabled+autojoin channels that are not already being tracked.
+// IRC JOIN is idempotent so rejoining an existing channel is harmless.
+func (c *Connection) UpdateChannels(channels []db.Channel) {
+	c.mu.Lock()
+	old := c.channels
+	c.channels = channels
+	status := c.status
+	client := c.client
+	c.mu.Unlock()
+
+	if status != StatusConnected || client == nil {
+		return
+	}
+
+	oldNames := make(map[string]bool, len(old))
+	for _, ch := range old {
+		oldNames[ch.Name] = true
+	}
+
+	for _, ch := range channels {
+		if !ch.Enabled || !ch.AutoJoin {
+			continue
+		}
+		if !oldNames[ch.Name] {
+			client.Join(ch.Name, ch.Key)
+		}
+		if ch.DownloadChannel != "" && ch.DownloadChannel != ch.Name && !oldNames[ch.DownloadChannel] {
+			client.Join(ch.DownloadChannel, "")
+		}
+	}
+}
+
 // applyHandlers wires all event handlers onto a freshly-created IRCClient.
 // It must be called before the client's Connect() is invoked.
 func (c *Connection) applyHandlers(client IRCClient) {
@@ -193,7 +229,12 @@ func (c *Connection) applyHandlers(client IRCClient) {
 		go c.pingLoop(client, done)
 
 		// Auto-join channels
-		for _, ch := range c.channels {
+		c.mu.RLock()
+		channels := make([]db.Channel, len(c.channels))
+		copy(channels, c.channels)
+		c.mu.RUnlock()
+
+		for _, ch := range channels {
 			if !ch.Enabled || !ch.AutoJoin {
 				continue
 			}

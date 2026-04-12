@@ -3,17 +3,36 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/maxwell-xirc/xirc/db"
 	"github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/parser"
 )
+
+type applyMappingsMockStore struct {
+	db.Store
+	rules     []db.FileRoutingRule
+	updateErr error
+}
+
+func (m *applyMappingsMockStore) GetAllFileRoutingRules() ([]db.FileRoutingRule, error) {
+	return append([]db.FileRoutingRule(nil), m.rules...), nil
+}
+
+func (m *applyMappingsMockStore) UpdateFileRoutingRule(r *db.FileRoutingRule) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	return nil
+}
 
 func newTestServerWithSetup(t *testing.T, setup *SetupState) (*Server, db.Store, func()) {
 	t.Helper()
@@ -160,5 +179,61 @@ func TestSetupComplete_UpdatesRoutingRules(t *testing.T) {
 		if r.DestinationDir == "/old/media" || r.DestinationDir == "/old/dl" {
 			t.Errorf("rule %q still points to old dir %q", r.Pattern, r.DestinationDir)
 		}
+	}
+}
+
+func TestApplyMappings_DBErrorRollsBackConfig(t *testing.T) {
+	dir, err := ioutil.TempDir("", "xirc-apply-mappings-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	cfgFile, err := ioutil.TempFile(dir, "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := cfgFile.Name()
+	original := "storage:\n  media_dir: /old/media\n  downloads_dir: /old/dl\n"
+	if _, err := cfgFile.Write([]byte(original)); err != nil {
+		cfgFile.Close()
+		t.Fatal(err)
+	}
+	if err := cfgFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state := &SetupState{
+		Required:     true,
+		MediaDir:     "/old/media",
+		DownloadsDir: "/old/dl",
+		ConfigPath:   cfgPath,
+	}
+
+	store := &applyMappingsMockStore{
+		rules: []db.FileRoutingRule{
+			{ID: 1, Pattern: "*.mkv", DestinationDir: "/old/media", Enabled: true},
+		},
+		updateErr: errors.New("update failed"),
+	}
+
+	err = ApplyMappings([]Mapping{
+		{OldDir: "/old/media", NewDir: "/new/media"},
+		{OldDir: "/old/dl", NewDir: "/new/dl"},
+	}, store, state)
+	if err == nil {
+		t.Fatal("expected ApplyMappings to return an error")
+	}
+
+	data, err := ioutil.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "media_dir: /old/media") {
+		t.Fatalf("expected rolled back media_dir in config, got:\n%s", got)
+	}
+	if !strings.Contains(got, "downloads_dir: /old/dl") {
+		t.Fatalf("expected rolled back downloads_dir in config, got:\n%s", got)
 	}
 }

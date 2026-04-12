@@ -168,7 +168,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.ircMgr != nil {
-		s.ircMgr.ReloadServer(ch.ServerID)
+		s.ircMgr.ReloadChannels(ch.ServerID)
 	}
 	writeJSON(w, http.StatusCreated, ch)
 }
@@ -196,7 +196,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.ircMgr != nil {
-		s.ircMgr.ReloadServer(ch.ServerID)
+		s.ircMgr.ReloadChannels(ch.ServerID)
 	}
 	writeJSON(w, http.StatusOK, ch)
 }
@@ -222,7 +222,7 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.ircMgr != nil {
-		s.ircMgr.ReloadServer(ch.ServerID)
+		s.ircMgr.ReloadChannels(ch.ServerID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

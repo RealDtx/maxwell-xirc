@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -67,8 +68,8 @@ func PatternsForDir(rules []db.FileRoutingRule, dir string) []string {
 	return out
 }
 
-// ApplyMappings updates routing rules in the DB and rewrites config.yaml.
-// Both writes succeed or neither is persisted (config write is atomic via rename).
+// ApplyMappings rewrites config.yaml and updates routing rules in the DB.
+// Config write is done first atomically; if DB updates fail, config is best-effort rolled back.
 func ApplyMappings(mappings []Mapping, store db.Store, state *SetupState) error {
 	rules, err := store.GetAllFileRoutingRules()
 	if err != nil {
@@ -87,23 +88,27 @@ func ApplyMappings(mappings []Mapping, store db.Store, state *SetupState) error 
 		}
 	}
 
-	// Update routing rules
 	oldToNew := make(map[string]string, len(mappings))
 	for _, m := range mappings {
 		oldToNew[m.OldDir] = m.NewDir
 	}
+
+	// Persist config first (atomic rename; nothing changes on failure).
+	if err := config.WriteStorageDirs(state.ConfigPath, newMediaDir, newDownloadsDir); err != nil {
+		return err
+	}
+
+	// Update routing rules; on failure, best-effort roll back config.
 	for i := range rules {
 		if newDir, ok := oldToNew[rules[i].DestinationDir]; ok {
 			rules[i].DestinationDir = newDir
-			if err := store.UpdateFileRoutingRule(&rules[i]); err != nil {
-				return err
+			if dbErr := store.UpdateFileRoutingRule(&rules[i]); dbErr != nil {
+				if rbErr := config.WriteStorageDirs(state.ConfigPath, state.MediaDir, state.DownloadsDir); rbErr != nil {
+					log.Printf("warning: config rollback failed after DB error: %v", rbErr)
+				}
+				return dbErr
 			}
 		}
-	}
-
-	// Persist config
-	if err := config.WriteStorageDirs(state.ConfigPath, newMediaDir, newDownloadsDir); err != nil {
-		return err
 	}
 
 	state.Complete()
