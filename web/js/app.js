@@ -747,12 +747,17 @@ document.addEventListener('alpine:init', () => {
                 const status = await api.getSetupStatus();
                 if (!status.required) return;
                 this.setupRequired = true;
-                const defaults = await api.getSetupDefaults();
-                this.setupMappings = (status.bad_dirs || []).map(dir => ({
-                    old_dir: dir,
-                    new_dir: dir.toLowerCase().includes('download') ? defaults.downloads_dir : defaults.videos_dir,
-                    suggestion: dir.toLowerCase().includes('download') ? defaults.downloads_dir : defaults.videos_dir,
-                }));
+                try {
+                    const defaults = await api.getSetupDefaults();
+                    this.setupMappings = (status.bad_dirs || []).map(dir => ({
+                        old_dir: dir,
+                        new_dir: dir.toLowerCase().includes('download') ? defaults.downloads_dir : defaults.videos_dir,
+                        suggestion: dir.toLowerCase().includes('download') ? defaults.downloads_dir : defaults.videos_dir,
+                    }));
+                } catch (e) {
+                    console.error('setup defaults error', e);
+                    this.setupRequired = false;
+                }
             } catch (e) {
                 console.error('setup check error', e);
             }
