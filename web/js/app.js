@@ -611,18 +611,15 @@ document.addEventListener('alpine:init', () => {
             if (type === 'irc_message') {
                 if (data.channel && data.channel !== '') {
                     const key = this.channelKey(data.server_id, data.channel);
-                    if (!this.ircMessages[key]) {
-                        this.ircMessages[key] = [];
-                    }
-                    this.ircMessages[key].push({
+                    const existing = this.ircMessages[key] || [];
+                    const newMsg = {
                         nick: data.nick,
                         message: data.message || (data.data && data.data.message) || '',
                         timestamp: data.timestamp,
-                    });
-                    // Keep buffer bounded
-                    if (this.ircMessages[key].length > 500) {
-                        this.ircMessages[key].splice(0, this.ircMessages[key].length - 500);
-                    }
+                    };
+                    let msgs = existing.concat([newMsg]);
+                    if (msgs.length > 500) msgs = msgs.slice(msgs.length - 500);
+                    this.ircMessages = Object.assign({}, this.ircMessages, { [key]: msgs });
                     // Auto-scroll if this message is for the active channel
                     if (data.server_id === this.activeServer && data.channel === this.activeChannel) {
                         this.$nextTick(() => {
@@ -632,17 +629,16 @@ document.addEventListener('alpine:init', () => {
                     }
                 } else {
                     // Server-level message (no channel): buffer in serverMessages only
-                    if (!this.serverMessages[data.server_id]) {
-                        this.serverMessages[data.server_id] = [];
-                    }
-                    this.serverMessages[data.server_id].push({
+                    const sid = data.server_id;
+                    const existing = this.serverMessages[sid] || [];
+                    const newMsg = {
                         nick: data.nick,
                         message: data.message || (data.data && data.data.message) || '',
                         timestamp: data.timestamp,
-                    });
-                    if (this.serverMessages[data.server_id].length > 500) {
-                        this.serverMessages[data.server_id].splice(0, this.serverMessages[data.server_id].length - 500);
-                    }
+                    };
+                    let msgs = existing.concat([newMsg]);
+                    if (msgs.length > 500) msgs = msgs.slice(msgs.length - 500);
+                    this.serverMessages = Object.assign({}, this.serverMessages, { [sid]: msgs });
                 }
             } else if (type === 'download_progress') {
                 const p = data.data;
