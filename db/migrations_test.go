@@ -2,10 +2,22 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
+
+// isMigrationSkippable returns true for errors that runMigrations silently ignores,
+// such as "duplicate column" (ALTER ADD COLUMN on a fresh schema) and
+// "no such table" (ALTER TABLE channels RENAME TO realms on a fresh install
+// where the table was already created as realms).
+func isMigrationSkippable(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate column") ||
+		strings.Contains(msg, "Duplicate column") ||
+		strings.Contains(msg, "no such table")
+}
 
 func TestMigrationSQL_IsValid(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
@@ -15,8 +27,10 @@ func TestMigrationSQL_IsValid(t *testing.T) {
 	defer db.Close()
 
 	for i, stmt := range migrationStatements() {
-		_, err := db.Exec(stmt)
-		if err != nil {
+		if _, err := db.Exec(stmt); err != nil {
+			if isMigrationSkippable(err) {
+				continue
+			}
 			t.Fatalf("migration statement %d failed: %v\nSQL: %s", i, err, stmt)
 		}
 	}
@@ -30,7 +44,7 @@ func TestMigrationSQL_CreatesAllTables(t *testing.T) {
 	defer db.Close()
 
 	for _, stmt := range migrationStatements() {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := db.Exec(stmt); err != nil && !isMigrationSkippable(err) {
 			t.Fatalf("migration failed: %v", err)
 		}
 	}

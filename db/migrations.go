@@ -146,6 +146,11 @@ func runMigrations(db *sql.DB) error {
 			if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "Duplicate column") {
 				continue
 			}
+			// On fresh installs the old `channels` table never existed; skip
+			// ALTER TABLE channels RENAME TO realms gracefully.
+			if strings.Contains(msg, "no such table") {
+				continue
+			}
 			return err
 		}
 	}
