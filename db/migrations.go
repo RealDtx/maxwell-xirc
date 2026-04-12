@@ -23,10 +23,11 @@ func migrationStatements() []string {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 
-		`CREATE TABLE IF NOT EXISTS channels (
+		`CREATE TABLE IF NOT EXISTS realms (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			server_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
+			display_name TEXT NOT NULL DEFAULT '',
 			key TEXT NOT NULL DEFAULT '',
 			search_command TEXT NOT NULL DEFAULT '!s',
 			download_channel TEXT NOT NULL DEFAULT '',
@@ -130,7 +131,11 @@ func migrationStatements() []string {
 
 		`ALTER TABLE downloads ADD COLUMN stats_only INTEGER NOT NULL DEFAULT 0`,
 
-		`UPDATE channels SET enabled=1 WHERE enabled=0`,
+		`UPDATE realms SET enabled=1 WHERE enabled=0`,
+
+		// Realm rename: channels → realms
+		`ALTER TABLE channels RENAME TO realms`,
+		`ALTER TABLE realms ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
 	}
 }
 

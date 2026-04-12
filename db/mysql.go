@@ -32,10 +32,11 @@ func mysqlMigrationStatements() []string {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
-		`CREATE TABLE IF NOT EXISTS channels (
+		`CREATE TABLE IF NOT EXISTS realms (
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
 			server_id BIGINT NOT NULL,
 			name VARCHAR(255) NOT NULL,
+			display_name VARCHAR(255) NOT NULL DEFAULT '',
 			` + "`key`" + ` VARCHAR(255) NOT NULL DEFAULT '',
 			search_command VARCHAR(50) NOT NULL DEFAULT '!s',
 			download_channel VARCHAR(255) NOT NULL DEFAULT '',
@@ -138,6 +139,10 @@ func mysqlMigrationStatements() []string {
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
 		`ALTER TABLE downloads ADD COLUMN stats_only BOOLEAN NOT NULL DEFAULT FALSE`,
+
+		// Realm rename
+		`ALTER TABLE channels RENAME TO realms`,
+		`ALTER TABLE realms ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''`,
 	}
 }
 
