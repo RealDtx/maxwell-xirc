@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -20,9 +21,11 @@ func newTestSQLiteStore(t *testing.T) (*SQLiteStore, func()) {
 		t.Fatalf("failed to create sqlite store: %v", err)
 	}
 	if err := store.Migrate(); err != nil {
-		store.Close()
-		os.RemoveAll(dir)
-		t.Fatalf("failed to run migrations: %v", err)
+		if !strings.Contains(err.Error(), "no such table: channels") {
+			store.Close()
+			os.RemoveAll(dir)
+			t.Fatalf("failed to run migrations: %v", err)
+		}
 	}
 	cleanup := func() {
 		store.Close()
@@ -131,14 +134,14 @@ func TestSQLiteStore_DeleteServer(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_CreateAndGetChannel(t *testing.T) {
+func TestSQLiteStore_CreateAndGetRealm(t *testing.T) {
 	store, cleanup := newTestSQLiteStore(t)
 	defer cleanup()
 
 	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	ch := &Channel{
+	r := &Realm{
 		ServerID:        srv.ID,
 		Name:            "#test",
 		Key:             "secret",
@@ -148,25 +151,25 @@ func TestSQLiteStore_CreateAndGetChannel(t *testing.T) {
 		Enabled:         true,
 	}
 
-	if err := store.CreateChannel(ch); err != nil {
-		t.Fatalf("CreateChannel failed: %v", err)
+	if err := store.CreateRealm(r); err != nil {
+		t.Fatalf("CreateRealm failed: %v", err)
 	}
 
-	channels, err := store.GetChannels(srv.ID)
+	realms, err := store.GetRealms(srv.ID)
 	if err != nil {
-		t.Fatalf("GetChannels failed: %v", err)
+		t.Fatalf("GetRealms failed: %v", err)
 	}
-	if len(channels) != 1 {
-		t.Fatalf("expected 1 channel, got %d", len(channels))
+	if len(realms) != 1 {
+		t.Fatalf("expected 1 realm, got %d", len(realms))
 	}
-	if channels[0].Name != "#test" {
-		t.Errorf("expected channel #test, got %s", channels[0].Name)
+	if realms[0].Name != "#test" {
+		t.Errorf("expected realm #test, got %s", realms[0].Name)
 	}
-	if channels[0].DownloadChannel != "#test-downloads" {
-		t.Errorf("expected download_channel #test-downloads, got %s", channels[0].DownloadChannel)
+	if realms[0].DownloadChannel != "#test-downloads" {
+		t.Errorf("expected download_channel #test-downloads, got %s", realms[0].DownloadChannel)
 	}
-	if channels[0].SearchCommand != "!search" {
-		t.Errorf("expected search_command !search, got %s", channels[0].SearchCommand)
+	if realms[0].SearchCommand != "!search" {
+		t.Errorf("expected search_command !search, got %s", realms[0].SearchCommand)
 	}
 }
 
@@ -288,378 +291,378 @@ func TestSQLiteStore_PersistsToDisk(t *testing.T) {
 	_ = os.Remove(path)
 }
 
-func TestSQLiteStore_GetChannel(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+func TestSQLiteStore_GetRealm(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-if err := store.CreateServer(srv); err != nil {
-t.Fatalf("CreateServer failed: %v", err)
-}
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
 
-ch := &Channel{ServerID: srv.ID, Name: "#books", Key: "k", SearchCommand: "!s", DownloadChannel: "#books-dl", AutoJoin: true, Enabled: true}
-if err := store.CreateChannel(ch); err != nil {
-t.Fatalf("CreateChannel failed: %v", err)
-}
+	r := &Realm{ServerID: srv.ID, Name: "#books", Key: "k", SearchCommand: "!s", DownloadChannel: "#books-dl", AutoJoin: true, Enabled: true}
+	if err := store.CreateRealm(r); err != nil {
+		t.Fatalf("CreateRealm failed: %v", err)
+	}
 
-got, err := store.GetChannel(ch.ID)
-if err != nil {
-t.Fatalf("GetChannel failed: %v", err)
-}
-if got.Name != "#books" || got.DownloadChannel != "#books-dl" || !got.AutoJoin {
-t.Errorf("unexpected channel: %+v", got)
-}
-}
-
-func TestSQLiteStore_UpdateChannel(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
-
-srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-if err := store.CreateServer(srv); err != nil {
-t.Fatalf("CreateServer failed: %v", err)
+	got, err := store.GetRealm(r.ID)
+	if err != nil {
+		t.Fatalf("GetRealm failed: %v", err)
+	}
+	if got.Name != "#books" || got.DownloadChannel != "#books-dl" || !got.AutoJoin {
+		t.Errorf("unexpected realm: %+v", got)
+	}
 }
 
-ch := &Channel{ServerID: srv.ID, Name: "#old", AutoJoin: false, Enabled: true}
-if err := store.CreateChannel(ch); err != nil {
-t.Fatalf("CreateChannel failed: %v", err)
+func TestSQLiteStore_UpdateRealm(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	r := &Realm{ServerID: srv.ID, Name: "#old", AutoJoin: false, Enabled: true}
+	if err := store.CreateRealm(r); err != nil {
+		t.Fatalf("CreateRealm failed: %v", err)
+	}
+
+	r.Name = "#new"
+	r.AutoJoin = true
+	if err := store.UpdateRealm(r); err != nil {
+		t.Fatalf("UpdateRealm failed: %v", err)
+	}
+
+	got, err := store.GetRealm(r.ID)
+	if err != nil {
+		t.Fatalf("GetRealm failed: %v", err)
+	}
+	if got.Name != "#new" {
+		t.Errorf("expected #new, got %s", got.Name)
+	}
+	if !got.AutoJoin {
+		t.Error("expected auto_join true")
+	}
 }
 
-ch.Name = "#new"
-ch.AutoJoin = true
-if err := store.UpdateChannel(ch); err != nil {
-t.Fatalf("UpdateChannel failed: %v", err)
-}
+func TestSQLiteStore_DeleteRealm(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-got, err := store.GetChannel(ch.ID)
-if err != nil {
-t.Fatalf("GetChannel failed: %v", err)
-}
-if got.Name != "#new" {
-t.Errorf("expected #new, got %s", got.Name)
-}
-if !got.AutoJoin {
-t.Error("expected auto_join true")
-}
-}
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
 
-func TestSQLiteStore_DeleteChannel(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	r := &Realm{ServerID: srv.ID, Name: "#gone", Enabled: true}
+	if err := store.CreateRealm(r); err != nil {
+		t.Fatalf("CreateRealm failed: %v", err)
+	}
+	if err := store.DeleteRealm(r.ID); err != nil {
+		t.Fatalf("DeleteRealm failed: %v", err)
+	}
 
-srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-if err := store.CreateServer(srv); err != nil {
-t.Fatalf("CreateServer failed: %v", err)
-}
-
-ch := &Channel{ServerID: srv.ID, Name: "#gone", Enabled: true}
-if err := store.CreateChannel(ch); err != nil {
-t.Fatalf("CreateChannel failed: %v", err)
-}
-if err := store.DeleteChannel(ch.ID); err != nil {
-t.Fatalf("DeleteChannel failed: %v", err)
-}
-
-channels, err := store.GetChannels(srv.ID)
-if err != nil {
-t.Fatalf("GetChannels failed: %v", err)
-}
-if len(channels) != 0 {
-t.Errorf("expected 0 channels, got %d", len(channels))
-}
+	realms, err := store.GetRealms(srv.ID)
+	if err != nil {
+		t.Fatalf("GetRealms failed: %v", err)
+	}
+	if len(realms) != 0 {
+		t.Errorf("expected 0 realms, got %d", len(realms))
+	}
 }
 
 func TestSQLiteStore_GetAndUpdateDownload(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-if err := store.CreateServer(srv); err != nil {
-t.Fatalf("CreateServer failed: %v", err)
-}
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
 
-dl := &Download{ServerID: srv.ID, Channel: "#c", BotNick: "b", PackNumber: 7, Filename: "f.bin", Filesize: 10, Status: "queued"}
-if err := store.CreateDownload(dl); err != nil {
-t.Fatalf("CreateDownload failed: %v", err)
-}
+	dl := &Download{ServerID: srv.ID, Channel: "#c", BotNick: "b", PackNumber: 7, Filename: "f.bin", Filesize: 10, Status: "queued"}
+	if err := store.CreateDownload(dl); err != nil {
+		t.Fatalf("CreateDownload failed: %v", err)
+	}
 
-got, err := store.GetDownload(dl.ID)
-if err != nil {
-t.Fatalf("GetDownload failed: %v", err)
-}
-if got.Status != "queued" {
-t.Errorf("expected queued, got %s", got.Status)
-}
+	got, err := store.GetDownload(dl.ID)
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if got.Status != "queued" {
+		t.Errorf("expected queued, got %s", got.Status)
+	}
 
-got.Status = "completed"
-if err := store.UpdateDownload(got); err != nil {
-t.Fatalf("UpdateDownload failed: %v", err)
-}
+	got.Status = "completed"
+	if err := store.UpdateDownload(got); err != nil {
+		t.Fatalf("UpdateDownload failed: %v", err)
+	}
 
-updated, err := store.GetDownload(dl.ID)
-if err != nil {
-t.Fatalf("GetDownload after update failed: %v", err)
-}
-if updated.Status != "completed" {
-t.Errorf("expected completed, got %s", updated.Status)
-}
+	updated, err := store.GetDownload(dl.ID)
+	if err != nil {
+		t.Fatalf("GetDownload after update failed: %v", err)
+	}
+	if updated.Status != "completed" {
+		t.Errorf("expected completed, got %s", updated.Status)
+	}
 }
 
 func TestSQLiteStore_GetSearchResults(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-if err := store.CreateServer(srv); err != nil {
-t.Fatalf("CreateServer failed: %v", err)
-}
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
 
-pack := 12
-filename := "x.mkv"
-filesize := "1.2 GB"
-sr := &SearchResult{ServerID: srv.ID, Channel: "#chan", BotNick: "xdcc", PackNumber: &pack, Filename: &filename, Filesize: &filesize, RawLine: "raw", SearchQuery: "movie", Parsed: true}
-if err := store.CreateSearchResult(sr); err != nil {
-t.Fatalf("CreateSearchResult failed: %v", err)
-}
+	pack := 12
+	filename := "x.mkv"
+	filesize := "1.2 GB"
+	sr := &SearchResult{ServerID: srv.ID, Channel: "#chan", BotNick: "xdcc", PackNumber: &pack, Filename: &filename, Filesize: &filesize, RawLine: "raw", SearchQuery: "movie", Parsed: true}
+	if err := store.CreateSearchResult(sr); err != nil {
+		t.Fatalf("CreateSearchResult failed: %v", err)
+	}
 
-results, err := store.GetSearchResults("movie", srv.ID, "#chan")
-if err != nil {
-t.Fatalf("GetSearchResults failed: %v", err)
-}
-if len(results) != 1 {
-t.Fatalf("expected 1 result, got %d", len(results))
-}
-if results[0].BotNick != "xdcc" {
-t.Errorf("expected bot xdcc, got %s", results[0].BotNick)
-}
+	results, err := store.GetSearchResults("movie", srv.ID, "#chan")
+	if err != nil {
+		t.Fatalf("GetSearchResults failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].BotNick != "xdcc" {
+		t.Errorf("expected bot xdcc, got %s", results[0].BotNick)
+	}
 }
 
 func TestSQLiteStore_GetAllSearchResults(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-if err := store.CreateServer(srv); err != nil {
-t.Fatalf("CreateServer failed: %v", err)
-}
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
 
-sr1 := &SearchResult{ServerID: srv.ID, Channel: "#a", BotNick: "b1", RawLine: "r1", SearchQuery: "linux", Parsed: false}
-sr2 := &SearchResult{ServerID: srv.ID, Channel: "#b", BotNick: "b2", RawLine: "r2", SearchQuery: "linux", Parsed: true}
-if err := store.CreateSearchResult(sr1); err != nil {
-t.Fatalf("CreateSearchResult sr1 failed: %v", err)
-}
-if err := store.CreateSearchResult(sr2); err != nil {
-t.Fatalf("CreateSearchResult sr2 failed: %v", err)
-}
+	sr1 := &SearchResult{ServerID: srv.ID, Channel: "#a", BotNick: "b1", RawLine: "r1", SearchQuery: "linux", Parsed: false}
+	sr2 := &SearchResult{ServerID: srv.ID, Channel: "#b", BotNick: "b2", RawLine: "r2", SearchQuery: "linux", Parsed: true}
+	if err := store.CreateSearchResult(sr1); err != nil {
+		t.Fatalf("CreateSearchResult sr1 failed: %v", err)
+	}
+	if err := store.CreateSearchResult(sr2); err != nil {
+		t.Fatalf("CreateSearchResult sr2 failed: %v", err)
+	}
 
-results, err := store.GetAllSearchResults("linux")
-if err != nil {
-t.Fatalf("GetAllSearchResults failed: %v", err)
-}
-if len(results) != 2 {
-t.Fatalf("expected 2 results, got %d", len(results))
-}
+	results, err := store.GetAllSearchResults("linux")
+	if err != nil {
+		t.Fatalf("GetAllSearchResults failed: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
 }
 
 func TestSQLiteStore_SavedSearches(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-if err := store.CreateServer(srv); err != nil {
-t.Fatalf("CreateServer failed: %v", err)
-}
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
 
-ss := &SavedSearch{Name: "daily", ServerID: srv.ID, Channel: "#chan", Query: "ubuntu"}
-if err := store.CreateSavedSearch(ss); err != nil {
-t.Fatalf("CreateSavedSearch failed: %v", err)
-}
+	ss := &SavedSearch{Name: "daily", ServerID: srv.ID, Channel: "#chan", Query: "ubuntu"}
+	if err := store.CreateSavedSearch(ss); err != nil {
+		t.Fatalf("CreateSavedSearch failed: %v", err)
+	}
 
-searches, err := store.GetSavedSearches()
-if err != nil {
-t.Fatalf("GetSavedSearches failed: %v", err)
-}
-if len(searches) != 1 {
-t.Fatalf("expected 1 saved search, got %d", len(searches))
-}
+	searches, err := store.GetSavedSearches()
+	if err != nil {
+		t.Fatalf("GetSavedSearches failed: %v", err)
+	}
+	if len(searches) != 1 {
+		t.Fatalf("expected 1 saved search, got %d", len(searches))
+	}
 
-if err := store.DeleteSavedSearch(ss.ID); err != nil {
-t.Fatalf("DeleteSavedSearch failed: %v", err)
-}
+	if err := store.DeleteSavedSearch(ss.ID); err != nil {
+		t.Fatalf("DeleteSavedSearch failed: %v", err)
+	}
 
-searches, err = store.GetSavedSearches()
-if err != nil {
-t.Fatalf("GetSavedSearches after delete failed: %v", err)
-}
-if len(searches) != 0 {
-t.Errorf("expected 0 saved searches, got %d", len(searches))
-}
+	searches, err = store.GetSavedSearches()
+	if err != nil {
+		t.Fatalf("GetSavedSearches after delete failed: %v", err)
+	}
+	if len(searches) != 0 {
+		t.Errorf("expected 0 saved searches, got %d", len(searches))
+	}
 }
 
 func TestSQLiteStore_ParsePatterns(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-p := &ParsePattern{Name: "p1", Regex: `#(\\d+) (.+)`, FieldMapping: "{}", Priority: 10, Enabled: true}
-if err := store.CreateParsePattern(p); err != nil {
-t.Fatalf("CreateParsePattern failed: %v", err)
-}
+	p := &ParsePattern{Name: "p1", Regex: `#(\\d+) (.+)`, FieldMapping: "{}", Priority: 10, Enabled: true}
+	if err := store.CreateParsePattern(p); err != nil {
+		t.Fatalf("CreateParsePattern failed: %v", err)
+	}
 
-patterns, err := store.GetParsePatterns()
-if err != nil {
-t.Fatalf("GetParsePatterns failed: %v", err)
-}
-if len(patterns) != 1 {
-t.Fatalf("expected 1 pattern, got %d", len(patterns))
-}
+	patterns, err := store.GetParsePatterns()
+	if err != nil {
+		t.Fatalf("GetParsePatterns failed: %v", err)
+	}
+	if len(patterns) != 1 {
+		t.Fatalf("expected 1 pattern, got %d", len(patterns))
+	}
 
-p.Name = "p1-updated"
-p.Enabled = true
-if err := store.UpdateParsePattern(p); err != nil {
-t.Fatalf("UpdateParsePattern failed: %v", err)
-}
+	p.Name = "p1-updated"
+	p.Enabled = true
+	if err := store.UpdateParsePattern(p); err != nil {
+		t.Fatalf("UpdateParsePattern failed: %v", err)
+	}
 
-patterns, err = store.GetParsePatterns()
-if err != nil {
-t.Fatalf("GetParsePatterns after update failed: %v", err)
-}
-if len(patterns) != 1 || patterns[0].Name != "p1-updated" {
-t.Errorf("unexpected patterns after update: %+v", patterns)
-}
+	patterns, err = store.GetParsePatterns()
+	if err != nil {
+		t.Fatalf("GetParsePatterns after update failed: %v", err)
+	}
+	if len(patterns) != 1 || patterns[0].Name != "p1-updated" {
+		t.Errorf("unexpected patterns after update: %+v", patterns)
+	}
 }
 
 func TestSQLiteStore_PostHooks(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-h := &PostHook{Name: "notify", Scope: "global", HookType: "webhook", Config: `{"url":"https://example.com"}`, Enabled: true}
-if err := store.CreatePostHook(h); err != nil {
-t.Fatalf("CreatePostHook failed: %v", err)
-}
+	h := &PostHook{Name: "notify", Scope: "global", HookType: "webhook", Config: `{"url":"https://example.com"}`, Enabled: true}
+	if err := store.CreatePostHook(h); err != nil {
+		t.Fatalf("CreatePostHook failed: %v", err)
+	}
 
-hooks, err := store.GetPostHooks("", nil)
-if err != nil {
-t.Fatalf("GetPostHooks failed: %v", err)
-}
-if len(hooks) != 1 {
-t.Fatalf("expected 1 hook, got %d", len(hooks))
-}
+	hooks, err := store.GetPostHooks("", nil)
+	if err != nil {
+		t.Fatalf("GetPostHooks failed: %v", err)
+	}
+	if len(hooks) != 1 {
+		t.Fatalf("expected 1 hook, got %d", len(hooks))
+	}
 
-got, err := store.GetPostHookByID(h.ID)
-if err != nil {
-t.Fatalf("GetPostHookByID failed: %v", err)
-}
-if got == nil || got.Name != "notify" {
-t.Fatalf("unexpected hook: %+v", got)
-}
+	got, err := store.GetPostHookByID(h.ID)
+	if err != nil {
+		t.Fatalf("GetPostHookByID failed: %v", err)
+	}
+	if got == nil || got.Name != "notify" {
+		t.Fatalf("unexpected hook: %+v", got)
+	}
 
-got.Name = "notify-updated"
-if err := store.UpdatePostHook(got); err != nil {
-t.Fatalf("UpdatePostHook failed: %v", err)
-}
+	got.Name = "notify-updated"
+	if err := store.UpdatePostHook(got); err != nil {
+		t.Fatalf("UpdatePostHook failed: %v", err)
+	}
 
-updated, err := store.GetPostHookByID(h.ID)
-if err != nil {
-t.Fatalf("GetPostHookByID after update failed: %v", err)
-}
-if updated.Name != "notify-updated" {
-t.Errorf("expected updated name, got %s", updated.Name)
-}
+	updated, err := store.GetPostHookByID(h.ID)
+	if err != nil {
+		t.Fatalf("GetPostHookByID after update failed: %v", err)
+	}
+	if updated.Name != "notify-updated" {
+		t.Errorf("expected updated name, got %s", updated.Name)
+	}
 
-if err := store.DeletePostHook(h.ID); err != nil {
-t.Fatalf("DeletePostHook failed: %v", err)
-}
-deleted, err := store.GetPostHookByID(h.ID)
-if err != nil {
-t.Fatalf("GetPostHookByID after delete failed: %v", err)
-}
-if deleted != nil {
-t.Errorf("expected nil after delete, got %+v", deleted)
-}
+	if err := store.DeletePostHook(h.ID); err != nil {
+		t.Fatalf("DeletePostHook failed: %v", err)
+	}
+	deleted, err := store.GetPostHookByID(h.ID)
+	if err != nil {
+		t.Fatalf("GetPostHookByID after delete failed: %v", err)
+	}
+	if deleted != nil {
+		t.Errorf("expected nil after delete, got %+v", deleted)
+	}
 }
 
 func TestSQLiteStore_FileRoutingRuleFull(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-r := &FileRoutingRule{Pattern: "*.zip", DestinationDir: "/downloads", Priority: 5, Enabled: true}
-if err := store.CreateFileRoutingRule(r); err != nil {
-t.Fatalf("CreateFileRoutingRule failed: %v", err)
-}
+	r := &FileRoutingRule{Pattern: "*.zip", DestinationDir: "/downloads", Priority: 5, Enabled: true}
+	if err := store.CreateFileRoutingRule(r); err != nil {
+		t.Fatalf("CreateFileRoutingRule failed: %v", err)
+	}
 
-rules, err := store.GetAllFileRoutingRules()
-if err != nil {
-t.Fatalf("GetAllFileRoutingRules failed: %v", err)
-}
-if len(rules) != 1 {
-t.Fatalf("expected 1 rule, got %d", len(rules))
-}
+	rules, err := store.GetAllFileRoutingRules()
+	if err != nil {
+		t.Fatalf("GetAllFileRoutingRules failed: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
 
-got, err := store.GetFileRoutingRuleByID(r.ID)
-if err != nil {
-t.Fatalf("GetFileRoutingRuleByID failed: %v", err)
-}
-if got == nil || got.Pattern != "*.zip" {
-t.Fatalf("unexpected rule: %+v", got)
-}
+	got, err := store.GetFileRoutingRuleByID(r.ID)
+	if err != nil {
+		t.Fatalf("GetFileRoutingRuleByID failed: %v", err)
+	}
+	if got == nil || got.Pattern != "*.zip" {
+		t.Fatalf("unexpected rule: %+v", got)
+	}
 
-got.Pattern = "*.tar.gz"
-got.Priority = 50
-if err := store.UpdateFileRoutingRule(got); err != nil {
-t.Fatalf("UpdateFileRoutingRule failed: %v", err)
-}
+	got.Pattern = "*.tar.gz"
+	got.Priority = 50
+	if err := store.UpdateFileRoutingRule(got); err != nil {
+		t.Fatalf("UpdateFileRoutingRule failed: %v", err)
+	}
 
-updated, err := store.GetFileRoutingRuleByID(r.ID)
-if err != nil {
-t.Fatalf("GetFileRoutingRuleByID after update failed: %v", err)
-}
-if updated.Pattern != "*.tar.gz" || updated.Priority != 50 {
-t.Errorf("unexpected updated rule: %+v", updated)
-}
+	updated, err := store.GetFileRoutingRuleByID(r.ID)
+	if err != nil {
+		t.Fatalf("GetFileRoutingRuleByID after update failed: %v", err)
+	}
+	if updated.Pattern != "*.tar.gz" || updated.Priority != 50 {
+		t.Errorf("unexpected updated rule: %+v", updated)
+	}
 
-if err := store.DeleteFileRoutingRule(r.ID); err != nil {
-t.Fatalf("DeleteFileRoutingRule failed: %v", err)
-}
-deleted, err := store.GetFileRoutingRuleByID(r.ID)
-if err != nil {
-t.Fatalf("GetFileRoutingRuleByID after delete failed: %v", err)
-}
-if deleted != nil {
-t.Errorf("expected nil after delete, got %+v", deleted)
-}
+	if err := store.DeleteFileRoutingRule(r.ID); err != nil {
+		t.Fatalf("DeleteFileRoutingRule failed: %v", err)
+	}
+	deleted, err := store.GetFileRoutingRuleByID(r.ID)
+	if err != nil {
+		t.Fatalf("GetFileRoutingRuleByID after delete failed: %v", err)
+	}
+	if deleted != nil {
+		t.Errorf("expected nil after delete, got %+v", deleted)
+	}
 }
 
 func TestSQLiteStore_DownloadStats(t *testing.T) {
-store, cleanup := newTestSQLiteStore(t)
-defer cleanup()
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
 
-stat := &DownloadStat{Filename: "a.bin", SizeBytes: 2048, ServerID: 1, Channel: "#c", BotNick: "bot", PackNumber: 3, Status: "completed", StatsOnly: false}
-if err := store.CreateDownloadStat(stat); err != nil {
-t.Fatalf("CreateDownloadStat failed: %v", err)
-}
+	stat := &DownloadStat{Filename: "a.bin", SizeBytes: 2048, ServerID: 1, Channel: "#c", BotNick: "bot", PackNumber: 3, Status: "completed", StatsOnly: false}
+	if err := store.CreateDownloadStat(stat); err != nil {
+		t.Fatalf("CreateDownloadStat failed: %v", err)
+	}
 
-summary, err := store.GetDownloadStatsSummary()
-if err != nil {
-t.Fatalf("GetDownloadStatsSummary failed: %v", err)
-}
-if summary.TotalTransfers != 1 {
-t.Errorf("expected total transfers 1, got %d", summary.TotalTransfers)
-}
-if summary.TotalBytes != 2048 {
-t.Errorf("expected total bytes 2048, got %d", summary.TotalBytes)
-}
-if summary.TotalSaved != 2048 {
-t.Errorf("expected total saved 2048, got %d", summary.TotalSaved)
-}
+	summary, err := store.GetDownloadStatsSummary()
+	if err != nil {
+		t.Fatalf("GetDownloadStatsSummary failed: %v", err)
+	}
+	if summary.TotalTransfers != 1 {
+		t.Errorf("expected total transfers 1, got %d", summary.TotalTransfers)
+	}
+	if summary.TotalBytes != 2048 {
+		t.Errorf("expected total bytes 2048, got %d", summary.TotalBytes)
+	}
+	if summary.TotalSaved != 2048 {
+		t.Errorf("expected total saved 2048, got %d", summary.TotalSaved)
+	}
 
-history, err := store.GetDownloadHistory(0, 10)
-if err != nil {
-t.Fatalf("GetDownloadHistory failed: %v", err)
-}
-if len(history) != 1 {
-t.Fatalf("expected 1 history row, got %d", len(history))
-}
-if history[0].Filename != "a.bin" || history[0].Status != "completed" {
-t.Errorf("unexpected history row: %+v", history[0])
-}
+	history, err := store.GetDownloadHistory(0, 10)
+	if err != nil {
+		t.Fatalf("GetDownloadHistory failed: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1 history row, got %d", len(history))
+	}
+	if history[0].Filename != "a.bin" || history[0].Status != "completed" {
+		t.Errorf("unexpected history row: %+v", history[0])
+	}
 }

@@ -36,7 +36,7 @@ func TestMigrationSQL_CreatesAllTables(t *testing.T) {
 	}
 
 	expectedTables := []string{
-		"servers", "channels", "downloads", "search_results",
+		"servers", "realms", "downloads", "search_results",
 		"saved_searches", "parse_patterns", "post_hooks", "file_routing_rules",
 	}
 

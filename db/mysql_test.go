@@ -31,7 +31,7 @@ func newTestMySQLStore(t *testing.T) *MySQLStore {
 		t.Fatalf("failed to run migrations: %v", err)
 	}
 	// Clean tables for test isolation
-	for _, table := range []string{"file_routing_rules", "post_hooks", "parse_patterns", "saved_searches", "search_results", "downloads", "channels", "servers"} {
+	for _, table := range []string{"file_routing_rules", "post_hooks", "parse_patterns", "saved_searches", "search_results", "downloads", "realms", "servers"} {
 		store.db.Exec("DELETE FROM " + table)
 	}
 	return store
@@ -95,14 +95,14 @@ func TestMySQLStore_ListServers(t *testing.T) {
 	}
 }
 
-func TestMySQLStore_CreateAndGetChannel(t *testing.T) {
+func TestMySQLStore_CreateAndGetRealm(t *testing.T) {
 	store := newTestMySQLStore(t)
 	defer store.Close()
 
 	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	ch := &Channel{
+	r := &Realm{
 		ServerID:        srv.ID,
 		Name:            "#test",
 		SearchCommand:   "!search",
@@ -110,19 +110,19 @@ func TestMySQLStore_CreateAndGetChannel(t *testing.T) {
 		AutoJoin:        true,
 		Enabled:         true,
 	}
-	if err := store.CreateChannel(ch); err != nil {
-		t.Fatalf("CreateChannel failed: %v", err)
+	if err := store.CreateRealm(r); err != nil {
+		t.Fatalf("CreateRealm failed: %v", err)
 	}
 
-	channels, err := store.GetChannels(srv.ID)
+	realms, err := store.GetRealms(srv.ID)
 	if err != nil {
-		t.Fatalf("GetChannels failed: %v", err)
+		t.Fatalf("GetRealms failed: %v", err)
 	}
-	if len(channels) != 1 {
-		t.Fatalf("expected 1 channel, got %d", len(channels))
+	if len(realms) != 1 {
+		t.Fatalf("expected 1 realm, got %d", len(realms))
 	}
-	if channels[0].DownloadChannel != "#test-dl" {
-		t.Errorf("expected download_channel #test-dl, got %s", channels[0].DownloadChannel)
+	if realms[0].DownloadChannel != "#test-dl" {
+		t.Errorf("expected download_channel #test-dl, got %s", realms[0].DownloadChannel)
 	}
 }
 
