@@ -1,8 +1,10 @@
 package config
 
 import (
+	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -81,5 +83,75 @@ func TestLoadConfigFileNotFound(t *testing.T) {
 	_, err := Load("/nonexistent/path.yaml")
 	if err == nil {
 		t.Error("expected error for nonexistent file")
+	}
+}
+
+func TestWriteStorageDirs_UpdatesFields(t *testing.T) {
+	original := `server:
+  host: 127.0.0.1
+  port: 8085
+
+storage:
+  media_dir: /old/media
+  downloads_dir: /old/downloads
+  temp_dir: /tmp
+  min_free_space: 1GB
+  critical_free_space: 500MB
+`
+	dir, err := ioutil.TempDir("", "xirc-cfg-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	path := filepath.Join(dir, "config.yaml")
+	if err := ioutil.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := WriteStorageDirs(path, "/new/media", "/new/downloads"); err != nil {
+		t.Fatalf("WriteStorageDirs: %v", err)
+	}
+
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "media_dir: /new/media") {
+		t.Errorf("media_dir not updated:\n%s", content)
+	}
+	if !strings.Contains(content, "downloads_dir: /new/downloads") {
+		t.Errorf("downloads_dir not updated:\n%s", content)
+	}
+	// Verify other fields preserved
+	if !strings.Contains(content, "temp_dir: /tmp") {
+		t.Errorf("temp_dir lost:\n%s", content)
+	}
+	if !strings.Contains(content, "host: 127.0.0.1") {
+		t.Errorf("server.host lost:\n%s", content)
+	}
+}
+
+func TestWriteStorageDirs_Atomic(t *testing.T) {
+	dir, err := ioutil.TempDir("", "xirc-cfg-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	path := filepath.Join(dir, "config.yaml")
+	if err := ioutil.WriteFile(path, []byte("storage:\n  media_dir: /a\n  downloads_dir: /b\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := WriteStorageDirs(path, "/new/a", "/new/b"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Temp file should be cleaned up
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Error("temp file was not removed after rename")
 	}
 }

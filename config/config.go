@@ -97,6 +97,49 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// WriteStorageDirs rewrites storage.media_dir and storage.downloads_dir in the
+// config file at path, preserving all other content. The write is atomic: a
+// temp file is written first, then renamed over the original.
+func WriteStorageDirs(path, mediaDir, downloadsDir string) error {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	inStorage := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Detect storage: section header (no leading whitespace)
+		if trimmed == "storage:" {
+			inStorage = true
+			continue
+		}
+		// Leave storage section when we hit a top-level key
+		if inStorage && len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
+			inStorage = false
+		}
+		if inStorage {
+			if strings.HasPrefix(trimmed, "media_dir:") {
+				lines[i] = "  media_dir: " + mediaDir
+			} else if strings.HasPrefix(trimmed, "downloads_dir:") {
+				lines[i] = "  downloads_dir: " + downloadsDir
+			}
+		}
+	}
+
+	result := []byte(strings.Join(lines, "\n"))
+	tmp := path + ".tmp"
+	if err := ioutil.WriteFile(tmp, result, 0644); err != nil {
+		return fmt.Errorf("writing temp config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("replacing config: %w", err)
+	}
+	return nil
+}
+
 func applyEnvOverrides(cfg *Config) {
 	applyEnvToStruct(reflect.ValueOf(cfg).Elem(), "XIRC")
 }
