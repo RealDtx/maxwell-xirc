@@ -85,3 +85,93 @@ func TestSeedRoutingRules_Idempotent(t *testing.T) {
 		t.Errorf("expected 18 rules, got %d", count)
 	}
 }
+
+func TestSyncBuiltinRuleDirs(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	if err := SeedRoutingRules(store, "/old/media", "/old/dl"); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+	if err := SyncBuiltinRuleDirs(store, "/new/media", "/new/dl"); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	rules, err := store.GetAllFileRoutingRules()
+	if err != nil {
+		t.Fatalf("failed to get rules: %v", err)
+	}
+
+	var foundCatchAll bool
+	for _, r := range rules {
+		if !r.Builtin {
+			continue
+		}
+		if r.Pattern == "*" {
+			foundCatchAll = true
+			if r.DestinationDir != "/new/dl" {
+				t.Errorf("expected catch-all destination /new/dl, got %q", r.DestinationDir)
+			}
+			continue
+		}
+		if r.DestinationDir != "/new/media" {
+			t.Errorf("expected builtin %q destination /new/media, got %q", r.Pattern, r.DestinationDir)
+		}
+	}
+	if !foundCatchAll {
+		t.Fatal("expected catch-all builtin rule")
+	}
+}
+
+func TestSyncBuiltinRuleDirs_UserRulesUnchanged(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	if err := store.CreateFileRoutingRule(&db.FileRoutingRule{
+		Pattern:        "*.custom",
+		DestinationDir: "/user/dir",
+		Priority:       200,
+		Builtin:        false,
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("failed to create user rule: %v", err)
+	}
+	if err := SeedRoutingRules(store, "/media", "/dl"); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+
+	if err := SyncBuiltinRuleDirs(store, "/new/media", "/new/dl"); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	rules, err := store.GetAllFileRoutingRules()
+	if err != nil {
+		t.Fatalf("failed to get rules: %v", err)
+	}
+
+	var foundUserRule bool
+	for _, r := range rules {
+		if r.Pattern == "*.custom" && !r.Builtin {
+			foundUserRule = true
+			if r.DestinationDir != "/user/dir" {
+				t.Errorf("expected user rule destination /user/dir, got %q", r.DestinationDir)
+			}
+		}
+	}
+	if !foundUserRule {
+		t.Fatal("expected user rule to exist")
+	}
+}
+
+func TestSyncBuiltinRuleDirs_NoOpWhenSame(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	if err := SeedRoutingRules(store, "/media", "/dl"); err != nil {
+		t.Fatalf("seed failed: %v", err)
+	}
+
+	if err := SyncBuiltinRuleDirs(store, "/media", "/dl"); err != nil {
+		t.Fatalf("sync should be a no-op but failed: %v", err)
+	}
+}
