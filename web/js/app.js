@@ -154,6 +154,39 @@ document.addEventListener('alpine:init', () => {
             this.activeServer = serverId;
             this.activeChannel = channelName;
             this.activeView = 'channel';
+            this.loadChannelMessages(serverId, channelName);
+        },
+
+        async loadChannelMessages(serverId, channelName) {
+            const key = this.channelKey(serverId, channelName);
+            try {
+                const msgs = await api.getIRCMessages(serverId, channelName, null, 200);
+                if (Array.isArray(msgs)) {
+                    this.ircMessages = Object.assign({}, this.ircMessages, {
+                        [key]: msgs.map(m => ({ nick: m.nick, message: m.text || m.message || '', timestamp: m.timestamp }))
+                    });
+                }
+            } catch(e) {
+                console.error('loadChannelMessages', e);
+            }
+        },
+
+        async loadMoreChannelMessages(serverId, channelName) {
+            const key = this.channelKey(serverId, channelName);
+            const existing = this.ircMessages[key] || [];
+            if (existing.length === 0) return;
+            const oldest = existing[0].timestamp;
+            try {
+                const msgs = await api.getIRCMessages(serverId, channelName, oldest, 200);
+                if (msgs && msgs.length > 0) {
+                    const normalized = msgs.map(m => ({ nick: m.nick, message: m.text || m.message || '', timestamp: m.timestamp }));
+                    this.ircMessages = Object.assign({}, this.ircMessages, {
+                        [key]: normalized.concat(existing)
+                    });
+                }
+            } catch(e) {
+                console.error('loadMoreChannelMessages', e);
+            }
         },
 
         toggleServer(serverId) {
@@ -583,7 +616,7 @@ document.addEventListener('alpine:init', () => {
                     }
                     this.ircMessages[key].push({
                         nick: data.nick,
-                        message: data.message,
+                        message: data.message || (data.data && data.data.message) || '',
                         timestamp: data.timestamp,
                     });
                     // Keep buffer bounded

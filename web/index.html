@@ -344,7 +344,7 @@
                                         <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
                                             <span class="time" x-text="formatTime(msg.timestamp)"></span>
                                             <span class="nick" x-text="msg.nick + ':'"></span>
-                                            <span x-text="msg.message"></span>
+                                            <span x-text="msg.message || msg.text || ''"></span>
                                         </div>
                                     </template>
                                 </div>
@@ -386,7 +386,7 @@
                                         <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
                                             <span class="time" x-text="formatTime(msg.timestamp)"></span>
                                             <span class="nick" x-text="msg.nick + ':'"></span>
-                                            <span x-text="msg.message"></span>
+                                            <span x-text="msg.message || msg.text || ''"></span>
                                         </div>
                                     </template>
                                 </div>
@@ -518,7 +518,7 @@
                                                 <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
                                                     <span class="time" x-text="formatTime(msg.timestamp)"></span>
                                                     <span class="nick" x-text="msg.nick + ':'"></span>
-                                                    <span x-text="msg.message"></span>
+                                                    <span x-text="msg.message || msg.text || ''"></span>
                                                 </div>
                                             </template>
                                         </div>
@@ -529,7 +529,7 @@
                                                 <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
                                                     <span class="time" x-text="formatTime(msg.timestamp)"></span>
                                                     <span class="nick" x-text="msg.nick + ':'"></span>
-                                                    <span x-text="msg.message"></span>
+                                                    <span x-text="msg.message || msg.text || ''"></span>
                                                 </div>
                                             </template>
                                         </div>
