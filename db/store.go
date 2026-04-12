@@ -32,6 +32,7 @@ type Store interface {
 
 	// Search Results
 	GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error)
+	GetAllSearchResults(query string) ([]SearchResult, error)
 	CreateSearchResult(r *SearchResult) error
 
 	// Saved Searches

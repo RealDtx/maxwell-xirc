@@ -44,6 +44,7 @@ func (m *mockStore) UpdateDownload(d *db.Download) error          { return nil }
 func (m *mockStore) GetSearchResults(q string, sid int64, ch string) ([]db.SearchResult, error) {
 	return nil, nil
 }
+func (m *mockStore) GetAllSearchResults(q string) ([]db.SearchResult, error) { return nil, nil }
 func (m *mockStore) CreateSearchResult(r *db.SearchResult) error        { return nil }
 func (m *mockStore) GetSavedSearches() ([]db.SavedSearch, error)        { return nil, nil }
 func (m *mockStore) CreateSavedSearch(s *db.SavedSearch) error          { return nil }

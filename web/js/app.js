@@ -91,6 +91,12 @@ document.addEventListener('alpine:init', () => {
         setupMappings: [],  // [{old_dir, new_dir, suggestion}]
         setupBanner: false,
 
+        // Global search filter (advanced mode)
+        globalSearchServerId: '',
+
+        // Disk stats
+        diskStats: [],
+
         // --- Computed helpers ---
 
         groupedRoutingRules() {
@@ -321,7 +327,59 @@ document.addEventListener('alpine:init', () => {
         applySavedSearch(query) {
             if (!query) return;
             this.searchQuery = query;
-            this.runSearch();
+            this.runGlobalSearch();
+        },
+
+        // Global search across all channels (or filtered by globalSearchServerId in advanced mode).
+        async runGlobalSearch() {
+            if (!this.searchQuery.trim()) return;
+            const token = ++this.searchToken;
+            this.searchRunning = true;
+            this.searchResults = [];
+            try {
+                // Fire search on all matching channels
+                const targets = [];
+                for (var i = 0; i < this.servers.length; i++) {
+                    var srv = this.servers[i];
+                    if (this.globalSearchServerId && srv.id !== parseInt(this.globalSearchServerId)) continue;
+                    var channels = srv.channels || [];
+                    for (var j = 0; j < channels.length; j++) {
+                        targets.push({ server_id: srv.id, channel: channels[j] });
+                    }
+                }
+                // Kick off searches (ignore errors — bot may not be present on all channels)
+                for (var k = 0; k < targets.length; k++) {
+                    api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).catch(function(){});
+                }
+                // Poll for aggregated results
+                for (var attempt = 0; attempt < 8; attempt++) {
+                    await new Promise(function(resolve) { setTimeout(resolve, 1000); });
+                    if (token !== this.searchToken) return;
+                    var res = await api.getAllSearchResults(this.searchQuery);
+                    this.searchResults = Array.isArray(res) ? res : [];
+                    if (this.searchResults.length > 0) break;
+                }
+            } catch (e) {
+                console.error('global search error', e);
+            } finally {
+                if (token === this.searchToken) this.searchRunning = false;
+            }
+        },
+
+        getServerName(serverId) {
+            for (var i = 0; i < this.servers.length; i++) {
+                if (this.servers[i].id === serverId) return this.servers[i].name;
+            }
+            return 'Server ' + serverId;
+        },
+
+        async loadDiskStats() {
+            try {
+                var res = await api.getStorageStats();
+                this.diskStats = Array.isArray(res) ? res : [];
+            } catch (e) {
+                console.error('disk stats error', e);
+            }
         },
 
         sortBy(col) {
@@ -784,6 +842,11 @@ document.addEventListener('alpine:init', () => {
 
         async init() {
             await this.checkSetup();
+
+            // Load disk stats and refresh every 30 seconds
+            await this.loadDiskStats();
+            var self = this;
+            setInterval(function() { self.loadDiskStats(); }, 30000);
 
             // Restore layout prefs from localStorage
             this._channelLayout = {};

@@ -2,6 +2,35 @@ package routing
 
 import "github.com/maxwell-xirc/xirc/db"
 
+// SyncBuiltinRuleDirs updates all existing builtin routing rules to match the
+// current mediaDir and downloadsDir from config.yaml. This keeps the DB in sync
+// when config.yaml is edited after initial seeding — the catch-all (*) rule maps
+// to downloadsDir; all other builtins map to mediaDir.
+// Only builtin rules are touched; user-created rules are never modified.
+func SyncBuiltinRuleDirs(store db.Store, mediaDir, downloadsDir string) error {
+	rules, err := store.GetAllFileRoutingRules()
+	if err != nil {
+		return err
+	}
+	for i := range rules {
+		if !rules[i].Builtin {
+			continue
+		}
+		want := mediaDir
+		if rules[i].Pattern == "*" {
+			want = downloadsDir
+		}
+		if rules[i].DestinationDir == want {
+			continue
+		}
+		rules[i].DestinationDir = want
+		if err := store.UpdateFileRoutingRule(&rules[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SeedRoutingRules inserts default file routing rules into the store if they don't already exist.
 // Rules are keyed by pattern — existing patterns are never updated, only absent ones are inserted.
 // Call this on startup after migration to ensure baseline routing rules are present.

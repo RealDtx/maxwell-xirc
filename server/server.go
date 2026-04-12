@@ -94,6 +94,9 @@ func (s *Server) routes() {
 	// Errors endpoint
 	s.mux.HandleFunc("/api/errors", s.handleGetErrors)
 
+	// Storage stats endpoint
+	s.mux.HandleFunc("/api/storage", s.handleStorageStats)
+
 	// Setup wizard endpoints
 	s.mux.HandleFunc("/api/setup/status", s.handleSetupStatus)
 	s.mux.HandleFunc("/api/setup/defaults", s.handleSetupDefaults)

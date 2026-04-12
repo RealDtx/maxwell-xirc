@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"github.com/maxwell-xirc/xirc/config"
 	"github.com/maxwell-xirc/xirc/db"
@@ -68,17 +69,17 @@ func checkDirectories(store db.Store) []string {
 }
 
 // isTerminal reports whether stdin is an interactive terminal.
+// Uses the TCGETS ioctl — only succeeds on real TTY file descriptors,
+// unlike a stat-based check which also matches /dev/null.
 func isTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) != 0
+	var t syscall.Termios
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&t)))
+	return errno == 0
 }
 
-// runCLIWizard presents the directory wizard on the terminal (or silently applies
-// defaults when stdin is not a terminal). It updates config.yaml and the DB,
-// then returns.
+// runCLIWizard presents the interactive directory wizard on the terminal.
+// Only call this when isTerminal() is true.
+// It updates config.yaml and the DB, then returns.
 func runCLIWizard(badDirs []string, store db.Store, state *server.SetupState) {
 	rules, err := store.GetAllFileRoutingRules()
 	if err != nil {
@@ -87,43 +88,33 @@ func runCLIWizard(badDirs []string, store db.Store, state *server.SetupState) {
 	}
 	suggestions := server.DefaultSuggestions(badDirs, rules, state.HomeDir)
 
+	fmt.Fprintf(os.Stderr, "\nxirc: the following destination directories do not exist:\n\n")
+	for _, dir := range badDirs {
+		patterns := server.PatternsForDir(rules, dir)
+		fmt.Fprintf(os.Stderr, "  %s\n    → used by: %s\n", dir, strings.Join(patterns, " "))
+	}
+	fmt.Fprintf(os.Stderr, "\nEnter replacement paths (press Enter to accept suggestion):\n\n")
+
+	reader := bufio.NewReader(os.Stdin)
 	var mappings []server.Mapping
-
-	if isTerminal() {
-		fmt.Fprintf(os.Stderr, "\nxirc: the following destination directories do not exist:\n\n")
-		for _, dir := range badDirs {
-			patterns := server.PatternsForDir(rules, dir)
-			fmt.Fprintf(os.Stderr, "  %s\n    → used by: %s\n", dir, strings.Join(patterns, " "))
+	for _, dir := range badDirs {
+		sug := suggestions[dir]
+		fmt.Fprintf(os.Stderr, "  %s  [%s]: ", dir, sug)
+		line, _ := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line == "" {
+			line = sug
 		}
-		fmt.Fprintf(os.Stderr, "\nEnter replacement paths (press Enter to accept suggestion):\n\n")
+		mappings = append(mappings, server.Mapping{OldDir: dir, NewDir: line})
+	}
 
-		reader := bufio.NewReader(os.Stdin)
+	fmt.Fprintf(os.Stderr, "\nApply? [Y/n]: ")
+	confirm, _ := reader.ReadString('\n')
+	if strings.ToLower(strings.TrimSpace(confirm)) == "n" {
+		// User declined — apply pure defaults instead
+		mappings = mappings[:0]
 		for _, dir := range badDirs {
-			sug := suggestions[dir]
-			fmt.Fprintf(os.Stderr, "  %s  [%s]: ", dir, sug)
-			line, _ := reader.ReadString('\n')
-			line = strings.TrimSpace(line)
-			if line == "" {
-				line = sug
-			}
-			mappings = append(mappings, server.Mapping{OldDir: dir, NewDir: line})
-		}
-
-		fmt.Fprintf(os.Stderr, "\nApply? [Y/n]: ")
-		confirm, _ := reader.ReadString('\n')
-		if strings.ToLower(strings.TrimSpace(confirm)) == "n" {
-			// User declined — reset to pure defaults
-			mappings = mappings[:0]
-			for _, dir := range badDirs {
-				mappings = append(mappings, server.Mapping{OldDir: dir, NewDir: suggestions[dir]})
-			}
-		}
-	} else {
-		// Non-interactive: apply defaults silently
-		for _, dir := range badDirs {
-			sug := suggestions[dir]
-			log.Printf("startup: applying default path %s → %s", dir, sug)
-			mappings = append(mappings, server.Mapping{OldDir: dir, NewDir: sug})
+			mappings = append(mappings, server.Mapping{OldDir: dir, NewDir: suggestions[dir]})
 		}
 	}
 
@@ -176,13 +167,23 @@ func main() {
 	if len(badDirs) > 0 {
 		if isTerminal() {
 			runCLIWizard(badDirs, store, setupState)
+			// Reload storage paths from the updated config.yaml so the queue
+			// engine and seed use the new dirs, not the pre-wizard bad paths.
+			if newCfg, err := config.Load(*configPath); err == nil {
+				cfg.Storage.MediaDir = newCfg.Storage.MediaDir
+				cfg.Storage.DownloadsDir = newCfg.Storage.DownloadsDir
+			}
 		}
-		// Non-TTY: setupState.Required stays true; web wizard will handle it
+		// Non-TTY: setupState.Required stays true; web wizard will handle it.
 	}
 
 	// Seed default parse patterns
 	if err := parser.SeedPatterns(store); err != nil {
 		log.Printf("warning: failed to seed patterns: %v", err)
+	}
+
+	if err := routing.SyncBuiltinRuleDirs(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {
+		log.Printf("warning: failed to sync builtin routing rules: %v", err)
 	}
 
 	if err := routing.SeedRoutingRules(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {
