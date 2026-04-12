@@ -741,61 +741,56 @@
                         </div>
                     </template>
 
-                    <!-- File Routing tab -->
+                    <!-- File Routing tab — grouped by destination dir -->
                     <template x-if="settingsTab === 'routing'">
                         <div style="padding-top:16px;">
-                            <button class="btn btn-primary btn-sm" @click="openRoutingForm(null)">Add Rule</button>
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                <h3 style="margin:0; font-size:14px;">File Routing</h3>
+                                <button class="btn btn-primary btn-sm" @click="showAddDestForm = !showAddDestForm">+ Add destination</button>
+                            </div>
 
-                            <template x-if="routingRules.length > 0">
-                                <table style="margin-top:12px;">
-                                    <thead>
-                                        <tr>
-                                            <th>Pattern</th>
-                                            <th>Destination</th>
-                                            <th>Priority</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <template x-for="r in routingRules" :key="r.id">
-                                            <tr>
-                                                <td x-text="r.pattern"></td>
-                                                <td x-text="r.destination_dir"></td>
-                                                <td x-text="r.priority"></td>
-                                                <td style="white-space:nowrap;">
-                                                    <button class="btn btn-sm" @click="openRoutingForm(r)">Edit</button>
-                                                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteRoutingRule(r.id)">Delete</button>
-                                                </td>
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
-                            </template>
-                            <template x-if="routingRules.length === 0">
-                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No routing rules configured.</p>
-                            </template>
-
-                            <!-- Routing inline form -->
-                            <template x-if="showRoutingForm">
-                                <div style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px;">
-                                    <h3 style="margin:0 0 16px;" x-text="routingForm.id ? 'Edit Rule' : 'Add Rule'"></h3>
-                                    <div class="form-group">
-                                        <label>Pattern</label>
-                                        <input type="text" x-model="routingForm.pattern" placeholder="*.mkv">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Destination Dir</label>
-                                        <input type="text" x-model="routingForm.destination_dir" placeholder="/mnt/media/video">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Priority</label>
-                                        <input type="number" x-model.number="routingForm.priority">
-                                    </div>
-                                    <div style="margin-top:12px; display:flex; gap:8px;">
-                                        <button class="btn btn-primary btn-sm" @click="saveRoutingRule()">Save</button>
-                                        <button class="btn btn-sm" @click="showRoutingForm = false">Cancel</button>
+                            <!-- Add destination form -->
+                            <div x-show="showAddDestForm" style="padding:16px; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary); margin-bottom:16px;">
+                                <div style="display:flex; gap:8px;">
+                                    <input type="text" x-model="routingNewDir" placeholder="/srv/downloads" style="flex:1; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
+                                    <button @click="openDirPicker(routingNewDir, d => routingNewDir = d)" class="btn btn-sm">📁</button>
+                                </div>
+                                <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center;">
+                                    <template x-for="ext in predefinedExtensions()" :key="ext">
+                                        <button @click="addRoutingRuleForDir(routingNewDir, ext)" style="padding:3px 10px; border:1px solid var(--border); border-radius:12px; background:var(--bg-input); color:var(--text-secondary); font-size:12px; cursor:pointer;">
+                                            + <span x-text="ext"></span>
+                                        </button>
+                                    </template>
+                                    <div style="display:flex; gap:6px; align-items:center;">
+                                        <input type="text" x-model="routingNewExt" placeholder="custom ext" maxlength="10" style="padding:3px 8px; width:100px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:12px;">
+                                        <button @click="addRoutingRuleForDir(routingNewDir, routingNewExt); routingNewExt = ''" class="btn btn-primary btn-sm">Add</button>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- Groups -->
+                            <div style="display:flex; flex-direction:column; gap:12px;">
+                                <template x-for="(exts, dir) in groupedRoutingRules()" :key="dir">
+                                    <div style="padding:14px 16px; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary);">
+                                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                                            <div style="font-family:monospace; font-size:13px; color:var(--text-primary);" x-text="dir"></div>
+                                            <button @click="openDirPicker(dir, d => renameRoutingDir(dir, d))" class="btn btn-sm">📁 Change</button>
+                                        </div>
+                                        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                                            <template x-for="item in exts" :key="item.id">
+                                                <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border:1px solid var(--border); border-radius:12px; background:var(--bg-input); font-size:12px; color:var(--text-secondary);">
+                                                    <span x-text="item.ext"></span>
+                                                    <button @click="deleteRoutingRule(item.id)" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; line-height:1; padding:0 2px;">×</button>
+                                                </span>
+                                            </template>
+                                            <button @click="routingNewDir = dir; showAddDestForm = true" style="padding:2px 10px; border:1px dashed var(--border); border-radius:12px; background:transparent; color:var(--text-muted); font-size:12px; cursor:pointer;">+ ext</button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <template x-if="routingRules.length === 0">
+                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No routing rules configured.</p>
                             </template>
                         </div>
                     </template>
@@ -997,6 +992,49 @@
         </template>
 
     </main>
+</div>
+
+<!-- Directory Picker Modal -->
+<div x-show="dirPickerOpen"
+     @keydown.escape.window="cancelDirPicker()"
+     style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;"
+     :style="dirPickerOpen ? 'display:flex;' : 'display:none;'">
+    <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; width:480px; max-width:90vw; max-height:70vh; display:flex; flex-direction:column; overflow:hidden;">
+        <!-- Modal header -->
+        <div style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:14px; font-weight:600;">Select Directory</span>
+            <button @click="cancelDirPicker()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:18px; line-height:1; padding:0 4px;">×</button>
+        </div>
+
+        <!-- Breadcrumb / current path -->
+        <div style="padding:10px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button @click="browseDirUp()" class="btn btn-sm" style="flex-shrink:0;">.. (up)</button>
+            <span style="font-family:monospace; font-size:12px; color:var(--text-secondary); word-break:break-all;" x-text="dirPickerPath"></span>
+        </div>
+
+        <!-- Directory listing -->
+        <div style="flex:1; overflow-y:auto;">
+            <template x-if="dirPickerEntries.filter(e => e.is_dir).length === 0">
+                <div style="padding:16px; color:var(--text-muted); font-size:13px;">No subdirectories</div>
+            </template>
+            <template x-for="entry in dirPickerEntries.filter(e => e.is_dir)" :key="entry.name">
+                <div @click="browseDir(dirPickerPath.replace(/\/$/, '') + '/' + entry.name)"
+                     style="padding:8px 16px; cursor:pointer; font-size:13px; font-family:monospace; color:var(--text-secondary); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px;"
+                     onmouseover="this.style.background='var(--bg-tertiary)'"
+                     onmouseout="this.style.background=''"
+                >
+                    <span style="color:var(--accent);">📁</span>
+                    <span x-text="entry.name"></span>
+                </div>
+            </template>
+        </div>
+
+        <!-- Modal footer -->
+        <div style="padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end;">
+            <button @click="cancelDirPicker()" class="btn btn-sm">Cancel</button>
+            <button @click="selectDir()" class="btn btn-primary btn-sm">Select</button>
+        </div>
+    </div>
 </div>
 </body>
 </html>
