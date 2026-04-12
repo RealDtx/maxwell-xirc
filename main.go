@@ -130,7 +130,7 @@ func main() {
 
 	ircMgr.ConnectAutoConnect()
 
-	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf)
+	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, nil)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{

@@ -42,7 +42,7 @@ func newTestServerWithEngine(t *testing.T) (*Server, db.Store, func()) {
 	}
 	eng := queue.NewEngine(store, bus, storageCfg, 3)
 
-	srv := New(store, ircMgr, p, eng, nil, nil, nil)
+	srv := New(store, ircMgr, p, eng, nil, nil, nil, nil)
 	cleanup := func() {
 		store.Close()
 		os.RemoveAll(dir)
