@@ -129,6 +129,8 @@ func migrationStatements() []string {
 )`,
 
 		`ALTER TABLE downloads ADD COLUMN stats_only INTEGER NOT NULL DEFAULT 0`,
+
+		`UPDATE channels SET enabled=1 WHERE enabled=0`,
 	}
 }
 

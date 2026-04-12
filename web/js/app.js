@@ -28,7 +28,7 @@ document.addEventListener('alpine:init', () => {
         routingRules: [],
         hooks: [],
         serverForm: { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true },
-        channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', auto_join: false },
+        channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', auto_join: false, enabled: true },
         routingForm: { id: null, pattern: '', destination_dir: '', priority: 0 },
         hookForm: { id: null, name: '', scope: 'global', hook_type: 'script', config: '', enabled: true },
         showServerForm: false,
@@ -718,7 +718,7 @@ document.addEventListener('alpine:init', () => {
         openChannelForm(channel) {
             this.channelForm = channel
                 ? Object.assign({}, channel)
-                : { id: null, server_id: this.settingsServerId, name: '', search_command: '', download_channel: '', auto_join: false };
+                : { id: null, server_id: this.settingsServerId, name: '', search_command: '', download_channel: '', auto_join: false, enabled: true };
             this.showChannelForm = true;
         },
 
@@ -726,9 +726,26 @@ document.addEventListener('alpine:init', () => {
             const p = this.channelForm.id
                 ? api.updateChannel(this.channelForm.id, this.channelForm)
                 : api.createChannel(this.channelForm);
-            return p.then(() => {
+            return p.then(async () => {
                 this.showChannelForm = false;
-                return this.loadSettingsChannels(this.settingsServerId);
+                await this.loadSettingsChannels(this.settingsServerId);
+                // Refresh the nav channel list from IRC status
+                try {
+                    const res = await api.getIRCStatus();
+                    const statuses = Array.isArray(res) ? res : [];
+                    const statusMap = {};
+                    for (const s of statuses) {
+                        statusMap[s.server_id] = s;
+                    }
+                    this.servers = this.servers.map(srv => {
+                        const st = statusMap[srv.id];
+                        return Object.assign({}, srv, {
+                            channels: (st && st.channels) ? st.channels : (srv.channels || []),
+                        });
+                    });
+                } catch (e) {
+                    console.error('refreshIRCStatus after saveChannel', e);
+                }
             }).catch(console.error);
         },
 

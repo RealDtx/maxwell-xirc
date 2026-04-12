@@ -162,6 +162,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "server_id is required")
 		return
 	}
+	ch.Enabled = true
 	if err := s.store.CreateChannel(&ch); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -189,6 +190,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ch.ID = id
+	ch.Enabled = true
 	if err := s.store.UpdateChannel(&ch); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
