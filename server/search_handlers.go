@@ -73,15 +73,15 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 	// Get the search command for this channel
 	var searchCmd = "!s"
 	if s.store != nil {
-		channels, err := s.store.GetChannels(req.ServerID)
+		realms, err := s.store.GetRealms(req.ServerID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		for _, ch := range channels {
-			if ch.Name == req.Channel {
-				if ch.SearchCommand != "" {
-					searchCmd = ch.SearchCommand
+		for _, r := range realms {
+			if r.Name == req.Channel {
+				if r.SearchCommand != "" {
+					searchCmd = r.SearchCommand
 				}
 				break
 			}

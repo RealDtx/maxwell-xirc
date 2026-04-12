@@ -23,27 +23,27 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleServerByID(w http.ResponseWriter, r *http.Request) {
 	suffix := strings.TrimPrefix(r.URL.Path, "/api/servers/")
-	if strings.HasSuffix(suffix, "/channels") {
-		// GET /api/servers/{id}/channels
+	if strings.HasSuffix(suffix, "/realms") {
+		// GET /api/servers/{id}/realms
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		idStr := strings.TrimSuffix(suffix, "/channels")
+		idStr := strings.TrimSuffix(suffix, "/realms")
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil || id == 0 {
 			writeError(w, http.StatusBadRequest, "invalid id")
 			return
 		}
-		channels, err := s.store.GetChannels(id)
+		realms, err := s.store.GetRealms(id)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if channels == nil {
-			channels = []db.Channel{}
+		if realms == nil {
+			realms = []db.Realm{}
 		}
-		writeJSON(w, http.StatusOK, channels)
+		writeJSON(w, http.StatusOK, realms)
 		return
 	}
 	// /api/servers/{id} — PUT or DELETE
@@ -57,20 +57,20 @@ func (s *Server) handleServerByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRealms(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	s.handleCreateChannel(w, r)
+	s.handleCreateRealm(w, r)
 }
 
-func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRealmByID(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPut:
-		s.handleUpdateChannel(w, r)
+		s.handleUpdateRealm(w, r)
 	case http.MethodDelete:
-		s.handleDeleteChannel(w, r)
+		s.handleDeleteRealm(w, r)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -152,77 +152,77 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
-	var ch db.Channel
-	if err := json.NewDecoder(r.Body).Decode(&ch); err != nil {
+func (s *Server) handleCreateRealm(w http.ResponseWriter, r *http.Request) {
+	var realm db.Realm
+	if err := json.NewDecoder(r.Body).Decode(&realm); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if ch.ServerID == 0 {
+	if realm.ServerID == 0 {
 		writeError(w, http.StatusBadRequest, "server_id is required")
 		return
 	}
-	ch.Enabled = true
-	if err := s.store.CreateChannel(&ch); err != nil {
+	realm.Enabled = true
+	if err := s.store.CreateRealm(&realm); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if s.ircMgr != nil {
-		s.ircMgr.ReloadChannels(ch.ServerID)
+		s.ircMgr.ReloadRealms(realm.ServerID)
 	}
-	writeJSON(w, http.StatusCreated, ch)
+	writeJSON(w, http.StatusCreated, realm)
 }
 
-func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
-	idStr := path.Base(r.URL.Path)
+func (s *Server) handleUpdateRealm(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/realms/")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id == 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	var ch db.Channel
-	if err := json.NewDecoder(r.Body).Decode(&ch); err != nil {
+	var realm db.Realm
+	if err := json.NewDecoder(r.Body).Decode(&realm); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if ch.ServerID == 0 {
+	if realm.ServerID == 0 {
 		writeError(w, http.StatusBadRequest, "server_id is required")
 		return
 	}
-	ch.ID = id
-	ch.Enabled = true
-	if err := s.store.UpdateChannel(&ch); err != nil {
+	realm.ID = id
+	realm.Enabled = true
+	if err := s.store.UpdateRealm(&realm); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if s.ircMgr != nil {
-		s.ircMgr.ReloadChannels(ch.ServerID)
+		s.ircMgr.ReloadRealms(realm.ServerID)
 	}
-	writeJSON(w, http.StatusOK, ch)
+	writeJSON(w, http.StatusOK, realm)
 }
 
-func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
-	idStr := path.Base(r.URL.Path)
+func (s *Server) handleDeleteRealm(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/realms/")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id == 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	ch, err := s.store.GetChannel(id)
+	realm, err := s.store.GetRealm(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if ch == nil {
-		writeError(w, http.StatusNotFound, "channel not found")
+	if realm == nil {
+		writeError(w, http.StatusNotFound, "realm not found")
 		return
 	}
-	if err := s.store.DeleteChannel(id); err != nil {
+	if err := s.store.DeleteRealm(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if s.ircMgr != nil {
-		s.ircMgr.ReloadChannels(ch.ServerID)
+		s.ircMgr.ReloadRealms(realm.ServerID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
