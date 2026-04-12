@@ -22,7 +22,7 @@ func TestEngine_HandlesDCCOffer(t *testing.T) {
 
 	engine := NewEngine(store, bus, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotNick", 1, "file.txt", 1024)
+	dl, err := engine.queue.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -81,12 +81,12 @@ func TestEngine_QueueProcessing(t *testing.T) {
 	engine := NewEngine(store, bus, storageCfg, 2)
 
 	// Add downloads to queue
-	dl1, err := engine.queue.Add(1, "#channel", "BotA", 1, "file1.txt", 1024)
+	dl1, err := engine.queue.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	dl2, err := engine.queue.Add(1, "#channel", "BotB", 2, "file2.txt", 2048)
+	dl2, err := engine.queue.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
