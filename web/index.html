@@ -126,11 +126,6 @@
                                     @click="setActiveTab(channelKey(activeServer, activeChannel), 'download')"
                                 >Downloads IRC</div>
                             </template>
-                            <div
-                                class="tab"
-                                :class="{ active: activeTab(channelKey(activeServer, activeChannel)) === 'irc' || (!currentChannelHasDownloadChannel() && activeTab(channelKey(activeServer, activeChannel)) === 'download') }"
-                                @click="setActiveTab(channelKey(activeServer, activeChannel), 'irc')"
-                            >IRC Log</div>
                         </div>
                     </template>
 
@@ -168,9 +163,9 @@
                         <div
                             class="content-body channel-pane"
                             x-show="activeTab(channelKey(activeServer, activeChannel)) === 'search'"
-                            style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;"
+                            style="overflow:hidden; flex:1; display:flex; flex-direction:column;"
                         >
-                            <div>
+                            <div style="padding:16px; overflow-y:auto; flex-shrink:0;">
                                 <div class="search-bar">
                                     <input
                                         type="text"
@@ -247,6 +242,43 @@
                                     <p style="color: var(--text-muted); font-size:13px;">No results. Enter a query and press Search.</p>
                                 </template>
                             </div>
+
+                            <!-- IRC log embedded at bottom of search pane -->
+                            <div style="display:flex;flex:1;overflow:hidden;">
+                                <div style="flex:1;overflow-y:auto;" class="irc-messages irc-log-pane" x-ref="ircLog">
+                                    <template x-for="(msg, i) in currentChannelMessages()" :key="i">
+                                        <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                            <span class="time" x-text="formatTime(msg.timestamp)"></span>
+                                            <span class="nick" x-text="msg.nick + ':'"></span>
+                                            <span x-text="msg.message"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="user-list-sidebar" x-show="appMode === 'advanced'">
+                                    <div class="user-list-header">
+                                        <span>Users</span>
+                                        <button @click="loadUserList(activeServer, activeChannel)" title="Refresh">↺</button>
+                                    </div>
+                                    <div class="user-list-body">
+                                        <template x-if="userListLoading[channelKey(activeServer, activeChannel)]">
+                                            <div class="text-muted p-2">Loading...</div>
+                                        </template>
+                                        <template x-for="nick in userLists[channelKey(activeServer, activeChannel)] || []" :key="nick">
+                                            <div @click="selectUser(nick.replace(/^[@+%]/, ''))"
+                                                 :class="isUserSelected(nick.replace(/^[@+%]/, '')) ? 'user-selected' : ''"
+                                                 class="user-list-item" x-text="nick"></div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="irc-input">
+                                <input
+                                    type="text"
+                                    placeholder="Type a message or /command..."
+                                    x-model="ircInput"
+                                    @keydown.enter="sendIrc()"
+                                >
+                            </div>
                         </div>
 
                         <!-- Download channel IRC pane (single-pane, download tab) -->
@@ -291,47 +323,6 @@
                             </div>
                         </div>
 
-                        <!-- Main IRC log pane (single-pane, irc tab) -->
-                        <div
-                            class="irc-console channel-pane"
-                            x-show="activeTab(channelKey(activeServer, activeChannel)) === 'irc' || (activeTab(channelKey(activeServer, activeChannel)) === 'download' && !currentChannelHasDownloadChannel())"
-                        >
-                            <div style="display:flex;flex:1;overflow:hidden;">
-                                <div style="flex:1;overflow-y:auto;" class="irc-messages irc-log-pane" x-ref="ircLog">
-                                    <template x-for="(msg, i) in currentChannelMessages()" :key="i">
-                                        <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
-                                            <span class="time" x-text="formatTime(msg.timestamp)"></span>
-                                            <span class="nick" x-text="msg.nick + ':'"></span>
-                                            <span x-text="msg.message"></span>
-                                        </div>
-                                    </template>
-                                </div>
-                                <div class="user-list-sidebar" x-show="appMode === 'advanced'">
-                                    <div class="user-list-header">
-                                        <span>Users</span>
-                                        <button @click="loadUserList(activeServer, activeChannel)" title="Refresh">↺</button>
-                                    </div>
-                                    <div class="user-list-body">
-                                        <template x-if="userListLoading[channelKey(activeServer, activeChannel)]">
-                                            <div class="text-muted p-2">Loading...</div>
-                                        </template>
-                                        <template x-for="nick in userLists[channelKey(activeServer, activeChannel)] || []" :key="nick">
-                                            <div @click="selectUser(nick.replace(/^[@+%]/, ''))"
-                                                 :class="isUserSelected(nick.replace(/^[@+%]/, '')) ? 'user-selected' : ''"
-                                                 class="user-list-item" x-text="nick"></div>
-                                        </template>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="irc-input">
-                                <input
-                                    type="text"
-                                    placeholder="Type a message or /command..."
-                                    x-model="ircInput"
-                                    @keydown.enter="sendIrc()"
-                                >
-                            </div>
-                        </div>
 
                     </div>
                 </template>
@@ -450,7 +441,7 @@
                                         </div>
                                     </template>
                                 </div>
-                                <div class="user-list-sidebar">
+                                <div class="user-list-sidebar" x-show="appMode === 'advanced'">
                                     <div class="user-list-header">
                                         <span>Users</span>
                                         <button @click="loadUserList(activeServer, currentChannelHasDownloadChannel() ? downloadChannelForCurrent() : activeChannel)" title="Refresh">↺</button>
