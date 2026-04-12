@@ -84,3 +84,29 @@ func TestHub_UnregisterStopsReceiving(t *testing.T) {
 		// Good
 	}
 }
+
+func TestHub_ClientCount(t *testing.T) {
+	bus := irc.NewEventBus()
+	hub := NewHub(bus)
+	hub.Start()
+	defer hub.Stop()
+
+	if hub.ClientCount() != 0 {
+		t.Errorf("expected 0 clients initially, got %d", hub.ClientCount())
+	}
+
+	ch1 := make(chan []byte, 10)
+	ch2 := make(chan []byte, 10)
+	hub.Register(ch1)
+	if hub.ClientCount() != 1 {
+		t.Errorf("expected 1 client after register, got %d", hub.ClientCount())
+	}
+	hub.Register(ch2)
+	if hub.ClientCount() != 2 {
+		t.Errorf("expected 2 clients after second register, got %d", hub.ClientCount())
+	}
+	hub.Unregister(ch1)
+	if hub.ClientCount() != 1 {
+		t.Errorf("expected 1 client after unregister, got %d", hub.ClientCount())
+	}
+}

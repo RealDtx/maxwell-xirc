@@ -281,3 +281,88 @@ func TestQueue_MoveToFront_MultiplePromotions(t *testing.T) {
 	}
 	_ = dl1
 }
+
+func TestQueue_MarkNeedsAction(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	q := New(store, 2)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false)
+
+	err := q.MarkNeedsAction(dl.ID, "manual captcha required")
+	if err != nil {
+		t.Fatalf("MarkNeedsAction failed: %v", err)
+	}
+
+	retrieved, _ := store.GetDownload(dl.ID)
+	if retrieved.Status != "needs_action" {
+		t.Errorf("expected Status=needs_action, got %s", retrieved.Status)
+	}
+	if retrieved.ErrorMessage != "manual captcha required" {
+		t.Errorf("expected ErrorMessage=manual captcha required, got %s", retrieved.ErrorMessage)
+	}
+}
+
+func TestQueue_UpdateProgress(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	q := New(store, 2)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false)
+
+	err := q.UpdateProgress(dl.ID, 512, 200, 150)
+	if err != nil {
+		t.Fatalf("UpdateProgress failed: %v", err)
+	}
+
+	retrieved, _ := store.GetDownload(dl.ID)
+	if retrieved.DownloadedBytes != 512 {
+		t.Errorf("expected DownloadedBytes=512, got %d", retrieved.DownloadedBytes)
+	}
+	if retrieved.PeakSpeed != 200 {
+		t.Errorf("expected PeakSpeed=200, got %d", retrieved.PeakSpeed)
+	}
+	if retrieved.AverageSpeed != 150 {
+		t.Errorf("expected AverageSpeed=150, got %d", retrieved.AverageSpeed)
+	}
+}
+
+func TestQueue_RequeueInterrupted(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	q := New(store, 3)
+	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false)
+	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false)
+
+	first, err := q.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("first NextAndMarkDownloading failed: %v", err)
+	}
+	if first == nil {
+		t.Fatal("expected first download to be marked downloading")
+	}
+
+	second, err := q.NextAndMarkDownloading()
+	if err != nil {
+		t.Fatalf("second NextAndMarkDownloading failed: %v", err)
+	}
+	if second == nil {
+		t.Fatal("expected second download to be marked downloading")
+	}
+
+	err = q.RequeueInterrupted()
+	if err != nil {
+		t.Fatalf("RequeueInterrupted failed: %v", err)
+	}
+
+	retrievedFirst, _ := store.GetDownload(first.ID)
+	if retrievedFirst.Status != "queued" {
+		t.Errorf("expected first Status=queued, got %s", retrievedFirst.Status)
+	}
+
+	retrievedSecond, _ := store.GetDownload(second.ID)
+	if retrievedSecond.Status != "queued" {
+		t.Errorf("expected second Status=queued, got %s", retrievedSecond.Status)
+	}
+}
