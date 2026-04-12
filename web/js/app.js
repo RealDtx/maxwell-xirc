@@ -86,6 +86,11 @@ document.addEventListener('alpine:init', () => {
         // Stats-only setting
         statsOnlyDefault: false,
 
+        // Setup wizard
+        setupRequired: false,
+        setupMappings: [],  // [{old_dir, new_dir, suggestion}]
+        setupBanner: false,
+
         // --- Computed helpers ---
 
         groupedRoutingRules() {
@@ -735,9 +740,46 @@ document.addEventListener('alpine:init', () => {
             await this.loadSettingsData();
         },
 
+        // --- Setup wizard ---
+
+        async checkSetup() {
+            try {
+                const status = await api.getSetupStatus();
+                if (!status.required) return;
+                this.setupRequired = true;
+                const defaults = await api.getSetupDefaults();
+                this.setupMappings = (status.bad_dirs || []).map(dir => ({
+                    old_dir: dir,
+                    new_dir: dir.toLowerCase().includes('download') ? defaults.downloads_dir : defaults.videos_dir,
+                    suggestion: dir.toLowerCase().includes('download') ? defaults.downloads_dir : defaults.videos_dir,
+                }));
+            } catch (e) {
+                console.error('setup check error', e);
+            }
+        },
+
+        async applySetup() {
+            const mappings = this.setupMappings.map(m => ({ old_dir: m.old_dir, new_dir: m.new_dir }));
+            try {
+                await api.completeSetup(mappings);
+                this.setupRequired = false;
+                this.setupBanner = true;
+            } catch (e) {
+                console.error('setup complete error', e);
+            }
+        },
+
+        cancelSetup() {
+            // Apply defaults without prompting
+            this.setupMappings = this.setupMappings.map(m => ({ ...m, new_dir: m.suggestion }));
+            this.applySetup();
+        },
+
         // --- Init ---
 
         async init() {
+            await this.checkSetup();
+
             // Restore layout prefs from localStorage
             this._channelLayout = {};
             for (let i = 0; i < localStorage.length; i++) {
