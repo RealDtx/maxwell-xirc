@@ -16,7 +16,9 @@ func isMigrationSkippable(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "duplicate column") ||
 		strings.Contains(msg, "Duplicate column") ||
-		strings.Contains(msg, "no such table")
+		strings.Contains(msg, "no such table") ||
+		strings.Contains(msg, "already another table") ||
+		strings.Contains(msg, "already exists")
 }
 
 func TestMigrationSQL_IsValid(t *testing.T) {
