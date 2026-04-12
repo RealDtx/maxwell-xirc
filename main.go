@@ -176,7 +176,6 @@ func main() {
 	if len(badDirs) > 0 {
 		if isTerminal() {
 			runCLIWizard(badDirs, store, setupState)
-			setupState.Required = false // CLI path fixes dirs in-place; no web wizard needed
 		}
 		// Non-TTY: setupState.Required stays true; web wizard will handle it
 	}
