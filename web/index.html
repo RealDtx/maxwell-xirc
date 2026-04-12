@@ -74,6 +74,15 @@
                 @click="setView('downloads'); sidebarOpen = false"
             >Downloads</a>
             <a
+                :class="{ active: activeView === 'files' }"
+                @click="setView('files'); sidebarOpen = false"
+            >Files</a>
+            <a
+                x-show="appMode === 'advanced'"
+                :class="{ active: activeView === 'stats' }"
+                @click="setView('stats'); loadStats(); sidebarOpen = false"
+            >Stats</a>
+            <a
                 x-show="appMode === 'advanced'"
                 :class="{ active: activeView === 'settings' }"
                 @click="setView('settings'); sidebarOpen = false"
@@ -877,6 +886,123 @@
             </div>
         </template>
 
+
+        <!-- File Manager view -->
+        <div x-show="activeView === 'files'" class="p-4 h-full flex flex-col">
+            <h2>File Manager</h2>
+            <div style="display:flex;gap:1rem;flex:1;overflow:hidden;">
+                <!-- Dir list (left) -->
+                <div style="width:12rem;flex-shrink:0;">
+                    <div class="text-muted text-xs mb-2">Destinations</div>
+                    <template x-for="dir in Object.keys(groupedRoutingRules())" :key="dir">
+                        <button @click="loadFileManager(dir)"
+                                :class="fileManagerDir === dir ? 'active' : ''"
+                                class="file-dir-btn" x-text="dir"></button>
+                    </template>
+                </div>
+                <!-- File list (right) -->
+                <div style="flex:1;overflow:auto;">
+                    <div x-show="!fileManagerDir" class="text-muted text-sm">Select a directory.</div>
+                    <div x-show="fileManagerLoading" class="text-muted text-sm">Loading...</div>
+                    <table x-show="fileManagerDir && !fileManagerLoading" class="w-full text-sm">
+                        <thead>
+                            <tr class="text-muted border-b">
+                                <th class="text-left pb-2 pr-4">Filename</th>
+                                <th class="text-left pb-2 pr-4">Size</th>
+                                <th class="text-left pb-2">Modified</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr x-show="fileManagerFiles.length === 0">
+                                <td colspan="3" class="text-muted py-4">No files.</td>
+                            </tr>
+                            <template x-for="f in fileManagerFiles" :key="f.name">
+                                <tr class="border-b hover-row">
+                                    <td class="py-1 pr-4 font-mono text-xs" x-text="f.name"></td>
+                                    <td class="py-1 pr-4 text-muted text-xs" x-text="formatSize(f.size)"></td>
+                                    <td class="py-1 text-muted text-xs" x-text="formatDate(f.modified)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats view -->
+        <div x-show="activeView === 'stats'" class="p-4 overflow-auto">
+            <h2>Download Statistics</h2>
+
+            <!-- Summary cards (4 cards) -->
+            <div x-show="statsSummary" class="stats-cards mb-4">
+                <div class="stat-card">
+                    <div class="stat-number" x-text="statsSummary && statsSummary.total_transfers || 0"></div>
+                    <div class="stat-label">Total transfers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" x-text="statsSummary ? statsSummary.success_rate.toFixed(1) + '%' : '—'"></div>
+                    <div class="stat-label">Success rate</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" x-text="statsSummary ? formatSize(statsSummary.total_bytes) : '—'"></div>
+                    <div class="stat-label">Total transferred</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" x-text="statsSummary ? formatSize(statsSummary.total_saved) : '—'"></div>
+                    <div class="stat-label">Saved to disk</div>
+                </div>
+            </div>
+
+            <!-- Stats-only toggle -->
+            <div class="settings-card mb-4" style="display:flex;align-items:center;gap:1rem;">
+                <label class="text-sm">Download mode:</label>
+                <button @click="statsOnlyDefault = false; localStorage.setItem('xirc_stats_only', 'false')"
+                        :class="!statsOnlyDefault ? 'active' : ''"
+                        class="mode-btn">Save file</button>
+                <button @click="statsOnlyDefault = true; localStorage.setItem('xirc_stats_only', 'true')"
+                        :class="statsOnlyDefault ? 'active-warning' : ''"
+                        class="mode-btn">Stats only (don't save)</button>
+                <span x-show="statsOnlyDefault" class="text-muted text-xs">
+                    Files will be downloaded then immediately deleted — only statistics are kept.
+                </span>
+            </div>
+
+            <!-- History table -->
+            <h3 class="mb-2">History</h3>
+            <div style="overflow-x:auto;">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-muted border-b">
+                            <th class="text-left pb-2 pr-3">Filename</th>
+                            <th class="text-left pb-2 pr-3">Size</th>
+                            <th class="text-left pb-2 pr-3">Bot</th>
+                            <th class="text-left pb-2 pr-3">Status</th>
+                            <th class="text-left pb-2">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="d in statsHistory" :key="d.id">
+                            <tr class="border-b hover-row">
+                                <td class="py-1 pr-3 font-mono text-xs" x-text="d.filename"></td>
+                                <td class="py-1 pr-3 text-muted text-xs" x-text="formatSize(d.size_bytes)"></td>
+                                <td class="py-1 pr-3 text-xs" x-text="d.bot_nick"></td>
+                                <td class="py-1 pr-3 text-xs">
+                                    <span :class="{
+                                        'text-success': d.status === 'completed' || d.status === 'stats_only',
+                                        'text-danger': d.status === 'failed',
+                                        'text-muted': d.status === 'cancelled'
+                                    }" x-text="d.status"></span>
+                                </td>
+                                <td class="py-1 text-muted text-xs" x-text="formatDate(d.completed_at)"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            <button @click="loadMoreHistory()"
+                    x-show="statsHistory.length > 0 && statsHistory.length === statsHistoryOffset"
+                    class="btn-secondary mt-3">Load more</button>
+        </div>
 
         <!-- Home / Dashboard view -->
         <template x-if="activeView === 'home'">

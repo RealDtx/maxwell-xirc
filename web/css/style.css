@@ -445,3 +445,113 @@ tr:hover { background: rgba(255,255,255,0.02); }
     .sidebar { transform: translateX(0) !important; }
     .main { margin-left: 0; }
 }
+
+/* File Manager */
+.file-dir-btn {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-family: monospace;
+    cursor: pointer;
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.file-dir-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.file-dir-btn.active { background: var(--bg-tertiary); color: var(--accent); border-color: var(--accent); }
+
+/* Stats view */
+.stats-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+}
+.stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    text-align: center;
+}
+.stat-number {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+}
+.stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Settings card (used in stats toggle row) */
+.settings-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+}
+
+/* Mode button (stats-only toggle) */
+.mode-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+}
+.mode-btn:hover { color: var(--text-primary); border-color: var(--accent); }
+.mode-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.mode-btn.active-warning { background: var(--warning); color: #1a1a2e; border-color: var(--warning); }
+
+/* Utility color helpers used in stats history */
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
+.text-muted { color: var(--text-muted); }
+.text-xs { font-size: 12px; }
+.text-sm { font-size: 13px; }
+
+/* Hover row for tables in custom views */
+.hover-row:hover { background: rgba(255,255,255,0.03); }
+
+/* File/Stats view padding helpers */
+.p-4 { padding: 16px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-4 { margin-bottom: 16px; }
+.mt-3 { margin-top: 12px; }
+.h-full { height: 100%; }
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.overflow-auto { overflow: auto; }
+.w-full { width: 100%; }
+.font-mono { font-family: monospace; }
+.py-1 { padding-top: 4px; padding-bottom: 4px; }
+.pr-3 { padding-right: 12px; }
+.pr-4 { padding-right: 16px; }
+.pb-2 { padding-bottom: 8px; }
+.py-4 { padding-top: 16px; padding-bottom: 16px; }
+.text-left { text-align: left; }
+.border-b { border-bottom: 1px solid var(--border); }
+
+/* btn-secondary */
+.btn-secondary {
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+}
+.btn-secondary:hover { color: var(--text-primary); border-color: var(--accent); }

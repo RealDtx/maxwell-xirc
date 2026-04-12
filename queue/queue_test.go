@@ -49,7 +49,7 @@ func TestQueue_AddDownload(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl, err := q.Add(1, "#channel", "BotNick", 1, "file.txt", 1024)
+	dl, err := q.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -86,9 +86,9 @@ func TestQueue_NextReturnsOldestQueued(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024)
-	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048)
-	_, _ = q.Add(1, "#channel", "BotA", 3, "file3.txt", 4096)
+	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false)
+	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048, false)
+	_, _ = q.Add(1, "#channel", "BotA", 3, "file3.txt", 4096, false)
 
 	next, err := q.NextAndMarkDownloading()
 	if err != nil {
@@ -108,9 +108,9 @@ func TestQueue_RespectsMaxConcurrent(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024)
-	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048)
-	dl3, _ := q.Add(1, "#channel", "BotC", 3, "file3.txt", 4096)
+	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false)
+	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false)
+	dl3, _ := q.Add(1, "#channel", "BotC", 3, "file3.txt", 4096, false)
 
 	// Mark first two as downloading
 	_, _ = q.NextAndMarkDownloading()
@@ -148,9 +148,9 @@ func TestQueue_OnePerBot(t *testing.T) {
 	q := New(store, 10) // High concurrency limit
 
 	// Add three downloads from BotA
-	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024)
-	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048)
-	dl3, _ := q.Add(1, "#channel", "BotB", 3, "file3.txt", 4096)
+	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false)
+	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048, false)
+	dl3, _ := q.Add(1, "#channel", "BotB", 3, "file3.txt", 4096, false)
 
 	// Mark first BotA download as downloading
 	_, _ = q.NextAndMarkDownloading()
@@ -174,7 +174,7 @@ func TestQueue_Cancel(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false)
 
 	err := q.Cancel(dl.ID)
 	if err != nil {
@@ -193,7 +193,7 @@ func TestQueue_Retry(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false)
 	_, _ = q.NextAndMarkDownloading()
 	q.MarkFailed(dl.ID, "connection timeout")
 
@@ -226,8 +226,8 @@ func TestQueue_Reorder(t *testing.T) {
 
 	q := New(store, 3)
 
-	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024)
-	dl2, _ := q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048)
+	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false)
+	dl2, _ := q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false)
 
 	// MoveToFront dl2
 	err := q.MoveToFront(dl2.ID)
@@ -256,9 +256,9 @@ func TestQueue_MoveToFront_MultiplePromotions(t *testing.T) {
 	srv := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	dl1, _ := q.Add(srv.ID, "#t", "bot1", 1, "first.mkv", 100)
-	dl2, _ := q.Add(srv.ID, "#t", "bot2", 2, "second.mkv", 100)
-	dl3, _ := q.Add(srv.ID, "#t", "bot3", 3, "third.mkv", 100)
+	dl1, _ := q.Add(srv.ID, "#t", "bot1", 1, "first.mkv", 100, false)
+	dl2, _ := q.Add(srv.ID, "#t", "bot2", 2, "second.mkv", 100, false)
+	dl3, _ := q.Add(srv.ID, "#t", "bot3", 3, "third.mkv", 100, false)
 
 	// Promote dl3 to front, then dl2 to front
 	// Expected order: dl2, dl3, dl1

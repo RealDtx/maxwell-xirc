@@ -128,6 +128,8 @@ document.addEventListener('alpine:init', () => {
                 this.showRoutingForm = false;
                 this.showHookForm = false;
                 this.loadSettingsData();
+            } else if (view === 'files') {
+                api.getRoutingRules().then(r => { this.routingRules = Array.isArray(r) ? r : []; }).catch(console.error);
             }
         },
 
@@ -363,6 +365,7 @@ document.addEventListener('alpine:init', () => {
                 channel: this.activeChannel,
                 bot_nick: row.bot_nick,
                 pack_number: row.pack_number,
+                stats_only: this.statsOnlyDefault,
             }).catch(function(e) { console.error('download request error', e); });
         },
 
