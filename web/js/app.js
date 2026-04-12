@@ -39,6 +39,9 @@ document.addEventListener('alpine:init', () => {
         // Mode
         appMode: localStorage.getItem('xirc_mode') || 'simple',
 
+        // Channel configs map: channelKey -> download_channel
+        _channelConfigs: {},
+
         // Active server (for server view)
         activeServerObj: null,
 
@@ -207,6 +210,25 @@ document.addEventListener('alpine:init', () => {
             return this.selectedUser && nick === this.selectedUser ? 'bg-yellow-100 font-bold' : '';
         },
 
+        // --- Channel helpers ---
+
+        currentChannelHasDownloadChannel() {
+            if (!this.activeServer || !this.activeChannel) return false;
+            const dl = this.downloadChannelForCurrent();
+            return dl && dl !== this.activeChannel;
+        },
+
+        downloadChannelForCurrent() {
+            return this._channelConfigs && this._channelConfigs[this.channelKey(this.activeServer, this.activeChannel)];
+        },
+
+        sendIrcToChannel(serverId, channel) {
+            const text = this.ircInput.trim();
+            if (!text || !serverId || !channel) return;
+            this.ircInput = '';
+            api.sendMessage(serverId, channel, text).catch(console.error);
+        },
+
         // --- IRC actions ---
 
         async sendIrc() {
@@ -293,6 +315,11 @@ document.addEventListener('alpine:init', () => {
             var col = this.searchSort.col;
             var dir = this.searchSort.dir;
             var arr = this.searchResults.slice();
+            if (this.selectedUser) {
+                arr = arr.filter(function(r) {
+                    return r.bot_nick === this.selectedUser;
+                }.bind(this));
+            }
             arr.sort(function(a, b) {
                 var av = a[col];
                 var bv = b[col];
@@ -718,6 +745,15 @@ document.addEventListener('alpine:init', () => {
                 });
             } catch (e) {
                 console.error('loadIRCStatus error', e);
+            }
+
+            // Load channel configs (for download_channel mapping)
+            for (const srv of this.servers) {
+                const channels = await api.getChannels(srv.id).catch(() => []);
+                for (const ch of (channels || [])) {
+                    const key = this.channelKey(srv.id, ch.name);
+                    this._channelConfigs[key] = ch.download_channel || ch.name;
+                }
             }
 
             // Load downloads
