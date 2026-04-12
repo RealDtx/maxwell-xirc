@@ -43,6 +43,15 @@ const api = {
     disconnectServer(serverId)        { return this.post('/irc/disconnect', { server_id: serverId }); },
     sendMessage(serverId, target, msg){ return this.post('/irc/message', { server_id: serverId, target, message: msg }); },
     sendRaw(serverId, cmd)            { return this.post('/irc/raw', { server_id: serverId, command: cmd }); },
+    getIRCMessages(serverId, channel, before, limit) {
+        let q = `/irc/${serverId}/messages?channel=${encodeURIComponent(channel)}`;
+        if (before) q += `&before=${encodeURIComponent(before)}`;
+        if (limit)  q += `&limit=${limit}`;
+        return this.get(q);
+    },
+    getIRCNames(serverId, channel) {
+        return this.get(`/irc/${serverId}/names?channel=${encodeURIComponent(channel)}`);
+    },
 
     // Search
     startSearch(serverId, channel, query) {
@@ -50,6 +59,9 @@ const api = {
     },
     getSearchResults(query, serverId, channel) {
         return this.get(`/search/results?query=${encodeURIComponent(query)}&server_id=${serverId}&channel=${encodeURIComponent(channel)}`);
+    },
+    getAllSearchResults(query) {
+        return this.get(`/search/results?query=${encodeURIComponent(query)}`);
     },
     getSavedSearches()        { return this.get('/search/saved'); },
     createSavedSearch(s)      { return this.post('/search/saved', s); },
@@ -65,6 +77,14 @@ const api = {
     retryDownload(id)     { return this.post('/downloads/retry', { download_id: id }); },
     moveDownload(id)      { return this.post('/downloads/move', { download_id: id }); },
 
+    // Storage
+    getStorageStats() { return this.get('/storage'); },
+
+    // Errors
+    getErrors(limit) {
+        return this.get('/errors' + (limit ? '?limit=' + limit : ''));
+    },
+
     // Routing & Hooks
     getRoutingRules()            { return this.get('/routing/rules'); },
     createRoutingRule(r)         { return this.post('/routing/rules', r); },
@@ -74,4 +94,19 @@ const api = {
     createHook(h)                { return this.post('/hooks', h); },
     updateHook(id, h)            { return this.put('/hooks/' + id, h); },
     deleteHook(id)               { return this.del('/hooks/' + id); },
+
+    // Browse & Files
+    browseDir(path)  { return this.get('/browse?path=' + encodeURIComponent(path || '/')); },
+    listFiles(dir)   { return this.get('/files?dir=' + encodeURIComponent(dir)); },
+
+    // Stats
+    getDownloadStats()                { return this.get('/stats/downloads'); },
+    getDownloadHistory(offset, limit) {
+        return this.get(`/stats/history?offset=${offset||0}&limit=${limit||50}`);
+    },
+
+    // Setup wizard
+    getSetupStatus() { return this.get('/setup/status'); },
+    getSetupDefaults() { return this.get('/setup/defaults'); },
+    completeSetup(mappings) { return this.post('/setup/complete', { mappings }); },
 };

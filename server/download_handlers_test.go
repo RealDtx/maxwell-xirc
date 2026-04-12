@@ -42,7 +42,7 @@ func newTestServerWithEngine(t *testing.T) (*Server, db.Store, func()) {
 	}
 	eng := queue.NewEngine(store, bus, storageCfg, 3)
 
-	srv := New(store, ircMgr, p, eng, nil)
+	srv := New(store, ircMgr, p, eng, nil, nil, nil, nil)
 	cleanup := func() {
 		store.Close()
 		os.RemoveAll(dir)
@@ -131,4 +131,79 @@ func TestPostDownloadRetry(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
+}
+
+func TestPostDownloadMove(t *testing.T) {
+srv, store, cleanup := newTestServerWithEngine(t)
+defer cleanup()
+
+s := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+store.CreateServer(s)
+dl := &db.Download{ServerID: s.ID, Channel: "#t", BotNick: "bot", PackNumber: 1, Status: "queued"}
+store.CreateDownload(dl)
+
+body := fmt.Sprintf(`{"download_id": %d}`, dl.ID)
+req := httptest.NewRequest("POST", "/api/downloads/move", strings.NewReader(body))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+srv.Handler().ServeHTTP(w, req)
+
+if w.Code != http.StatusOK {
+t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+}
+
+var resp map[string]string
+if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+t.Fatalf("failed to decode response: %v", err)
+}
+if resp["status"] != "moved" {
+t.Errorf("expected status moved, got %q", resp["status"])
+}
+}
+
+func TestPostDownloadMove_ZeroID(t *testing.T) {
+srv, _, cleanup := newTestServerWithEngine(t)
+defer cleanup()
+
+req := httptest.NewRequest("POST", "/api/downloads/move", strings.NewReader(`{"download_id": 0}`))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+srv.Handler().ServeHTTP(w, req)
+
+if w.Code != http.StatusBadRequest {
+t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+}
+}
+
+func TestPostDownloadMove_NoEngine(t *testing.T) {
+srv, store, cleanup := newTestServerWithStore(t)
+defer cleanup()
+
+s := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+store.CreateServer(s)
+dl := &db.Download{ServerID: s.ID, Channel: "#t", BotNick: "bot", PackNumber: 1, Status: "queued"}
+store.CreateDownload(dl)
+
+body := fmt.Sprintf(`{"download_id": %d}`, dl.ID)
+req := httptest.NewRequest("POST", "/api/downloads/move", strings.NewReader(body))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+srv.Handler().ServeHTTP(w, req)
+
+if w.Code != http.StatusInternalServerError {
+t.Errorf("expected 500, got %d: %s", w.Code, w.Body.String())
+}
+}
+
+func TestGetDownloads_MethodNotAllowed(t *testing.T) {
+srv, _, cleanup := newTestServerWithStore(t)
+defer cleanup()
+
+req := httptest.NewRequest("POST", "/api/downloads", nil)
+w := httptest.NewRecorder()
+srv.Handler().ServeHTTP(w, req)
+
+if w.Code != http.StatusMethodNotAllowed {
+t.Errorf("expected 405, got %d", w.Code)
+}
 }

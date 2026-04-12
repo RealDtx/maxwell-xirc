@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/maxwell-xirc/xirc/db"
-	"github.com/maxwell-xirc/xirc/irc"
+	ircpkg "github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/parser"
 	"github.com/maxwell-xirc/xirc/queue"
 	ws "github.com/maxwell-xirc/xirc/ws"
@@ -13,20 +13,26 @@ import (
 
 type Server struct {
 	store  db.Store
-	ircMgr *irc.Manager
+	ircMgr *ircpkg.Manager
 	parser *parser.Parser
 	engine *queue.Engine
 	wsHub  *ws.Hub
+	msgBuf *ircpkg.MessageBuffer
+	errBuf *ircpkg.ErrorBuffer
+	setup  *SetupState
 	mux    *http.ServeMux
 }
 
-func New(store db.Store, ircMgr *irc.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub) *Server {
+func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer, setup *SetupState) *Server {
 	s := &Server{
 		store:  store,
 		ircMgr: ircMgr,
 		parser: p,
 		engine: eng,
 		wsHub:  hub,
+		msgBuf: msgBuf,
+		errBuf: errBuf,
+		setup:  setup,
 		mux:    http.NewServeMux(),
 	}
 	s.routes()
@@ -40,12 +46,13 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) routes() {
 	s.mux.HandleFunc("/api/health", s.handleHealth)
 
-	// IRC endpoints
+	// IRC endpoints (exact paths first, then prefix for parameterised routes)
 	s.mux.HandleFunc("/api/irc/status", s.handleIRCStatus)
 	s.mux.HandleFunc("/api/irc/connect", s.handleIRCConnect)
 	s.mux.HandleFunc("/api/irc/disconnect", s.handleIRCDisconnect)
 	s.mux.HandleFunc("/api/irc/message", s.handleIRCSendMessage)
 	s.mux.HandleFunc("/api/irc/raw", s.handleIRCSendRaw)
+	s.mux.HandleFunc("/api/irc/", s.handleIRCDispatch) // must be last — prefix match for parameterised routes
 
 	// Search endpoints
 	s.mux.HandleFunc("/api/search/results", s.handleGetSearchResults)
@@ -75,6 +82,25 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/servers/", s.handleServerByID)
 	s.mux.HandleFunc("/api/channels", s.handleChannels)
 	s.mux.HandleFunc("/api/channels/", s.handleChannelByID)
+
+	// Browse & Files endpoints
+	s.mux.HandleFunc("/api/browse", s.handleBrowse)
+	s.mux.HandleFunc("/api/files", s.handleFiles)
+
+	// Stats endpoints
+	s.mux.HandleFunc("/api/stats/downloads", s.handleDownloadStats)
+	s.mux.HandleFunc("/api/stats/history", s.handleDownloadHistory)
+
+	// Errors endpoint
+	s.mux.HandleFunc("/api/errors", s.handleGetErrors)
+
+	// Storage stats endpoint
+	s.mux.HandleFunc("/api/storage", s.handleStorageStats)
+
+	// Setup wizard endpoints
+	s.mux.HandleFunc("/api/setup/status", s.handleSetupStatus)
+	s.mux.HandleFunc("/api/setup/defaults", s.handleSetupDefaults)
+	s.mux.HandleFunc("/api/setup/complete", s.handleSetupComplete)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)

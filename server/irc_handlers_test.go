@@ -12,7 +12,7 @@ import (
 
 func TestGetIRCStatus(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest("GET", "/api/irc/status", nil)
 	w := httptest.NewRecorder()
@@ -30,7 +30,7 @@ func TestGetIRCStatus(t *testing.T) {
 
 func TestPostIRCConnect_NoServer(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest("POST", "/api/irc/connect", strings.NewReader(`{"server_id": 999}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -45,7 +45,7 @@ func TestPostIRCConnect_NoServer(t *testing.T) {
 
 func TestPostIRCSendMessage_NoServer(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
 
 	body := `{"server_id": 999, "target": "#test", "message": "hello"}`
 	req := httptest.NewRequest("POST", "/api/irc/message", strings.NewReader(body))
@@ -55,5 +55,61 @@ func TestPostIRCSendMessage_NoServer(t *testing.T) {
 
 	if w.Code == http.StatusOK {
 		t.Error("expected error for nonexistent server")
+	}
+}
+
+func TestPostIRCDisconnect_NoServer(t *testing.T) {
+	bus := irc.NewEventBus()
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+
+	req := httptest.NewRequest("POST", "/api/irc/disconnect", strings.NewReader(`{"server_id": 999}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	// Should return 400 because server 999 doesn't exist / not connected
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for nonexistent server, got %d", w.Code)
+	}
+}
+
+func TestPostIRCDisconnect_MethodNotAllowed(t *testing.T) {
+	bus := irc.NewEventBus()
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+
+	req := httptest.NewRequest("GET", "/api/irc/disconnect", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestPostIRCSendRaw_NoServer(t *testing.T) {
+	bus := irc.NewEventBus()
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+
+	body := `{"server_id": 999, "command": "PING :test"}`
+	req := httptest.NewRequest("POST", "/api/irc/raw", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for nonexistent server, got %d", w.Code)
+	}
+}
+
+func TestPostIRCSendRaw_MethodNotAllowed(t *testing.T) {
+	bus := irc.NewEventBus()
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+
+	req := httptest.NewRequest("GET", "/api/irc/raw", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
 	}
 }

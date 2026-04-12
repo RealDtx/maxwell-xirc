@@ -26,29 +26,47 @@ type ChannelPair struct {
 }
 
 type Connection struct {
-	mu        sync.RWMutex
-	server    *db.Server
-	channels  []db.Channel
-	bus       *EventBus
-	client    IRCClient
-	status    ConnectionStatus
-	stopCh    chan struct{}
-	stopOnce  sync.Once
+	mu             sync.RWMutex
+	server         *db.Server
+	channels       []db.Channel
+	bus            *EventBus
+	client         IRCClient
+	status         ConnectionStatus
+	stopCh         chan struct{}
+	stopOnce       sync.Once
+	connectedAt    *time.Time
+	reconnectCount int
+	lagMs          int64
+	namesMu        sync.Mutex
+	namesPending   map[string]chan []string // channel name -> result chan
+	pingDone       chan struct{}
+}
+
+// ConnectionStatusEvent is the Data payload for EventConnectionStatus events.
+type ConnectionStatusEvent struct {
+	Status         string     `json:"status"`
+	ConnectedAt    *time.Time `json:"connected_at,omitempty"`
+	ReconnectCount int        `json:"reconnect_count"`
+	LagMs          int64      `json:"lag_ms"`
 }
 
 // newIRCClient creates the appropriate IRCClient for the given server config.
 func newIRCClient(srv *db.Server) IRCClient {
 	addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+	nick := srv.Nickname
+	if nick == "" {
+		nick = "xirc"
+	}
 	cfg := RawClientConfig{
 		Addr:     addr,
-		Nick:     srv.Nickname,
-		User:     srv.Nickname,
+		Nick:     nick,
+		User:     nick,
 		Realname: "xirc XDCC client",
 		UseTLS:   srv.SSL,
 	}
 	switch srv.AuthMethod {
 	case "sasl":
-		cfg.SASLUser = srv.Nickname
+		cfg.SASLUser = nick
 		cfg.SASLPass = srv.AuthPassword
 	case "nickserv":
 		cfg.NickServPass = srv.AuthPassword
@@ -58,11 +76,13 @@ func newIRCClient(srv *db.Server) IRCClient {
 
 func NewConnection(server *db.Server, channels []db.Channel, bus *EventBus) *Connection {
 	return &Connection{
-		server:   server,
-		channels: channels,
-		bus:      bus,
-		status:   StatusDisconnected,
-		stopCh:   make(chan struct{}),
+		server:       server,
+		channels:     channels,
+		bus:          bus,
+		status:       StatusDisconnected,
+		stopCh:       make(chan struct{}),
+		namesPending: make(map[string]chan []string),
+		pingDone:     make(chan struct{}),
 	}
 }
 
@@ -83,12 +103,23 @@ func (c *Connection) Status() ConnectionStatus {
 func (c *Connection) setStatus(s ConnectionStatus) {
 	c.mu.Lock()
 	c.status = s
+	connectedAt := c.connectedAt
+	reconnectCount := c.reconnectCount
+	lagMs := c.lagMs
+	if lagMs < 0 {
+		lagMs = 0
+	}
 	c.mu.Unlock()
 
 	c.bus.Publish(Event{
 		Type:     EventConnectionStatus,
 		ServerID: c.server.ID,
-		Data:     string(s),
+		Data: ConnectionStatusEvent{
+			Status:         string(s),
+			ConnectedAt:    connectedAt,
+			ReconnectCount: reconnectCount,
+			LagMs:          lagMs,
+		},
 	})
 }
 
@@ -140,8 +171,26 @@ func (c *Connection) Connect() error {
 // It must be called before the client's Connect() is invoked.
 func (c *Connection) applyHandlers(client IRCClient) {
 	client.OnConnect(func() {
+		now := time.Now()
+		c.mu.Lock()
+		c.connectedAt = &now
+		c.mu.Unlock()
+
 		c.setStatus(StatusConnected)
 		log.Printf("[%s] connected", c.server.Name)
+
+		c.mu.Lock()
+		// Stop any prior pingLoop by closing the old done channel, then replace it.
+		select {
+		case <-c.pingDone:
+			// already closed, make a new one
+		default:
+			close(c.pingDone)
+		}
+		c.pingDone = make(chan struct{})
+		done := c.pingDone
+		c.mu.Unlock()
+		go c.pingLoop(client, done)
 
 		// Auto-join channels
 		for _, ch := range c.channels {
@@ -186,6 +235,10 @@ func (c *Connection) applyHandlers(client IRCClient) {
 			},
 		})
 	})
+
+	client.OnRaw(func(line string) {
+		c.handleRawLine(line)
+	})
 }
 
 func (c *Connection) connectLoop() {
@@ -197,6 +250,12 @@ func (c *Connection) connectLoop() {
 		case <-c.stopCh:
 			return
 		default:
+		}
+
+		if attempt > 0 {
+			c.mu.Lock()
+			c.reconnectCount++
+			c.mu.Unlock()
 		}
 
 		c.setStatus(StatusConnecting)
@@ -224,6 +283,16 @@ func (c *Connection) connectLoop() {
 			attempt++
 
 			log.Printf("[%s] connection failed: %v, retrying in %ds", c.server.Name, err, delay)
+			c.bus.Publish(Event{
+				Type:     EventError,
+				ServerID: c.server.ID,
+				Data: ErrorEvent{
+					ErrorType: "irc_disconnect",
+					ServerID:  c.server.ID,
+					Message:   fmt.Sprintf("[%s] connection failed: %v", c.server.Name, err),
+					Timestamp: time.Now().Format(time.RFC3339),
+				},
+			})
 			c.setStatus(StatusDisconnected)
 
 			select {
@@ -328,4 +397,131 @@ func (c *Connection) RequestPack(channel, botNick string, packNumber int) error 
 	msg := fmt.Sprintf("xdcc send #%d", packNumber)
 	client.Privmsg(botNick, msg)
 	return nil
+}
+
+func (c *Connection) pingLoop(client IRCClient, done <-chan struct{}) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			sent := time.Now().UnixNano()
+			c.mu.Lock()
+			c.lagMs = -sent // negative = ping in flight
+			c.mu.Unlock()
+			client.SendLine(fmt.Sprintf("PING :xirc%d", sent))
+		case <-c.stopCh:
+			return
+		case <-done:
+			return
+		}
+	}
+}
+
+func (c *Connection) handleRawLine(line string) {
+	// PONG :<token>  (bare or server-prefixed: ":server PONG server :token")
+	if strings.HasPrefix(line, "PONG ") || strings.Contains(line, " PONG ") {
+		c.mu.Lock()
+		if c.lagMs < 0 {
+			sentNano := -c.lagMs
+			c.lagMs = (time.Now().UnixNano() - sentNano) / int64(time.Millisecond)
+		}
+		c.mu.Unlock()
+		return
+	}
+
+	// Publish every non-PONG raw line to the server-level message stream
+	// (channel="") so the server view can display it.
+	c.bus.Publish(Event{
+		Type:     EventIRCMessage,
+		ServerID: c.server.ID,
+		Channel:  "",
+		Nick:     "",
+		Data: map[string]string{
+			"type":    "raw",
+			"message": line,
+		},
+	})
+
+	// :server 353 nick = #channel :nick1 nick2 ...
+	// :server 366 nick #channel :End of NAMES
+	parts := strings.SplitN(line, " ", 5)
+	if len(parts) < 4 {
+		return
+	}
+	code := parts[1]
+	switch code {
+	case "353":
+		if len(parts) < 5 {
+			return
+		}
+		// parts[4] = "#channel :nick1 nick2 ..."  (parts[3] is the mode symbol "=", "@", "*")
+		chanAndNicks := strings.SplitN(parts[4], " :", 2)
+		if len(chanAndNicks) < 2 {
+			return
+		}
+		ch := strings.TrimSpace(chanAndNicks[0])
+		nicks := strings.Fields(chanAndNicks[1])
+		c.namesMu.Lock()
+		if resCh, ok := c.namesPending[ch]; ok {
+			resCh <- nicks
+		}
+		c.namesMu.Unlock()
+	case "366":
+		ch := parts[3]
+		c.namesMu.Lock()
+		if resCh, ok := c.namesPending[ch]; ok {
+			close(resCh)
+			delete(c.namesPending, ch)
+		}
+		c.namesMu.Unlock()
+	}
+}
+
+// Names sends a NAMES command and collects the response (timeout 5s).
+func (c *Connection) Names(channel string) ([]string, error) {
+	c.mu.RLock()
+	client := c.client
+	status := c.status
+	c.mu.RUnlock()
+
+	if client == nil || status != StatusConnected {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	resCh := make(chan []string, 20)
+	c.namesMu.Lock()
+	c.namesPending[channel] = resCh
+	c.namesMu.Unlock()
+
+	client.SendLine("NAMES " + channel)
+
+	var nicks []string
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case batch, ok := <-resCh:
+			if !ok {
+				return nicks, nil
+			}
+			nicks = append(nicks, batch...)
+		case <-timer.C:
+			c.namesMu.Lock()
+			delete(c.namesPending, channel)
+			c.namesMu.Unlock()
+			return nicks, fmt.Errorf("names timeout")
+		}
+	}
+}
+
+// Stats returns current connection statistics.
+func (c *Connection) Stats() (connectedAt *time.Time, reconnectCount int, lagMs int64) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	lag := c.lagMs
+	if lag < 0 {
+		lag = 0 // ping in flight, report 0
+	}
+	return c.connectedAt, c.reconnectCount, lag
 }

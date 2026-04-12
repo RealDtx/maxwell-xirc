@@ -38,4 +38,7 @@ type IRCClient interface {
 
 	// OnRaw registers a handler for raw IRC lines (for advanced parsing).
 	OnRaw(func(line string))
+
+	// SendLine writes a raw IRC protocol line (without CRLF — the implementation adds it).
+	SendLine(line string)
 }

@@ -4,15 +4,19 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/maxwell-xirc/xirc/db"
 )
 
 type ServerStatus struct {
-	ServerID   int64            `json:"server_id"`
-	ServerName string           `json:"server_name"`
-	Status     ConnectionStatus `json:"status"`
-	Channels   []string         `json:"channels"`
+	ServerID       int64            `json:"server_id"`
+	ServerName     string           `json:"server_name"`
+	Status         ConnectionStatus `json:"status"`
+	Channels       []string         `json:"channels"`
+	ConnectedAt    *time.Time       `json:"connected_at,omitempty"`
+	ReconnectCount int              `json:"reconnect_count"`
+	LagMs          int64            `json:"lag_ms"`
 }
 
 type Manager struct {
@@ -112,11 +116,15 @@ func (m *Manager) GetStatuses() []ServerStatus {
 
 	var statuses []ServerStatus
 	for _, conn := range m.connections {
+		connectedAt, reconnectCount, lagMs := conn.Stats()
 		statuses = append(statuses, ServerStatus{
-			ServerID:   conn.ServerID(),
-			ServerName: conn.ServerName(),
-			Status:     conn.Status(),
-			Channels:   conn.AllChannelNames(),
+			ServerID:       conn.ServerID(),
+			ServerName:     conn.ServerName(),
+			Status:         conn.Status(),
+			Channels:       conn.AllChannelNames(),
+			ConnectedAt:    connectedAt,
+			ReconnectCount: reconnectCount,
+			LagMs:          lagMs,
 		})
 	}
 	return statuses
@@ -166,6 +174,14 @@ func (m *Manager) SendMessage(serverID int64, target, message string) error {
 	}
 	conn.SendMessage(target, message)
 	return nil
+}
+
+func (m *Manager) Names(serverID int64, channel string) ([]string, error) {
+	conn := m.GetConnection(serverID)
+	if conn == nil {
+		return nil, fmt.Errorf("server %d not found", serverID)
+	}
+	return conn.Names(channel)
 }
 
 func (m *Manager) SendRaw(serverID int64, raw string) error {

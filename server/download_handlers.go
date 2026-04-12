@@ -39,6 +39,7 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		PackNumber int    `json:"pack_number"`
 		Filename   string `json:"filename"`
 		Filesize   int64  `json:"filesize"`
+		StatsOnly  bool   `json:"stats_only"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -55,7 +56,7 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize)
+	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -35,8 +35,85 @@ document.addEventListener('alpine:init', () => {
         showChannelForm: false,
         showRoutingForm: false,
         showHookForm: false,
+        routingNewDir: '',
+        routingNewExt: '',
+        showAddDestForm: false,
+
+        // Mode
+        appMode: localStorage.getItem('xirc_mode') || 'simple',
+
+        // Channel configs map: channelKey -> download_channel
+        _channelConfigs: {},
+
+        // Active server (for server view)
+        activeServerObj: null,
+
+        // Server view
+        serverMessages: {},  // keyed by server_id, value: [{timestamp,nick,text,msg_type}]
+        serverMsgLoading: {},
+
+        // Channel view
+        _channelLayout: {},   // NOTE: underscore prefix to avoid collision with channelLayout() method
+        activeChannelTab: {},
+        userLists: {},
+        userListLoading: {},
+        selectedUser: null,
+
+        // Dir picker
+        dirPickerOpen: false,
+        dirPickerPath: '/',
+        dirPickerEntries: [],
+        dirPickerCallback: null,
+
+        // File manager
+        fileManagerDir: null,
+        fileManagerFiles: [],
+        fileManagerLoading: false,
+
+        // Errors
+        errors: [],
+        unreadErrors: 0,
+
+        // Stats
+        statsSummary: null,
+        statsHistory: [],
+        statsHistoryOffset: 0,
+        statsLoading: false,
+
+        // Sidebar mobile
+        sidebarOpen: false,
+
+        // Stats-only setting
+        statsOnlyDefault: false,
+
+        // Setup wizard
+        setupRequired: false,
+        setupMappings: [],  // [{old_dir, new_dir, suggestion}]
+        setupBanner: false,
+
+        // Global search filter (advanced mode)
+        globalSearchServerId: '',
+
+        // Disk stats
+        diskStats: [],
 
         // --- Computed helpers ---
+
+        groupedRoutingRules() {
+            var groups = {};
+            for (var i = 0; i < this.routingRules.length; i++) {
+                var r = this.routingRules[i];
+                var dir = r.destination_dir;
+                if (!groups[dir]) groups[dir] = [];
+                var ext = r.pattern.replace(/^\*\./, '');
+                groups[dir].push({ id: r.id, ext: ext, rule: r });
+            }
+            return groups;
+        },
+
+        predefinedExtensions() {
+            return ['mkv', 'mp4', 'avi', 'mp3', 'flac', 'epub', 'pdf', 'zip', 'cbz'];
+        },
 
         serverStatus(serverId) {
             const s = this.ircStatus[serverId];
@@ -62,6 +139,8 @@ document.addEventListener('alpine:init', () => {
                 this.showRoutingForm = false;
                 this.showHookForm = false;
                 this.loadSettingsData();
+            } else if (view === 'files') {
+                api.getRoutingRules().then(r => { this.routingRules = Array.isArray(r) ? r : []; }).catch(console.error);
             }
         },
 
@@ -77,6 +156,109 @@ document.addEventListener('alpine:init', () => {
 
         isExpanded(serverId) {
             return !!this.expandedServers[serverId];
+        },
+
+        setMode(mode) {
+            this.appMode = mode;
+            localStorage.setItem('xirc_mode', mode);
+        },
+
+        // --- Server view ---
+
+        async selectServer(server) {
+            this.activeServerObj = server;
+            this.activeServer = server.id;
+            this.activeChannel = null;
+            this.activeView = 'server';
+            await this.loadServerMessages(server.id);
+        },
+
+        async loadServerMessages(serverId) {
+            this.serverMsgLoading[serverId] = true;
+            try {
+                const msgs = await api.getIRCMessages(serverId, '', null, 200);
+                this.serverMessages[serverId] = Array.isArray(msgs) ? msgs : [];
+            } catch(e) {
+                console.error('loadServerMessages', e);
+            } finally {
+                this.serverMsgLoading[serverId] = false;
+            }
+        },
+
+        async loadMoreServerMessages(serverId) {
+            const existing = this.serverMessages[serverId] || [];
+            if (existing.length === 0) return;
+            const oldest = existing[0].timestamp;
+            try {
+                const msgs = await api.getIRCMessages(serverId, '', oldest, 200);
+                if (msgs && msgs.length > 0) {
+                    this.serverMessages[serverId] = msgs.concat(existing);
+                }
+            } catch(e) {
+                console.error('loadMoreServerMessages', e);
+            }
+        },
+
+        // --- Channel layout ---
+
+        channelLayout(key) {
+            return this._channelLayout[key] || 'single';
+        },
+        setChannelLayout(key, layout) {
+            this._channelLayout = Object.assign({}, this._channelLayout, {[key]: layout});
+            localStorage.setItem('xirc_layout_' + key, layout);
+        },
+        activeTab(key) {
+            return this.activeChannelTab[key] || 'search';
+        },
+        setActiveTab(key, tab) {
+            this.activeChannelTab = Object.assign({}, this.activeChannelTab, {[key]: tab});
+        },
+
+        // --- User list ---
+
+        async loadUserList(serverId, channel) {
+            const key = this.channelKey(serverId, channel);
+            this.userListLoading[key] = true;
+            try {
+                const res = await api.getIRCNames(serverId, channel);
+                this.userLists[key] = res && res.nicks ? res.nicks : [];
+            } catch(e) {
+                console.error('loadUserList', e);
+            } finally {
+                this.userListLoading[key] = false;
+            }
+        },
+
+        selectUser(nick) {
+            this.selectedUser = this.selectedUser === nick ? null : nick;
+        },
+
+        isUserSelected(nick) {
+            return this.selectedUser === nick;
+        },
+
+        userHighlightClass(nick) {
+            return this.selectedUser && nick === this.selectedUser ? 'bg-yellow-100 font-bold' : '';
+        },
+
+        // --- Channel helpers ---
+
+        currentChannelHasDownloadChannel() {
+            if (!this.activeServer || !this.activeChannel) return false;
+            const dl = this.downloadChannelForCurrent();
+            return dl && dl !== this.activeChannel;
+        },
+
+        downloadChannelForCurrent() {
+            return this._channelConfigs && this._channelConfigs[this.channelKey(this.activeServer, this.activeChannel)];
+        },
+
+        sendIrcToChannel(serverId, channel) {
+            const text = this.ircInput.trim();
+            if (!text || !serverId || !channel) return;
+            this.ircInput = '';
+            api.sendMessage(serverId, channel, text).catch(console.error);
         },
 
         // --- IRC actions ---
@@ -145,7 +327,59 @@ document.addEventListener('alpine:init', () => {
         applySavedSearch(query) {
             if (!query) return;
             this.searchQuery = query;
-            this.runSearch();
+            this.runGlobalSearch();
+        },
+
+        // Global search across all channels (or filtered by globalSearchServerId in advanced mode).
+        async runGlobalSearch() {
+            if (!this.searchQuery.trim()) return;
+            const token = ++this.searchToken;
+            this.searchRunning = true;
+            this.searchResults = [];
+            try {
+                // Fire search on all matching channels
+                const targets = [];
+                for (var i = 0; i < this.servers.length; i++) {
+                    var srv = this.servers[i];
+                    if (this.globalSearchServerId && srv.id !== parseInt(this.globalSearchServerId)) continue;
+                    var channels = srv.channels || [];
+                    for (var j = 0; j < channels.length; j++) {
+                        targets.push({ server_id: srv.id, channel: channels[j] });
+                    }
+                }
+                // Kick off searches (ignore errors — bot may not be present on all channels)
+                for (var k = 0; k < targets.length; k++) {
+                    api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).catch(function(){});
+                }
+                // Poll for aggregated results
+                for (var attempt = 0; attempt < 8; attempt++) {
+                    await new Promise(function(resolve) { setTimeout(resolve, 1000); });
+                    if (token !== this.searchToken) return;
+                    var res = await api.getAllSearchResults(this.searchQuery);
+                    this.searchResults = Array.isArray(res) ? res : [];
+                    if (this.searchResults.length > 0) break;
+                }
+            } catch (e) {
+                console.error('global search error', e);
+            } finally {
+                if (token === this.searchToken) this.searchRunning = false;
+            }
+        },
+
+        getServerName(serverId) {
+            for (var i = 0; i < this.servers.length; i++) {
+                if (this.servers[i].id === serverId) return this.servers[i].name;
+            }
+            return 'Server ' + serverId;
+        },
+
+        async loadDiskStats() {
+            try {
+                var res = await api.getStorageStats();
+                this.diskStats = Array.isArray(res) ? res : [];
+            } catch (e) {
+                console.error('disk stats error', e);
+            }
         },
 
         sortBy(col) {
@@ -165,6 +399,11 @@ document.addEventListener('alpine:init', () => {
             var col = this.searchSort.col;
             var dir = this.searchSort.dir;
             var arr = this.searchResults.slice();
+            if (this.selectedUser) {
+                arr = arr.filter(function(r) {
+                    return r.bot_nick === this.selectedUser;
+                }.bind(this));
+            }
             arr.sort(function(a, b) {
                 var av = a[col];
                 var bv = b[col];
@@ -189,6 +428,7 @@ document.addEventListener('alpine:init', () => {
                 channel: this.activeChannel,
                 bot_nick: row.bot_nick,
                 pack_number: row.pack_number,
+                stats_only: this.statsOnlyDefault,
             }).catch(function(e) { console.error('download request error', e); });
         },
 
@@ -277,25 +517,40 @@ document.addEventListener('alpine:init', () => {
             const type = data.type;
 
             if (type === 'irc_message') {
-                const key = this.channelKey(data.server_id, data.channel);
-                if (!this.ircMessages[key]) {
-                    this.ircMessages[key] = [];
-                }
-                this.ircMessages[key].push({
-                    nick: data.nick,
-                    message: data.message,
-                    timestamp: data.timestamp,
-                });
-                // Keep buffer bounded
-                if (this.ircMessages[key].length > 500) {
-                    this.ircMessages[key].splice(0, this.ircMessages[key].length - 500);
-                }
-                // Auto-scroll if this message is for the active channel
-                if (data.server_id === this.activeServer && data.channel === this.activeChannel) {
-                    this.$nextTick(() => {
-                        const el = this.$refs && this.$refs.ircLog;
-                        if (el) el.scrollTop = el.scrollHeight;
+                if (data.channel && data.channel !== '') {
+                    const key = this.channelKey(data.server_id, data.channel);
+                    if (!this.ircMessages[key]) {
+                        this.ircMessages[key] = [];
+                    }
+                    this.ircMessages[key].push({
+                        nick: data.nick,
+                        message: data.message,
+                        timestamp: data.timestamp,
                     });
+                    // Keep buffer bounded
+                    if (this.ircMessages[key].length > 500) {
+                        this.ircMessages[key].splice(0, this.ircMessages[key].length - 500);
+                    }
+                    // Auto-scroll if this message is for the active channel
+                    if (data.server_id === this.activeServer && data.channel === this.activeChannel) {
+                        this.$nextTick(() => {
+                            const el = this.$refs && this.$refs.ircLog;
+                            if (el) el.scrollTop = el.scrollHeight;
+                        });
+                    }
+                } else {
+                    // Server-level message (no channel): buffer in serverMessages only
+                    if (!this.serverMessages[data.server_id]) {
+                        this.serverMessages[data.server_id] = [];
+                    }
+                    this.serverMessages[data.server_id].push({
+                        nick: data.nick,
+                        message: data.message || (data.data && data.data.message) || '',
+                        timestamp: data.timestamp,
+                    });
+                    if (this.serverMessages[data.server_id].length > 500) {
+                        this.serverMessages[data.server_id].splice(0, this.serverMessages[data.server_id].length - 500);
+                    }
                 }
             } else if (type === 'download_progress') {
                 const p = data.data;
@@ -310,9 +565,117 @@ document.addEventListener('alpine:init', () => {
             } else if (type === 'download_failed') {
                 this.loadDownloads();
             } else if (type === 'connection_status') {
-                const status = data.data;  // "connected" / "disconnected" / "connecting"
-                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, { status: status });
+                const d = data.data;
+                const status = typeof d === 'string' ? d : d.status;
+                this.ircStatus[data.server_id] = Object.assign({}, this.ircStatus[data.server_id] || {}, {
+                    status: status,
+                    connected_at: d.connected_at || (this.ircStatus[data.server_id] || {}).connected_at,
+                    reconnect_count: d.reconnect_count !== undefined ? d.reconnect_count : (this.ircStatus[data.server_id] || {}).reconnect_count,
+                    lag_ms: d.lag_ms !== undefined ? d.lag_ms : (this.ircStatus[data.server_id] || {}).lag_ms,
+                });
+            } else if (type === 'error_event') {
+                this.errors.unshift(data.data || data);
+                if (this.errors.length > 200) this.errors.pop();
+                this.unreadErrors++;
             }
+        },
+
+        // --- Dir picker ---
+
+        async openDirPicker(currentPath, callback) {
+            this.dirPickerCallback = callback;
+            this.dirPickerOpen = true;
+            await this.browseDir(currentPath || '/');
+        },
+
+        async browseDir(path) {
+            try {
+                const res = await api.browseDir(path);
+                this.dirPickerPath = res.path;
+                this.dirPickerEntries = res.entries || [];
+            } catch(e) {
+                console.error('browseDir', e);
+            }
+        },
+
+        async browseDirUp() {
+            const parent = this.dirPickerPath.split('/').slice(0, -1).join('/') || '/';
+            await this.browseDir(parent);
+        },
+
+        selectDir() {
+            if (this.dirPickerCallback) {
+                this.dirPickerCallback(this.dirPickerPath);
+            }
+            this.dirPickerOpen = false;
+            this.dirPickerCallback = null;
+        },
+
+        cancelDirPicker() {
+            this.dirPickerOpen = false;
+            this.dirPickerCallback = null;
+        },
+
+        // --- File manager ---
+
+        async loadFileManager(dir) {
+            this.fileManagerDir = dir;
+            this.fileManagerLoading = true;
+            try {
+                const res = await api.listFiles(dir);
+                this.fileManagerFiles = res && res.files ? res.files : [];
+            } catch(e) {
+                console.error('loadFileManager', e);
+            } finally {
+                this.fileManagerLoading = false;
+            }
+        },
+
+        // --- Stats ---
+
+        async loadStats() {
+            this.statsLoading = true;
+            try {
+                const [summary, history] = await Promise.all([
+                    api.getDownloadStats(),
+                    api.getDownloadHistory(0, 50),
+                ]);
+                this.statsSummary = summary;
+                this.statsHistory = Array.isArray(history) ? history : [];
+                this.statsHistoryOffset = 50;
+            } catch(e) {
+                console.error('loadStats', e);
+            } finally {
+                this.statsLoading = false;
+            }
+        },
+
+        async loadMoreHistory() {
+            try {
+                const more = await api.getDownloadHistory(this.statsHistoryOffset, 50);
+                if (more && more.length > 0) {
+                    this.statsHistory = this.statsHistory.concat(more);
+                    this.statsHistoryOffset += more.length;
+                }
+            } catch(e) {
+                console.error('loadMoreHistory', e);
+            }
+        },
+
+        // --- Errors ---
+
+        async loadErrors() {
+            try {
+                const errs = await api.getErrors(100);
+                this.errors = Array.isArray(errs) ? errs : [];
+            } catch(e) {
+                console.error('loadErrors', e);
+            }
+        },
+
+        clearErrors() {
+            this.errors = [];
+            this.unreadErrors = 0;
         },
 
         // --- Settings ---
@@ -418,9 +781,83 @@ document.addEventListener('alpine:init', () => {
             return api.deleteHook(id).then(() => this.loadSettingsData()).catch(console.error);
         },
 
+        async addRoutingRuleForDir(dir, ext) {
+            if (!dir || !ext) return;
+            const pattern = '*.' + ext.replace(/^\./, '');
+            await api.createRoutingRule({ pattern, destination_dir: dir, priority: 0 });
+            await this.loadSettingsData();
+        },
+
+        async renameRoutingDir(oldDir, newDir) {
+            if (!newDir || newDir === oldDir) return;
+            const groups = this.groupedRoutingRules();
+            const rules = groups[oldDir] || [];
+            for (const item of rules) {
+                await api.updateRoutingRule(item.id, Object.assign({}, item.rule, { destination_dir: newDir }));
+            }
+            await this.loadSettingsData();
+        },
+
+        // --- Setup wizard ---
+
+        async checkSetup() {
+            try {
+                const status = await api.getSetupStatus();
+                if (!status.required) return;
+                this.setupRequired = true;
+                try {
+                    const defaults = await api.getSetupDefaults();
+                    this.setupMappings = (status.bad_dirs || []).map(dir => ({
+                        old_dir: dir,
+                        new_dir: dir.toLowerCase().includes('download') ? defaults.downloads_dir : defaults.videos_dir,
+                        suggestion: dir.toLowerCase().includes('download') ? defaults.downloads_dir : defaults.videos_dir,
+                    }));
+                } catch (e) {
+                    console.error('setup defaults error', e);
+                    this.setupRequired = false;
+                }
+            } catch (e) {
+                console.error('setup check error', e);
+            }
+        },
+
+        async applySetup() {
+            const mappings = this.setupMappings.map(m => ({ old_dir: m.old_dir, new_dir: m.new_dir }));
+            try {
+                await api.completeSetup(mappings);
+                this.setupRequired = false;
+                this.setupBanner = true;
+            } catch (e) {
+                console.error('setup complete error', e);
+            }
+        },
+
+        cancelSetup() {
+            // Apply defaults without prompting
+            this.setupMappings = this.setupMappings.map(m => ({ ...m, new_dir: m.suggestion }));
+            this.applySetup();
+        },
+
         // --- Init ---
 
         async init() {
+            await this.checkSetup();
+
+            // Load disk stats and refresh every 30 seconds
+            await this.loadDiskStats();
+            var self = this;
+            setInterval(function() { self.loadDiskStats(); }, 30000);
+
+            // Restore layout prefs from localStorage
+            this._channelLayout = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith('xirc_layout_')) {
+                    this._channelLayout[k.slice('xirc_layout_'.length)] = localStorage.getItem(k);
+                }
+            }
+            this.statsOnlyDefault = localStorage.getItem('xirc_stats_only') === 'true';
+
             // Load servers
             try {
                 const res = await api.getServers();
@@ -438,7 +875,14 @@ document.addEventListener('alpine:init', () => {
                 const statuses = Array.isArray(res) ? res : [];
                 const statusMap = {};
                 for (const s of statuses) {
-                    statusMap[s.server_id] = { status: s.status, channels: s.channels, name: s.server_name };
+                    statusMap[s.server_id] = {
+                        status: s.status,
+                        channels: s.channels,
+                        name: s.server_name,
+                        connected_at: s.connected_at,
+                        reconnect_count: s.reconnect_count,
+                        lag_ms: s.lag_ms,
+                    };
                 }
                 this.ircStatus = statusMap;
                 // Merge channels from IRC status into servers array
@@ -452,11 +896,23 @@ document.addEventListener('alpine:init', () => {
                 console.error('loadIRCStatus error', e);
             }
 
+            // Load channel configs (for download_channel mapping)
+            for (const srv of this.servers) {
+                const channels = await api.getChannels(srv.id).catch(() => []);
+                for (const ch of (channels || [])) {
+                    const key = this.channelKey(srv.id, ch.name);
+                    this._channelConfigs[key] = ch.download_channel || ch.name;
+                }
+            }
+
             // Load downloads
             await this.loadDownloads();
 
             // Load saved searches
             await this.loadSavedSearches();
+
+            // Load errors
+            await this.loadErrors();
 
             // Start WebSocket
             this.wsConnect();

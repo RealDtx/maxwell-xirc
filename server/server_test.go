@@ -8,7 +8,7 @@ import (
 )
 
 func TestHealthEndpoint(t *testing.T) {
-	srv := New(nil, nil, nil, nil, nil)
+	srv := New(nil, nil, nil, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest("GET", "/api/health", nil)
 	w := httptest.NewRecorder()
 
@@ -28,7 +28,7 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestHealthNonGetReturns405(t *testing.T) {
-	srv := New(nil, nil, nil, nil, nil)
+	srv := New(nil, nil, nil, nil, nil, nil, nil, nil)
 	for _, method := range []string{"POST", "PUT", "DELETE", "PATCH"} {
 		req := httptest.NewRequest(method, "/api/health", nil)
 		w := httptest.NewRecorder()
@@ -40,7 +40,7 @@ func TestHealthNonGetReturns405(t *testing.T) {
 }
 
 func TestNotFoundReturns404(t *testing.T) {
-	srv := New(nil, nil, nil, nil, nil)
+	srv := New(nil, nil, nil, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest("GET", "/api/nonexistent", nil)
 	w := httptest.NewRecorder()
 

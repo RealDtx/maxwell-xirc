@@ -19,18 +19,26 @@ func (s *Server) handleGetSearchResults(w http.ResponseWriter, r *http.Request) 
 	serverIDStr := r.URL.Query().Get("server_id")
 	channel := r.URL.Query().Get("channel")
 
-	if query == "" || serverIDStr == "" || channel == "" {
-		writeError(w, http.StatusBadRequest, "query, server_id, and channel are required")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "query is required")
 		return
 	}
 
-	serverID, err := strconv.ParseInt(serverIDStr, 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid server_id")
-		return
+	var results []db.SearchResult
+	var err error
+
+	if serverIDStr == "" || channel == "" {
+		// Global search — return results across all servers/channels
+		results, err = s.store.GetAllSearchResults(query)
+	} else {
+		serverID, parseErr := strconv.ParseInt(serverIDStr, 10, 64)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid server_id")
+			return
+		}
+		results, err = s.store.GetSearchResults(query, serverID, channel)
 	}
 
-	results, err := s.store.GetSearchResults(query, serverID, channel)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
