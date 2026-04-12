@@ -22,12 +22,12 @@ func TestNewConnection_SetsFields(t *testing.T) {
 		AuthPassword: "secret",
 		Enabled:      true,
 	}
-	channels := []db.Channel{
+	realms := []db.Realm{
 		{ID: 1, ServerID: 1, Name: "#search", SearchCommand: "!s", DownloadChannel: "#downloads", AutoJoin: true, Enabled: true},
 		{ID: 2, ServerID: 1, Name: "#downloads", AutoJoin: true, Enabled: true},
 	}
 
-	conn := NewConnection(srv, channels, bus)
+	conn := NewConnection(srv, realms, bus)
 
 	if conn.ServerID() != int64(1) {
 		t.Errorf("expected server ID 1, got %d", conn.ServerID())
@@ -40,12 +40,12 @@ func TestNewConnection_SetsFields(t *testing.T) {
 func TestConnection_ChannelPairs(t *testing.T) {
 	bus := NewEventBus()
 	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "testbot", Enabled: true}
-	channels := []db.Channel{
+	realms := []db.Realm{
 		{ID: 1, ServerID: 1, Name: "#search", SearchCommand: "!s", DownloadChannel: "#downloads", AutoJoin: true, Enabled: true},
 		{ID: 2, ServerID: 1, Name: "#simple", SearchCommand: "!s", AutoJoin: true, Enabled: true},
 	}
 
-	conn := NewConnection(srv, channels, bus)
+	conn := NewConnection(srv, realms, bus)
 
 	pairs := conn.ChannelPairs()
 	if len(pairs) != 2 {
@@ -72,11 +72,11 @@ func TestConnection_ChannelPairs(t *testing.T) {
 func TestConnection_AllChannelNames(t *testing.T) {
 	bus := NewEventBus()
 	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "testbot", Enabled: true}
-	channels := []db.Channel{
+	realms := []db.Realm{
 		{ID: 1, ServerID: 1, Name: "#search", DownloadChannel: "#downloads", AutoJoin: true, Enabled: true},
 	}
 
-	conn := NewConnection(srv, channels, bus)
+	conn := NewConnection(srv, realms, bus)
 
 	names := conn.AllChannelNames()
 	if len(names) != 2 {
@@ -141,7 +141,7 @@ func TestNewIRCClient_FallsBackToXircWhenEmpty(t *testing.T) {
 func TestHandleRawLine_PublishesNonPongLine(t *testing.T) {
 	bus := NewEventBus()
 	srv := &db.Server{ID: 42, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
-	conn := NewConnection(srv, []db.Channel{}, bus)
+	conn := NewConnection(srv, []db.Realm{}, bus)
 
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
@@ -177,7 +177,7 @@ func TestHandleRawLine_PublishesNonPongLine(t *testing.T) {
 func TestHandleRawLine_DoesNotPublishPongLine(t *testing.T) {
 	bus := NewEventBus()
 	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
-	conn := NewConnection(srv, []db.Channel{}, bus)
+	conn := NewConnection(srv, []db.Realm{}, bus)
 
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
@@ -195,7 +195,7 @@ func TestHandleRawLine_DoesNotPublishPongLine(t *testing.T) {
 func TestHandleRawLine_DoesNotPublishServerPrefixedPongLine(t *testing.T) {
 	bus := NewEventBus()
 	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
-	conn := NewConnection(srv, []db.Channel{}, bus)
+	conn := NewConnection(srv, []db.Realm{}, bus)
 
 	ch := bus.Subscribe()
 	defer bus.Unsubscribe(ch)
@@ -210,14 +210,14 @@ func TestHandleRawLine_DoesNotPublishServerPrefixedPongLine(t *testing.T) {
 	}
 }
 
-func TestConnection_UpdateChannels_ThreadSafe(t *testing.T) {
+func TestConnection_UpdateRealms_ThreadSafe(t *testing.T) {
 	bus := NewEventBus()
 	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "testbot", Enabled: true}
-	conn := NewConnection(srv, []db.Channel{
+	conn := NewConnection(srv, []db.Realm{
 		{ID: 1, ServerID: 1, Name: "#search", AutoJoin: true, Enabled: true},
 	}, bus)
 
-	newChannels := []db.Channel{
+	newRealms := []db.Realm{
 		{ID: 2, ServerID: 1, Name: "#downloads", AutoJoin: true, Enabled: true},
 	}
 
@@ -234,7 +234,7 @@ func TestConnection_UpdateChannels_ThreadSafe(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
-			conn.UpdateChannels(newChannels)
+			conn.UpdateRealms(newRealms)
 		}
 	}()
 

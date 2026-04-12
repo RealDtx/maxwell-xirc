@@ -8,8 +8,8 @@ import (
 )
 
 type mockStore struct {
-	servers  []db.Server
-	channels map[int64][]db.Channel
+	servers []db.Server
+	realms  map[int64][]db.Realm
 }
 
 func (m *mockStore) GetServers() ([]db.Server, error) { return m.servers, nil }
@@ -28,48 +28,48 @@ func (m *mockStore) CreateServer(s *db.Server) error {
 	m.servers = append(m.servers, *s)
 	return nil
 }
-func (m *mockStore) UpdateServer(s *db.Server) error                  { return nil }
-func (m *mockStore) DeleteServer(id int64) error                      { return nil }
-func (m *mockStore) GetChannels(serverID int64) ([]db.Channel, error) { return m.channels[serverID], nil }
-func (m *mockStore) GetChannel(id int64) (*db.Channel, error)         { return nil, nil }
-func (m *mockStore) CreateChannel(c *db.Channel) error                { return nil }
-func (m *mockStore) UpdateChannel(c *db.Channel) error                { return nil }
-func (m *mockStore) DeleteChannel(id int64) error                     { return nil }
+func (m *mockStore) UpdateServer(s *db.Server) error              { return nil }
+func (m *mockStore) DeleteServer(id int64) error                  { return nil }
+func (m *mockStore) GetRealms(serverID int64) ([]db.Realm, error) { return m.realms[serverID], nil }
+func (m *mockStore) GetRealm(id int64) (*db.Realm, error)         { return nil, nil }
+func (m *mockStore) CreateRealm(r *db.Realm) error                { return nil }
+func (m *mockStore) UpdateRealm(r *db.Realm) error                { return nil }
+func (m *mockStore) DeleteRealm(id int64) error                   { return nil }
 func (m *mockStore) GetDownloads(status string) ([]db.Download, error) {
 	return nil, nil
 }
-func (m *mockStore) GetDownload(id int64) (*db.Download, error)   { return nil, nil }
-func (m *mockStore) CreateDownload(d *db.Download) error          { return nil }
-func (m *mockStore) UpdateDownload(d *db.Download) error          { return nil }
-func (m *mockStore) GetSearchResults(q string, sid int64, ch string) ([]db.SearchResult, error) {
+func (m *mockStore) GetDownload(id int64) (*db.Download, error) { return nil, nil }
+func (m *mockStore) CreateDownload(d *db.Download) error        { return nil }
+func (m *mockStore) UpdateDownload(d *db.Download) error        { return nil }
+func (m *mockStore) GetSearchResults(q string, sid int64, r string) ([]db.SearchResult, error) {
 	return nil, nil
 }
 func (m *mockStore) GetAllSearchResults(q string) ([]db.SearchResult, error) { return nil, nil }
-func (m *mockStore) CreateSearchResult(r *db.SearchResult) error        { return nil }
-func (m *mockStore) GetSavedSearches() ([]db.SavedSearch, error)        { return nil, nil }
-func (m *mockStore) CreateSavedSearch(s *db.SavedSearch) error          { return nil }
-func (m *mockStore) DeleteSavedSearch(id int64) error                   { return nil }
-func (m *mockStore) GetParsePatterns() ([]db.ParsePattern, error)       { return nil, nil }
-func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error        { return nil }
-func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error        { return nil }
+func (m *mockStore) CreateSearchResult(r *db.SearchResult) error             { return nil }
+func (m *mockStore) GetSavedSearches() ([]db.SavedSearch, error)             { return nil, nil }
+func (m *mockStore) CreateSavedSearch(s *db.SavedSearch) error               { return nil }
+func (m *mockStore) DeleteSavedSearch(id int64) error                        { return nil }
+func (m *mockStore) GetParsePatterns() ([]db.ParsePattern, error)            { return nil, nil }
+func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error             { return nil }
+func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error             { return nil }
 func (m *mockStore) GetPostHooks(scope string, scopeID *int64) ([]db.PostHook, error) {
 	return nil, nil
 }
-func (m *mockStore) GetPostHookByID(id int64) (*db.PostHook, error)     { return nil, nil }
-func (m *mockStore) CreatePostHook(h *db.PostHook) error                { return nil }
-func (m *mockStore) UpdatePostHook(h *db.PostHook) error                { return nil }
-func (m *mockStore) DeletePostHook(id int64) error                      { return nil }
-func (m *mockStore) GetFileRoutingRules() ([]db.FileRoutingRule, error)             { return nil, nil }
-func (m *mockStore) GetAllFileRoutingRules() ([]db.FileRoutingRule, error)          { return nil, nil }
-func (m *mockStore) GetFileRoutingRuleByID(id int64) (*db.FileRoutingRule, error)   { return nil, nil }
-func (m *mockStore) CreateFileRoutingRule(r *db.FileRoutingRule) error             { return nil }
-func (m *mockStore) UpdateFileRoutingRule(r *db.FileRoutingRule) error             { return nil }
-func (m *mockStore) DeleteFileRoutingRule(id int64) error                              { return nil }
-func (m *mockStore) CreateDownloadStat(s *db.DownloadStat) error                       { return nil }
-func (m *mockStore) GetDownloadStatsSummary() (*db.DownloadStatsSummary, error)        { return nil, nil }
-func (m *mockStore) GetDownloadHistory(offset, limit int) ([]db.DownloadStat, error)   { return nil, nil }
-func (m *mockStore) Close() error                                                      { return nil }
-func (m *mockStore) Migrate() error                                                    { return nil }
+func (m *mockStore) GetPostHookByID(id int64) (*db.PostHook, error)                  { return nil, nil }
+func (m *mockStore) CreatePostHook(h *db.PostHook) error                             { return nil }
+func (m *mockStore) UpdatePostHook(h *db.PostHook) error                             { return nil }
+func (m *mockStore) DeletePostHook(id int64) error                                   { return nil }
+func (m *mockStore) GetFileRoutingRules() ([]db.FileRoutingRule, error)              { return nil, nil }
+func (m *mockStore) GetAllFileRoutingRules() ([]db.FileRoutingRule, error)           { return nil, nil }
+func (m *mockStore) GetFileRoutingRuleByID(id int64) (*db.FileRoutingRule, error)    { return nil, nil }
+func (m *mockStore) CreateFileRoutingRule(r *db.FileRoutingRule) error               { return nil }
+func (m *mockStore) UpdateFileRoutingRule(r *db.FileRoutingRule) error               { return nil }
+func (m *mockStore) DeleteFileRoutingRule(id int64) error                            { return nil }
+func (m *mockStore) CreateDownloadStat(s *db.DownloadStat) error                     { return nil }
+func (m *mockStore) GetDownloadStatsSummary() (*db.DownloadStatsSummary, error)      { return nil, nil }
+func (m *mockStore) GetDownloadHistory(offset, limit int) ([]db.DownloadStat, error) { return nil, nil }
+func (m *mockStore) Close() error                                                    { return nil }
+func (m *mockStore) Migrate() error                                                  { return nil }
 
 func TestManager_New(t *testing.T) {
 	store := &mockStore{
@@ -77,7 +77,7 @@ func TestManager_New(t *testing.T) {
 			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", AutoConnect: true, Enabled: true},
 			{ID: 2, Name: "srv2", Host: "b.com", Port: 6697, Nickname: "bot", AutoConnect: false, Enabled: true},
 		},
-		channels: map[int64][]db.Channel{
+		realms: map[int64][]db.Realm{
 			1: {{ID: 1, ServerID: 1, Name: "#test", AutoJoin: true, Enabled: true}},
 			2: {{ID: 2, ServerID: 2, Name: "#other", AutoJoin: true, Enabled: true}},
 		},
@@ -96,7 +96,7 @@ func TestManager_GetStatus(t *testing.T) {
 		servers: []db.Server{
 			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", AutoConnect: false, Enabled: true},
 		},
-		channels: map[int64][]db.Channel{
+		realms: map[int64][]db.Realm{
 			1: {{ID: 1, ServerID: 1, Name: "#test", AutoJoin: true, Enabled: true}},
 		},
 	}
@@ -120,12 +120,12 @@ func TestManager_GetStatus(t *testing.T) {
 	}
 }
 
-func TestManager_ReloadChannels_UpdatesChannelList(t *testing.T) {
+func TestManager_ReloadRealms_UpdatesChannelList(t *testing.T) {
 	store := &mockStore{
 		servers: []db.Server{
 			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
 		},
-		channels: map[int64][]db.Channel{
+		realms: map[int64][]db.Realm{
 			1: {{ID: 1, ServerID: 1, Name: "#orig", AutoJoin: true, Enabled: true}},
 		},
 	}
@@ -137,10 +137,10 @@ func TestManager_ReloadChannels_UpdatesChannelList(t *testing.T) {
 	}
 
 	// Add a second channel to the store, then reload.
-	store.channels[1] = append(store.channels[1], db.Channel{ID: 2, ServerID: 1, Name: "#new", AutoJoin: true, Enabled: true})
+	store.realms[1] = append(store.realms[1], db.Realm{ID: 2, ServerID: 1, Name: "#new", AutoJoin: true, Enabled: true})
 
-	if err := mgr.ReloadChannels(1); err != nil {
-		t.Fatalf("ReloadChannels: %v", err)
+	if err := mgr.ReloadRealms(1); err != nil {
+		t.Fatalf("ReloadRealms: %v", err)
 	}
 
 	conn := mgr.GetConnection(1)
@@ -153,31 +153,31 @@ func TestManager_ReloadChannels_UpdatesChannelList(t *testing.T) {
 		found[n] = true
 	}
 	if !found["#orig"] || !found["#new"] {
-		t.Errorf("expected both channels after reload, got %v", names)
+		t.Errorf("expected both realms after reload, got %v", names)
 	}
 }
 
-func TestManager_ReloadChannels_NoopForUnknownServer(t *testing.T) {
+func TestManager_ReloadRealms_NoopForUnknownServer(t *testing.T) {
 	store := &mockStore{
-		servers:  []db.Server{},
-		channels: map[int64][]db.Channel{},
+		servers: []db.Server{},
+		realms:  map[int64][]db.Realm{},
 	}
 
 	bus := NewEventBus()
 	mgr := NewManager(store, bus)
 
-	// Server 99 has no connection; ReloadChannels should not error.
-	if err := mgr.ReloadChannels(99); err != nil {
+	// Server 99 has no connection; ReloadRealms should not error.
+	if err := mgr.ReloadRealms(99); err != nil {
 		t.Fatalf("expected no error for unknown server, got %v", err)
 	}
 }
 
-func TestManager_ReloadChannels_DoesNotDisconnect(t *testing.T) {
+func TestManager_ReloadRealms_DoesNotDisconnect(t *testing.T) {
 	store := &mockStore{
 		servers: []db.Server{
 			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
 		},
-		channels: map[int64][]db.Channel{
+		realms: map[int64][]db.Realm{
 			1: {{ID: 1, ServerID: 1, Name: "#test", AutoJoin: true, Enabled: true}},
 		},
 	}
@@ -193,16 +193,16 @@ func TestManager_ReloadChannels_DoesNotDisconnect(t *testing.T) {
 	conn.status = StatusConnected
 	conn.mu.Unlock()
 
-	if err := mgr.ReloadChannels(1); err != nil {
-		t.Fatalf("ReloadChannels: %v", err)
+	if err := mgr.ReloadRealms(1); err != nil {
+		t.Fatalf("ReloadRealms: %v", err)
 	}
 
 	// Connection must still be the same object and still connected.
 	if mgr.GetConnection(1) != conn {
-		t.Error("ReloadChannels replaced the connection; it should not have")
+		t.Error("ReloadRealms replaced the connection; it should not have")
 	}
 	if conn.Status() != StatusConnected {
-		t.Errorf("expected still connected after ReloadChannels, got %s", conn.Status())
+		t.Errorf("expected still connected after ReloadRealms, got %s", conn.Status())
 	}
 }
 
@@ -211,7 +211,7 @@ func TestManager_ReloadServer_DoesNotConnectIfWasDisconnected(t *testing.T) {
 		servers: []db.Server{
 			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
 		},
-		channels: map[int64][]db.Channel{
+		realms: map[int64][]db.Realm{
 			1: {{ID: 1, ServerID: 1, Name: "#test", AutoJoin: true, Enabled: true}},
 		},
 	}
@@ -240,7 +240,7 @@ func TestManager_ReloadServer_ReconnectsIfWasConnected(t *testing.T) {
 		servers: []db.Server{
 			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
 		},
-		channels: map[int64][]db.Channel{
+		realms: map[int64][]db.Realm{
 			1: {{ID: 1, ServerID: 1, Name: "#test", AutoJoin: true, Enabled: true}},
 		},
 	}
@@ -282,7 +282,7 @@ func TestManager_ReloadServer_ReconnectsIfWasConnecting(t *testing.T) {
 		servers: []db.Server{
 			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
 		},
-		channels: map[int64][]db.Channel{
+		realms: map[int64][]db.Realm{
 			1: {},
 		},
 	}
@@ -315,7 +315,7 @@ func TestManager_GetConnection(t *testing.T) {
 		servers: []db.Server{
 			{ID: 1, Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true},
 		},
-		channels: map[int64][]db.Channel{
+		realms: map[int64][]db.Realm{
 			1: {},
 		},
 	}
