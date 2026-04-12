@@ -63,9 +63,12 @@ func (m *mockStore) GetAllFileRoutingRules() ([]db.FileRoutingRule, error)      
 func (m *mockStore) GetFileRoutingRuleByID(id int64) (*db.FileRoutingRule, error)   { return nil, nil }
 func (m *mockStore) CreateFileRoutingRule(r *db.FileRoutingRule) error             { return nil }
 func (m *mockStore) UpdateFileRoutingRule(r *db.FileRoutingRule) error             { return nil }
-func (m *mockStore) DeleteFileRoutingRule(id int64) error                          { return nil }
-func (m *mockStore) Close() error                                       { return nil }
-func (m *mockStore) Migrate() error                                     { return nil }
+func (m *mockStore) DeleteFileRoutingRule(id int64) error                              { return nil }
+func (m *mockStore) CreateDownloadStat(s *db.DownloadStat) error                       { return nil }
+func (m *mockStore) GetDownloadStatsSummary() (*db.DownloadStatsSummary, error)        { return nil, nil }
+func (m *mockStore) GetDownloadHistory(offset, limit int) ([]db.DownloadStat, error)   { return nil, nil }
+func (m *mockStore) Close() error                                                      { return nil }
+func (m *mockStore) Migrate() error                                                    { return nil }
 
 func TestManager_New(t *testing.T) {
 	store := &mockStore{
