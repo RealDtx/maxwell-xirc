@@ -1161,6 +1161,46 @@
             <button @click="selectDir()" class="btn btn-primary btn-sm">Select</button>
         </div>
     </div>
+
+    <!-- Startup wizard overlay -->
+    <div :style="setupRequired ? 'display:flex' : 'display:none'"
+         style="position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center;">
+        <div style="background:var(--bg-secondary,#1e1e2e); border-radius:8px; padding:32px; max-width:560px; width:100%; box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+            <h2 style="margin:0 0 8px; font-size:18px;">Setup Required</h2>
+            <p style="color:var(--text-secondary,#888); margin:0 0 24px; font-size:13px;">
+                The following destination directories do not exist. Enter valid paths to continue.
+            </p>
+
+            <template x-for="(m, i) in setupMappings" :key="i">
+                <div style="margin-bottom:16px;">
+                    <div style="font-size:11px; color:var(--text-secondary,#888); margin-bottom:4px;" x-text="'Was: ' + m.old_dir"></div>
+                    <input type="text"
+                           x-model="setupMappings[i].new_dir"
+                           style="width:100%; box-sizing:border-box; padding:8px 10px; background:var(--bg-primary,#12121c); border:1px solid var(--border,#333); border-radius:4px; color:inherit; font-family:monospace; font-size:13px;"
+                           :placeholder="m.suggestion">
+                </div>
+            </template>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:24px;">
+                <button @click="cancelSetup()"
+                        style="padding:8px 16px; background:transparent; border:1px solid var(--border,#444); border-radius:4px; cursor:pointer; color:inherit;">
+                    Use Defaults
+                </button>
+                <button @click="applySetup()"
+                        :disabled="setupMappings.some(m => !m.new_dir.trim())"
+                        style="padding:8px 16px; background:#4f6ef7; border:none; border-radius:4px; cursor:pointer; color:#fff;">
+                    Apply
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Post-setup restart banner -->
+    <div :style="setupBanner ? 'display:block' : 'display:none'"
+         style="position:fixed; top:0; left:0; right:0; z-index:9998; background:#1a5c2a; color:#fff; padding:10px 20px; font-size:13px; text-align:center;">
+        Setup complete — restart xirc for changes to take effect.
+        <button @click="setupBanner=false" style="margin-left:12px; background:transparent; border:none; color:#fff; cursor:pointer; font-size:16px;">×</button>
+    </div>
 </div>
 </body>
 </html>

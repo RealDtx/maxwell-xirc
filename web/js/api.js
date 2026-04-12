@@ -98,4 +98,9 @@ const api = {
     getDownloadHistory(offset, limit) {
         return this.get(`/stats/history?offset=${offset||0}&limit=${limit||50}`);
     },
+
+    // Setup wizard
+    getSetupStatus() { return this.get('/setup/status'); },
+    getSetupDefaults() { return this.get('/setup/defaults'); },
+    completeSetup(mappings) { return this.post('/setup/complete', { mappings }); },
 };
