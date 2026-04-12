@@ -273,6 +273,14 @@
                                             <span x-text="msg.message || msg.text || ''"></span>
                                         </div>
                                     </template>
+                                    <template x-if="currentChannelMessages().length === 0">
+                                        <div style="padding:16px; color:var(--text-muted); font-size:12px;">
+                                            No messages yet — waiting for activity on
+                                            <span x-text="activeChannel" style="color:var(--text-primary);"></span>
+                                            <span style="display:block; margin-top:4px; font-size:11px; opacity:0.6;"
+                                                  x-text="'key: ' + channelKey(activeServer, activeChannel) + ' · stored keys: ' + Object.keys(ircMessages).join(', ')"></span>
+                                        </div>
+                                    </template>
                                 </div>
                                 <div class="user-list-sidebar" x-show="appMode === 'advanced'">
                                     <div class="user-list-header">

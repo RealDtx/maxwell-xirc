@@ -622,10 +622,10 @@ document.addEventListener('alpine:init', () => {
                     this.ircMessages = Object.assign({}, this.ircMessages, { [key]: msgs });
                     // Auto-scroll if this message is for the active channel
                     if (data.server_id === this.activeServer && data.channel === this.activeChannel) {
-                        this.$nextTick(() => {
-                            const el = this.$refs && this.$refs.ircLog;
+                        setTimeout(() => {
+                            const el = document.querySelector('[x-ref="ircLog"]');
                             if (el) el.scrollTop = el.scrollHeight;
-                        });
+                        }, 0);
                     }
                 } else {
                     // Server-level message (no channel): buffer in serverMessages only
