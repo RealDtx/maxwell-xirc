@@ -19,10 +19,11 @@ type Server struct {
 	wsHub  *ws.Hub
 	msgBuf *ircpkg.MessageBuffer
 	errBuf *ircpkg.ErrorBuffer
+	setup  *SetupState
 	mux    *http.ServeMux
 }
 
-func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer) *Server {
+func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer, setup *SetupState) *Server {
 	s := &Server{
 		store:  store,
 		ircMgr: ircMgr,
@@ -31,6 +32,7 @@ func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.En
 		wsHub:  hub,
 		msgBuf: msgBuf,
 		errBuf: errBuf,
+		setup:  setup,
 		mux:    http.NewServeMux(),
 	}
 	s.routes()
@@ -91,6 +93,11 @@ func (s *Server) routes() {
 
 	// Errors endpoint
 	s.mux.HandleFunc("/api/errors", s.handleGetErrors)
+
+	// Setup wizard endpoints
+	s.mux.HandleFunc("/api/setup/status", s.handleSetupStatus)
+	s.mux.HandleFunc("/api/setup/defaults", s.handleSetupDefaults)
+	s.mux.HandleFunc("/api/setup/complete", s.handleSetupComplete)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
