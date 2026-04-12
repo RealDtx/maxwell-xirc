@@ -52,13 +52,13 @@ func (m *Manager) LoadFromStore() error {
 			continue
 		}
 
-		channels, err := m.store.GetChannels(srv.ID)
+		realms, err := m.store.GetRealms(srv.ID)
 		if err != nil {
-			return fmt.Errorf("loading channels for server %s: %w", srv.Name, err)
+			return fmt.Errorf("loading realms for server %s: %w", srv.Name, err)
 		}
 
 		srvCopy := srv
-		conn := NewConnection(&srvCopy, channels, m.bus)
+		conn := NewConnection(&srvCopy, realms, m.bus)
 		m.connections[srv.ID] = conn
 	}
 
@@ -136,9 +136,9 @@ func (m *Manager) ReloadServer(serverID int64) error {
 		return fmt.Errorf("loading server %d: %w", serverID, err)
 	}
 
-	channels, err := m.store.GetChannels(serverID)
+	realms, err := m.store.GetRealms(serverID)
 	if err != nil {
-		return fmt.Errorf("loading channels for server %d: %w", serverID, err)
+		return fmt.Errorf("loading realms for server %d: %w", serverID, err)
 	}
 
 	m.mu.Lock()
@@ -152,7 +152,7 @@ func (m *Manager) ReloadServer(serverID int64) error {
 		m.mu.Unlock()
 		return nil
 	}
-	conn := NewConnection(srv, channels, m.bus)
+	conn := NewConnection(srv, realms, m.bus)
 	m.connections[serverID] = conn
 	m.mu.Unlock()
 
@@ -162,13 +162,13 @@ func (m *Manager) ReloadServer(serverID int64) error {
 	return nil
 }
 
-// ReloadChannels refreshes the channel list for a server without
+// ReloadRealms refreshes the realm list for a server without
 // disconnecting the IRC connection. Use this for channel CRUD operations
 // when the server's connection settings haven't changed.
-func (m *Manager) ReloadChannels(serverID int64) error {
-	channels, err := m.store.GetChannels(serverID)
+func (m *Manager) ReloadRealms(serverID int64) error {
+	realms, err := m.store.GetRealms(serverID)
 	if err != nil {
-		return fmt.Errorf("loading channels for server %d: %w", serverID, err)
+		return fmt.Errorf("loading realms for server %d: %w", serverID, err)
 	}
 
 	m.mu.RLock()
@@ -176,7 +176,7 @@ func (m *Manager) ReloadChannels(serverID int64) error {
 	m.mu.RUnlock()
 
 	if ok {
-		conn.UpdateChannels(channels)
+		conn.UpdateRealms(realms)
 	}
 	return nil
 }

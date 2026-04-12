@@ -28,7 +28,7 @@ type ChannelPair struct {
 type Connection struct {
 	mu             sync.RWMutex
 	server         *db.Server
-	channels       []db.Channel
+	realms         []db.Realm
 	bus            *EventBus
 	client         IRCClient
 	status         ConnectionStatus
@@ -74,10 +74,10 @@ func newIRCClient(srv *db.Server) IRCClient {
 	return NewRawClient(cfg)
 }
 
-func NewConnection(server *db.Server, channels []db.Channel, bus *EventBus) *Connection {
+func NewConnection(server *db.Server, realms []db.Realm, bus *EventBus) *Connection {
 	return &Connection{
 		server:       server,
-		channels:     channels,
+		realms:       realms,
 		bus:          bus,
 		status:       StatusDisconnected,
 		stopCh:       make(chan struct{}),
@@ -128,23 +128,23 @@ func (c *Connection) ChannelPairs() []ChannelPair {
 	defer c.mu.RUnlock()
 
 	var pairs []ChannelPair
-	for _, ch := range c.channels {
-		if !ch.Enabled {
+	for _, r := range c.realms {
+		if !r.Enabled {
 			continue
 		}
-		dl := ch.DownloadChannel
+		dl := r.DownloadChannel
 		if dl == "" {
-			dl = ch.Name
+			dl = r.Name
 		}
-		cmd := ch.SearchCommand
+		cmd := r.SearchCommand
 		if cmd == "" {
 			cmd = "!s"
 		}
 		pairs = append(pairs, ChannelPair{
-			SearchChannel:   ch.Name,
+			SearchChannel:   r.Name,
 			DownloadChannel: dl,
 			SearchCommand:   cmd,
-			AutoJoin:        ch.AutoJoin,
+			AutoJoin:        r.AutoJoin,
 		})
 	}
 	return pairs
@@ -170,13 +170,13 @@ func (c *Connection) Connect() error {
 	return nil
 }
 
-// UpdateChannels replaces the channel list and, if currently connected,
+// UpdateRealms replaces the channel list and, if currently connected,
 // joins any enabled+autojoin channels that are not already being tracked.
 // IRC JOIN is idempotent so rejoining an existing channel is harmless.
-func (c *Connection) UpdateChannels(channels []db.Channel) {
+func (c *Connection) UpdateRealms(realms []db.Realm) {
 	c.mu.Lock()
-	old := c.channels
-	c.channels = channels
+	old := c.realms
+	c.realms = realms
 	status := c.status
 	client := c.client
 	c.mu.Unlock()
@@ -186,19 +186,19 @@ func (c *Connection) UpdateChannels(channels []db.Channel) {
 	}
 
 	oldNames := make(map[string]bool, len(old))
-	for _, ch := range old {
-		oldNames[ch.Name] = true
+	for _, r := range old {
+		oldNames[r.Name] = true
 	}
 
-	for _, ch := range channels {
-		if !ch.Enabled || !ch.AutoJoin {
+	for _, r := range realms {
+		if !r.Enabled || !r.AutoJoin {
 			continue
 		}
-		if !oldNames[ch.Name] {
-			client.Join(ch.Name, ch.Key)
+		if !oldNames[r.Name] {
+			client.Join(r.Name, r.Key)
 		}
-		if ch.DownloadChannel != "" && ch.DownloadChannel != ch.Name && !oldNames[ch.DownloadChannel] {
-			client.Join(ch.DownloadChannel, "")
+		if r.DownloadChannel != "" && r.DownloadChannel != r.Name && !oldNames[r.DownloadChannel] {
+			client.Join(r.DownloadChannel, "")
 		}
 	}
 }
@@ -230,18 +230,18 @@ func (c *Connection) applyHandlers(client IRCClient) {
 
 		// Auto-join channels
 		c.mu.RLock()
-		channels := make([]db.Channel, len(c.channels))
-		copy(channels, c.channels)
+		realms := make([]db.Realm, len(c.realms))
+		copy(realms, c.realms)
 		c.mu.RUnlock()
 
-		for _, ch := range channels {
-			if !ch.Enabled || !ch.AutoJoin {
+		for _, r := range realms {
+			if !r.Enabled || !r.AutoJoin {
 				continue
 			}
-			client.Join(ch.Name, ch.Key)
+			client.Join(r.Name, r.Key)
 			// Also join download channel if different
-			if ch.DownloadChannel != "" && ch.DownloadChannel != ch.Name {
-				client.Join(ch.DownloadChannel, "")
+			if r.DownloadChannel != "" && r.DownloadChannel != r.Name {
+				client.Join(r.DownloadChannel, "")
 			}
 		}
 	})
