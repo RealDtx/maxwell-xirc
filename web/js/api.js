@@ -32,10 +32,10 @@ const api = {
     createServer(s)        { return this.post('/servers', s); },
     updateServer(id, s)    { return this.put('/servers/' + id, s); },
     deleteServer(id)       { return this.del('/servers/' + id); },
-    getChannels(serverId)  { return this.get('/servers/' + serverId + '/channels'); },
-    createChannel(ch)      { return this.post('/channels', ch); },
-    updateChannel(id, ch)  { return this.put('/channels/' + id, ch); },
-    deleteChannel(id)      { return this.del('/channels/' + id); },
+    getRealms(serverId)    { return this.get('/servers/' + serverId + '/realms'); },
+    createRealm(r)         { return this.post('/realms', r); },
+    updateRealm(id, r)     { return this.put('/realms/' + id, r); },
+    deleteRealm(id)        { return this.del('/realms/' + id); },
 
     // IRC
     getIRCStatus()                    { return this.get('/irc/status'); },
