@@ -24,14 +24,18 @@ import (
 
 var version = "dev"
 
-func checkDirectories(store db.Store) {
+// checkDirectories probes each unique destination_dir in the routing rules.
+// Dirs that do not exist are returned as a slice — the caller handles them.
+// Permission errors and other I/O failures are still fatal.
+func checkDirectories(store db.Store) []string {
 	rules, err := store.GetAllFileRoutingRules()
 	if err != nil {
 		log.Printf("warning: could not load routing rules for dir check: %v", err)
-		return
+		return nil
 	}
 
 	seen := map[string]bool{}
+	var bad []string
 	for _, r := range rules {
 		if r.DestinationDir == "" || seen[r.DestinationDir] {
 			continue
@@ -48,16 +52,17 @@ func checkDirectories(store db.Store) {
 		}
 
 		if os.IsPermission(err) || errors.Is(err, syscall.EROFS) {
-			log.Printf("FATAL (config): destination dir %q not writable by xirc user — fix ownership or ACL, then restart (exit 78)", r.DestinationDir)
+			log.Printf("FATAL (config): destination dir %q not writable — fix ownership or ACL, then restart (exit 78)", r.DestinationDir)
 			os.Exit(exitcodes.ExitConfig)
 		}
 		if os.IsNotExist(err) {
-			log.Printf("FATAL (config): destination dir %q does not exist — create it and grant access, then restart (exit 78)", r.DestinationDir)
-			os.Exit(exitcodes.ExitConfig)
+			bad = append(bad, r.DestinationDir)
+			continue
 		}
 		log.Printf("FATAL (transient): destination dir %q check failed: %v — will retry on restart (exit 1)", r.DestinationDir, err)
 		os.Exit(exitcodes.ExitTransient)
 	}
+	return bad
 }
 
 func main() {
@@ -84,7 +89,8 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	checkDirectories(store)
+	badDirs := checkDirectories(store)
+	_ = badDirs
 
 	// Seed default parse patterns
 	if err := parser.SeedPatterns(store); err != nil {
