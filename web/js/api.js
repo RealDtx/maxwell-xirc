@@ -60,6 +60,9 @@ const api = {
     getSearchResults(query, serverId, channel) {
         return this.get(`/search/results?query=${encodeURIComponent(query)}&server_id=${serverId}&channel=${encodeURIComponent(channel)}`);
     },
+    getAllSearchResults(query) {
+        return this.get(`/search/results?query=${encodeURIComponent(query)}`);
+    },
     getSavedSearches()        { return this.get('/search/saved'); },
     createSavedSearch(s)      { return this.post('/search/saved', s); },
     deleteSavedSearch(id)     { return this.del('/search/saved/' + id); },
@@ -73,6 +76,9 @@ const api = {
     cancelDownload(id)    { return this.post('/downloads/cancel', { download_id: id }); },
     retryDownload(id)     { return this.post('/downloads/retry', { download_id: id }); },
     moveDownload(id)      { return this.post('/downloads/move', { download_id: id }); },
+
+    // Storage
+    getStorageStats() { return this.get('/storage'); },
 
     // Errors
     getErrors(limit) {

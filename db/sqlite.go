@@ -286,6 +286,29 @@ func (s *SQLiteStore) GetSearchResults(query string, serverID int64, channel str
 	return results, rows.Err()
 }
 
+func (s *SQLiteStore) GetAllSearchResults(query string) ([]SearchResult, error) {
+	rows, err := s.db.Query(
+		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? ORDER BY created_at DESC",
+		query,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []SearchResult{}
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(&r.ID, &r.ServerID, &r.Channel, &r.BotNick, &r.PackNumber,
+			&r.Filename, &r.Filesize, &r.DownloadsCount, &r.RawLine, &r.SearchQuery,
+			&r.Parsed, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
 func (s *SQLiteStore) CreateSearchResult(r *SearchResult) error {
 	now := time.Now()
 	result, err := s.db.Exec(
