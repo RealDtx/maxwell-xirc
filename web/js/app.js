@@ -248,7 +248,7 @@ document.addEventListener('alpine:init', () => {
             localStorage.setItem('xirc_layout_' + key, layout);
         },
         activeTab(key) {
-            return this.activeChannelTab[key] || 'search';
+            return this.activeChannelTab[key] || 'chat';
         },
         setActiveTab(key, tab) {
             this.activeChannelTab = Object.assign({}, this.activeChannelTab, {[key]: tab});
