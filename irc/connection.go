@@ -53,16 +53,20 @@ type ConnectionStatusEvent struct {
 // newIRCClient creates the appropriate IRCClient for the given server config.
 func newIRCClient(srv *db.Server) IRCClient {
 	addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+	nick := srv.Nickname
+	if nick == "" {
+		nick = "xirc"
+	}
 	cfg := RawClientConfig{
 		Addr:     addr,
-		Nick:     srv.Nickname,
-		User:     srv.Nickname,
+		Nick:     nick,
+		User:     nick,
 		Realname: "xirc XDCC client",
 		UseTLS:   srv.SSL,
 	}
 	switch srv.AuthMethod {
 	case "sasl":
-		cfg.SASLUser = srv.Nickname
+		cfg.SASLUser = nick
 		cfg.SASLPass = srv.AuthPassword
 	case "nickserv":
 		cfg.NickServPass = srv.AuthPassword
@@ -425,6 +429,19 @@ func (c *Connection) handleRawLine(line string) {
 		c.mu.Unlock()
 		return
 	}
+
+	// Publish every non-PONG raw line to the server-level message stream
+	// (channel="") so the server view can display it.
+	c.bus.Publish(Event{
+		Type:     EventIRCMessage,
+		ServerID: c.server.ID,
+		Channel:  "",
+		Nick:     "",
+		Data: map[string]string{
+			"type":    "raw",
+			"message": line,
+		},
+	})
 
 	// :server 353 nick = #channel :nick1 nick2 ...
 	// :server 366 nick #channel :End of NAMES

@@ -94,6 +94,10 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if strings.TrimSpace(srv.Nickname) == "" {
+		writeError(w, http.StatusBadRequest, "nickname is required")
+		return
+	}
 	if err := s.store.CreateServer(&srv); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -114,6 +118,10 @@ func (s *Server) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 	var srv db.Server
 	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(srv.Nickname) == "" {
+		writeError(w, http.StatusBadRequest, "nickname is required")
 		return
 	}
 	srv.ID = id
