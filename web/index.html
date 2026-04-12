@@ -13,24 +13,42 @@
 <body x-data="appStore">
 <div class="app">
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-        <div class="sidebar-header">xirc</div>
+    <!-- Mobile hamburger -->
+    <button class="hamburger-btn"
+            @click="sidebarOpen = !sidebarOpen">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+    </button>
+    <!-- Mobile overlay -->
+    <div class="sidebar-overlay"
+         x-show="sidebarOpen"
+         @click="sidebarOpen = false"></div>
 
-        <div class="server-tree">
+    <!-- Sidebar -->
+    <aside class="sidebar" :class="sidebarOpen ? 'open' : ''">
+        <div class="sidebar-header" @click="setView('home')" style="cursor:pointer;">xirc</div>
+
+        <div class="server-tree" x-show="appMode === 'advanced'">
             <template x-for="server in servers" :key="server.id">
                 <div>
-                    <!-- Server row -->
+                    <!-- Server row: click name → server view; click chevron → expand -->
                     <div
                         class="server-item"
-                        :class="{ active: activeServer === server.id && activeView === 'channel' }"
-                        @click="toggleServer(server.id)"
+                        :class="{ active: activeServer === server.id && activeView === 'server' }"
+                        style="display:flex; align-items:center; gap:4px;"
                     >
                         <span
                             class="status-dot"
                             :class="serverStatus(server.id)"
                         ></span>
-                        <span x-text="server.name"></span>
+                        <span style="flex:1; cursor:pointer; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                              x-text="server.name"
+                              @click="selectServer(server); sidebarOpen = false"></span>
+                        <span style="cursor:pointer; padding:0 4px; font-size:10px; opacity:0.6; flex-shrink:0;"
+                              x-text="isExpanded(server.id) ? '▾' : '▸'"
+                              @click.stop="toggleServer(server.id)"></span>
                     </div>
 
                     <!-- Channels under this server -->
@@ -40,7 +58,7 @@
                                 <div
                                     class="channel-item"
                                     :class="{ active: activeServer === server.id && activeChannel === ch && activeView === 'channel' }"
-                                    @click="selectChannel(server.id, ch)"
+                                    @click="selectChannel(server.id, ch); sidebarOpen = false"
                                     x-text="ch"
                                 ></div>
                             </template>
@@ -53,20 +71,49 @@
         <!-- Bottom nav -->
         <nav class="sidebar-nav">
             <a
+                :class="{ active: activeView === 'channel' }"
+                @click="activeChannel = null; activeView = 'channel'; sidebarOpen = false"
+            >Search</a>
+            <a
                 :class="{ active: activeView === 'downloads' }"
-                @click="setView('downloads')"
+                @click="setView('downloads'); sidebarOpen = false"
             >Downloads</a>
             <a
+                :class="{ active: activeView === 'files' }"
+                @click="setView('files'); sidebarOpen = false"
+            >Files</a>
+            <a
+                x-show="appMode === 'advanced'"
+                :class="{ active: activeView === 'stats' }"
+                @click="setView('stats'); loadStats(); sidebarOpen = false"
+            >Stats</a>
+            <a
+                x-show="appMode === 'advanced'"
                 :class="{ active: activeView === 'settings' }"
-                @click="setView('settings')"
+                @click="setView('settings'); sidebarOpen = false"
             >Settings</a>
         </nav>
 
-        <!-- Disk usage bar (placeholder) -->
+        <!-- Disk usage bar -->
         <div>
-            <div class="disk-label">Disk</div>
-            <div class="disk-bar">
-                <div class="disk-bar-fill ok" style="width: 0%"></div>
+            <div class="disk-label"
+                 x-text="diskStats.length > 0 ? 'Disk ' + Math.round(diskStats[0].used_pct) + '%' : 'Disk'"></div>
+            <div class="disk-bar"
+                 :title="diskStats.length > 0 ? diskStats[0].free_gb.toFixed(1) + ' GB free of ' + diskStats[0].total_gb.toFixed(1) + ' GB' : ''">
+                <div class="disk-bar-fill"
+                     :class="diskStats.length > 0 && diskStats[0].used_pct >= 90 ? 'warn' : 'ok'"
+                     :style="'width: ' + (diskStats.length > 0 ? Math.min(100, Math.round(diskStats[0].used_pct)) : 0) + '%'"></div>
+            </div>
+        </div>
+
+        <!-- Mode toggle -->
+        <div class="sidebar-mode-toggle">
+            <span>Mode:</span>
+            <div class="mode-btns">
+                <button @click="setMode('simple')"
+                        :class="appMode === 'simple' ? 'active' : ''">Simple</button>
+                <button @click="setMode('advanced')"
+                        :class="appMode === 'advanced' ? 'active' : ''">Advanced</button>
             </div>
         </div>
     </aside>
@@ -77,139 +124,431 @@
         <!-- Channel view -->
         <template x-if="activeView === 'channel'">
             <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+
+                <!-- Header row -->
                 <div class="content-header">
-                    <span x-text="activeChannel || 'Select a channel'"></span>
+                    <span x-text="activeChannel || 'Search'"></span>
+
+                    <!-- Tab row: single-pane mode only, only when channel selected -->
+                    <template x-if="activeChannel && channelLayout(channelKey(activeServer, activeChannel)) === 'single'">
+                        <div class="tabs channel-tabs" style="border-bottom:none; margin-left:8px;">
+                            <div
+                                class="tab"
+                                :class="{ active: activeTab(channelKey(activeServer, activeChannel)) === 'search' }"
+                                @click="setActiveTab(channelKey(activeServer, activeChannel), 'search')"
+                            >Search</div>
+                            <template x-if="currentChannelHasDownloadChannel()">
+                                <div
+                                    class="tab"
+                                    :class="{ active: activeTab(channelKey(activeServer, activeChannel)) === 'download' }"
+                                    @click="setActiveTab(channelKey(activeServer, activeChannel), 'download')"
+                                >Downloads IRC</div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Layout toggle: advanced mode, desktop only -->
+                    <template x-if="activeChannel && appMode === 'advanced'">
+                        <div class="channel-layout-btns" style="margin-left:auto; display:flex; gap:4px;">
+                            <button
+                                class="btn btn-sm"
+                                :class="channelLayout(channelKey(activeServer, activeChannel)) === 'single' ? 'btn-primary' : ''"
+                                @click="setChannelLayout(channelKey(activeServer, activeChannel), 'single')"
+                                title="Single pane"
+                            >⬜</button>
+                            <button
+                                class="btn btn-sm"
+                                :class="channelLayout(channelKey(activeServer, activeChannel)) === 'sidebyside' ? 'btn-primary' : ''"
+                                @click="setChannelLayout(channelKey(activeServer, activeChannel), 'sidebyside')"
+                                title="Side by side"
+                            >⬛⬛</button>
+                        </div>
+                    </template>
                 </div>
 
-                <!-- Tab bar (only shown when a channel is selected) -->
-                <template x-if="activeChannel">
-                    <div class="tabs">
-                        <div
-                            class="tab"
-                            :class="{ active: !showIrcConsole }"
-                            @click="showIrcConsole = false"
-                        >Search Results</div>
-                        <div
-                            class="tab"
-                            :class="{ active: showIrcConsole }"
-                            @click="showIrcConsole = true"
-                        >IRC Console</div>
-                    </div>
-                </template>
-
-                <!-- Search results panel -->
-                <div
-                    class="content-body"
-                    style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;"
-                    x-show="!showIrcConsole"
-                >
-                    <!-- Search bar -->
-                    <template x-if="activeChannel">
-                        <div>
-                            <div class="search-bar">
-                                <input
-                                    type="text"
-                                    placeholder="Search for files..."
-                                    x-model="searchQuery"
-                                    @keydown.enter="runSearch()"
-                                >
-                                <button
-                                    class="btn btn-primary"
-                                    @click="runSearch()"
-                                    :disabled="searchRunning"
-                                    x-text="searchRunning ? 'Searching...' : 'Search'"
-                                ></button>
-                                <button
-                                    class="btn btn-sm"
-                                    @click="bookmarkSearch()"
-                                    :disabled="!searchQuery.trim()"
-                                    title="Save this search"
-                                >Bookmark</button>
-                                <select
-                                    style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;"
-                                    @change="applySavedSearch($event.target.value); $event.target.value = ''"
-                                >
-                                    <option value="">Saved searches…</option>
-                                    <template x-for="ss in savedSearches" :key="ss.id">
-                                        <option :value="ss.query" x-text="ss.query"></option>
+                <!-- Global search (no specific channel selected) -->
+                <template x-if="!activeChannel">
+                    <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                        <!-- Search bar -->
+                        <div style="padding:10px 14px; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <input type="text"
+                                   x-model="searchQuery"
+                                   @keydown.enter="runGlobalSearch()"
+                                   placeholder="Search across all channels..."
+                                   style="flex:1; min-width:160px; padding:7px 10px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
+                            <template x-if="appMode === 'advanced'">
+                                <select x-model="globalSearchServerId"
+                                        style="padding:7px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
+                                    <option value="">All servers</option>
+                                    <template x-for="srv in servers" :key="srv.id">
+                                        <option :value="srv.id" x-text="srv.name"></option>
                                     </template>
                                 </select>
-                            </div>
-
-                            <!-- Search results table -->
+                            </template>
+                            <button @click="runGlobalSearch()"
+                                    :disabled="searchRunning || !searchQuery.trim()"
+                                    class="btn btn-primary btn-sm"
+                                    x-text="searchRunning ? 'Searching...' : 'Search'"></button>
+                        </div>
+                        <!-- Results -->
+                        <div style="flex:1; overflow-y:auto;">
+                            <template x-if="!searchRunning && searchResults.length === 0">
+                                <div style="padding:24px 16px; color:var(--text-muted); font-size:13px;">
+                                    No results. Enter a query and press Search.
+                                </div>
+                            </template>
                             <template x-if="searchResults.length > 0">
-                                <table>
+                                <table class="table">
                                     <thead>
                                         <tr>
-                                            <th @click="sortBy('pack_number')" x-text="'Pack #' + sortIndicator('pack_number')"></th>
-                                            <th @click="sortBy('filename')" x-text="'Filename' + sortIndicator('filename')"></th>
-                                            <th @click="sortBy('filesize')" x-text="'Size' + sortIndicator('filesize')"></th>
-                                            <th @click="sortBy('bot_nick')" x-text="'Bot' + sortIndicator('bot_nick')"></th>
-                                            <th @click="sortBy('downloads_count')" x-text="'Downloads' + sortIndicator('downloads_count')"></th>
-                                            <th>Actions</th>
+                                            <th @click="sortBy('filename')" style="cursor:pointer;" x-text="'File' + sortIndicator('filename')"></th>
+                                            <th @click="sortBy('filesize')" style="cursor:pointer;" x-text="'Size' + sortIndicator('filesize')"></th>
+                                            <th @click="sortBy('bot_nick')" style="cursor:pointer;" x-text="'Bot' + sortIndicator('bot_nick')"></th>
+                                            <th @click="sortBy('pack_number')" style="cursor:pointer;" x-text="'Pack' + sortIndicator('pack_number')"></th>
+                                            <th>Server</th>
+                                            <th>Channel</th>
+                                            <th></th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <template x-for="(r, i) in sortedResults()" :key="i">
-                                            <tr :class="{ unparsed: !r.parsed }">
-                                                <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
+                                        <template x-for="(r, idx) in sortedResults()" :key="idx">
+                                            <tr>
+                                                <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="r.filename || '—'"></td>
+                                                <td style="white-space:nowrap;" x-text="r.filesize ? formatBytes(r.filesize) : '—'"></td>
+                                                <td x-text="r.bot_nick || '—'"></td>
+                                                <td x-text="r.pack_number || '—'"></td>
+                                                <td x-text="getServerName(r.server_id)"></td>
+                                                <td x-text="r.channel || '—'"></td>
                                                 <td>
-                                                    <span x-text="r.filename || r.raw_line || '-'"></span>
-                                                    <template x-if="!r.parsed">
-                                                        <a
-                                                            href="#"
-                                                            style="margin-left:8px; font-size:11px; color:var(--warning);"
-                                                            @click.prevent="teachParser(r.raw_line)"
-                                                        >teach parser</a>
-                                                    </template>
-                                                </td>
-                                                <td x-text="r.filesize || '-'"></td>
-                                                <td x-text="r.bot_nick || '-'"></td>
-                                                <td x-text="r.downloads_count != null ? r.downloads_count : '-'"></td>
-                                                <td>
-                                                    <button
-                                                        class="btn btn-primary btn-sm"
-                                                        @click="downloadPack(r)"
-                                                        :disabled="!r.parsed"
-                                                    >Download</button>
+                                                    <button class="btn btn-sm btn-primary"
+                                                            @click="requestDownload(r)"
+                                                            :disabled="!r.bot_nick || !r.pack_number">DL</button>
                                                 </td>
                                             </tr>
                                         </template>
                                     </tbody>
                                 </table>
                             </template>
-
-                            <template x-if="searchResults.length === 0 && !searchRunning">
-                                <p style="color: var(--text-muted); font-size:13px;">No results. Enter a query and press Search.</p>
-                            </template>
                         </div>
-                    </template>
-
-                    <template x-if="!activeChannel">
-                        <p style="color: var(--text-muted); font-size:13px;">Select a channel from the sidebar to begin.</p>
-                    </template>
-                </div>
-
-                <!-- IRC console panel -->
-                <div class="irc-console" x-show="showIrcConsole && activeChannel">
-                    <div class="irc-messages" x-ref="ircLog">
-                        <template x-for="(msg, i) in currentChannelMessages()" :key="i">
-                            <div class="irc-message">
-                                <span class="time" x-text="formatTime(msg.timestamp)"></span>
-                                <span class="nick" x-text="msg.nick + ':'"></span>
-                                <span x-text="msg.message"></span>
-                            </div>
-                        </template>
                     </div>
-                    <div class="irc-input">
-                        <input
-                            type="text"
-                            placeholder="Type a message or /command..."
-                            x-model="ircInput"
-                            @keydown.enter="sendIrc()"
+                </template>
+
+                <!-- Channel selected: single-pane layout -->
+                <template x-if="activeChannel && channelLayout(channelKey(activeServer, activeChannel)) === 'single'">
+                    <div style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+
+                        <!-- Search pane (single-pane, search tab) -->
+                        <div
+                            class="content-body channel-pane"
+                            x-show="activeTab(channelKey(activeServer, activeChannel)) === 'search'"
+                            style="overflow:hidden; flex:1; display:flex; flex-direction:column;"
                         >
+                            <div style="padding:16px; overflow-y:auto; flex-shrink:0;">
+                                <div class="search-bar">
+                                    <input
+                                        type="text"
+                                        placeholder="Search for files..."
+                                        x-model="searchQuery"
+                                        @keydown.enter="runSearch()"
+                                    >
+                                    <button
+                                        class="btn btn-primary"
+                                        @click="runSearch()"
+                                        :disabled="searchRunning"
+                                        x-text="searchRunning ? 'Searching...' : 'Search'"
+                                    ></button>
+                                    <button
+                                        class="btn btn-sm"
+                                        @click="bookmarkSearch()"
+                                        :disabled="!searchQuery.trim()"
+                                        title="Save this search"
+                                    >Bookmark</button>
+                                    <select
+                                        style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;"
+                                        @change="applySavedSearch($event.target.value); $event.target.value = ''"
+                                    >
+                                        <option value="">Saved searches…</option>
+                                        <template x-for="ss in savedSearches" :key="ss.id">
+                                            <option :value="ss.query" x-text="ss.query"></option>
+                                        </template>
+                                    </select>
+                                </div>
+
+                                <template x-if="searchResults.length > 0">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th @click="sortBy('pack_number')" x-text="'Pack #' + sortIndicator('pack_number')"></th>
+                                                <th @click="sortBy('filename')" x-text="'Filename' + sortIndicator('filename')"></th>
+                                                <th @click="sortBy('filesize')" x-text="'Size' + sortIndicator('filesize')"></th>
+                                                <th @click="sortBy('bot_nick')" x-text="'Bot' + sortIndicator('bot_nick')"></th>
+                                                <th @click="sortBy('downloads_count')" x-text="'Downloads' + sortIndicator('downloads_count')"></th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template x-for="(r, i) in sortedResults()" :key="i">
+                                                <tr :class="{ unparsed: !r.parsed }">
+                                                    <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
+                                                    <td>
+                                                        <span x-text="r.filename || r.raw_line || '-'"></span>
+                                                        <template x-if="!r.parsed">
+                                                            <a
+                                                                href="#"
+                                                                style="margin-left:8px; font-size:11px; color:var(--warning);"
+                                                                @click.prevent="teachParser(r.raw_line)"
+                                                            >teach parser</a>
+                                                        </template>
+                                                    </td>
+                                                    <td x-text="r.filesize || '-'"></td>
+                                                    <td x-text="r.bot_nick || '-'"></td>
+                                                    <td x-text="r.downloads_count != null ? r.downloads_count : '-'"></td>
+                                                    <td>
+                                                        <button
+                                                            class="btn btn-primary btn-sm"
+                                                            @click="downloadPack(r)"
+                                                            :disabled="!r.parsed"
+                                                        >Download</button>
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </template>
+
+                                <template x-if="searchResults.length === 0 && !searchRunning">
+                                    <p style="color: var(--text-muted); font-size:13px;">No results. Enter a query and press Search.</p>
+                                </template>
+                            </div>
+
+                            <!-- IRC log embedded at bottom of search pane -->
+                            <div style="display:flex;flex:1;overflow:hidden;">
+                                <div style="flex:1;overflow-y:auto;" class="irc-messages irc-log-pane" x-ref="ircLog">
+                                    <template x-for="(msg, i) in currentChannelMessages()" :key="i">
+                                        <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                            <span class="time" x-text="formatTime(msg.timestamp)"></span>
+                                            <span class="nick" x-text="msg.nick + ':'"></span>
+                                            <span x-text="msg.message"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="user-list-sidebar" x-show="appMode === 'advanced'">
+                                    <div class="user-list-header">
+                                        <span>Users</span>
+                                        <button @click="loadUserList(activeServer, activeChannel)" title="Refresh">↺</button>
+                                    </div>
+                                    <div class="user-list-body">
+                                        <template x-if="userListLoading[channelKey(activeServer, activeChannel)]">
+                                            <div class="text-muted p-2">Loading...</div>
+                                        </template>
+                                        <template x-for="nick in userLists[channelKey(activeServer, activeChannel)] || []" :key="nick">
+                                            <div @click="selectUser(nick.replace(/^[@+%]/, ''))"
+                                                 :class="isUserSelected(nick.replace(/^[@+%]/, '')) ? 'user-selected' : ''"
+                                                 class="user-list-item" x-text="nick"></div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="irc-input">
+                                <input
+                                    type="text"
+                                    placeholder="Type a message or /command..."
+                                    x-model="ircInput"
+                                    @keydown.enter="sendIrc()"
+                                >
+                            </div>
+                        </div>
+
+                        <!-- Download channel IRC pane (single-pane, download tab) -->
+                        <div
+                            class="irc-console channel-pane"
+                            x-show="activeTab(channelKey(activeServer, activeChannel)) === 'download' && currentChannelHasDownloadChannel()"
+                        >
+                            <div style="display:flex;flex:1;overflow:hidden;">
+                                <div style="flex:1;overflow-y:auto;" class="irc-messages irc-log-pane" x-ref="ircLogDownload">
+                                    <template x-for="(msg, i) in (ircMessages[channelKey(activeServer, downloadChannelForCurrent())] || [])" :key="i">
+                                        <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                            <span class="time" x-text="formatTime(msg.timestamp)"></span>
+                                            <span class="nick" x-text="msg.nick + ':'"></span>
+                                            <span x-text="msg.message"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="user-list-sidebar" x-show="appMode === 'advanced'">
+                                    <div class="user-list-header">
+                                        <span>Users</span>
+                                        <button @click="loadUserList(activeServer, downloadChannelForCurrent())" title="Refresh">↺</button>
+                                    </div>
+                                    <div class="user-list-body">
+                                        <template x-if="userListLoading[channelKey(activeServer, downloadChannelForCurrent())]">
+                                            <div class="text-muted p-2">Loading...</div>
+                                        </template>
+                                        <template x-for="nick in userLists[channelKey(activeServer, downloadChannelForCurrent())] || []" :key="nick">
+                                            <div @click="selectUser(nick.replace(/^[@+%]/, ''))"
+                                                 :class="isUserSelected(nick.replace(/^[@+%]/, '')) ? 'user-selected' : ''"
+                                                 class="user-list-item" x-text="nick"></div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="irc-input">
+                                <input
+                                    type="text"
+                                    placeholder="Type a message..."
+                                    x-model="ircInput"
+                                    @keydown.enter="sendIrcToChannel(activeServer, downloadChannelForCurrent())"
+                                >
+                            </div>
+                        </div>
+
+
                     </div>
-                </div>
+                </template>
+
+                <!-- Channel selected: side-by-side layout (advanced mode) -->
+                <template x-if="activeChannel && channelLayout(channelKey(activeServer, activeChannel)) === 'sidebyside'">
+                    <div style="flex:1; overflow:hidden; display:flex; flex-direction:row; gap:0;">
+
+                        <!-- Search pane (left) -->
+                        <div class="channel-pane-side" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; border-right:1px solid var(--border);">
+                            <div class="channel-pane-side-header">Search</div>
+                            <div style="padding:16px; flex:1; overflow-y:auto;">
+                                <div class="search-bar">
+                                    <input
+                                        type="text"
+                                        placeholder="Search for files..."
+                                        x-model="searchQuery"
+                                        @keydown.enter="runSearch()"
+                                    >
+                                    <button
+                                        class="btn btn-primary"
+                                        @click="runSearch()"
+                                        :disabled="searchRunning"
+                                        x-text="searchRunning ? 'Searching...' : 'Search'"
+                                    ></button>
+                                    <button
+                                        class="btn btn-sm"
+                                        @click="bookmarkSearch()"
+                                        :disabled="!searchQuery.trim()"
+                                        title="Save this search"
+                                    >Bookmark</button>
+                                    <select
+                                        style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;"
+                                        @change="applySavedSearch($event.target.value); $event.target.value = ''"
+                                    >
+                                        <option value="">Saved searches…</option>
+                                        <template x-for="ss in savedSearches" :key="ss.id">
+                                            <option :value="ss.query" x-text="ss.query"></option>
+                                        </template>
+                                    </select>
+                                </div>
+
+                                <template x-if="searchResults.length > 0">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th @click="sortBy('pack_number')" x-text="'Pack #' + sortIndicator('pack_number')"></th>
+                                                <th @click="sortBy('filename')" x-text="'Filename' + sortIndicator('filename')"></th>
+                                                <th @click="sortBy('filesize')" x-text="'Size' + sortIndicator('filesize')"></th>
+                                                <th @click="sortBy('bot_nick')" x-text="'Bot' + sortIndicator('bot_nick')"></th>
+                                                <th @click="sortBy('downloads_count')" x-text="'Downloads' + sortIndicator('downloads_count')"></th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template x-for="(r, i) in sortedResults()" :key="i">
+                                                <tr :class="{ unparsed: !r.parsed }">
+                                                    <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
+                                                    <td>
+                                                        <span x-text="r.filename || r.raw_line || '-'"></span>
+                                                        <template x-if="!r.parsed">
+                                                            <a
+                                                                href="#"
+                                                                style="margin-left:8px; font-size:11px; color:var(--warning);"
+                                                                @click.prevent="teachParser(r.raw_line)"
+                                                            >teach parser</a>
+                                                        </template>
+                                                    </td>
+                                                    <td x-text="r.filesize || '-'"></td>
+                                                    <td x-text="r.bot_nick || '-'"></td>
+                                                    <td x-text="r.downloads_count != null ? r.downloads_count : '-'"></td>
+                                                    <td>
+                                                        <button
+                                                            class="btn btn-primary btn-sm"
+                                                            @click="downloadPack(r)"
+                                                            :disabled="!r.parsed"
+                                                        >Download</button>
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </template>
+
+                                <template x-if="searchResults.length === 0 && !searchRunning">
+                                    <p style="color: var(--text-muted); font-size:13px;">No results. Enter a query and press Search.</p>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Download channel IRC pane (right) -->
+                        <div class="channel-pane-side irc-console" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+                            <div class="channel-pane-side-header" x-text="currentChannelHasDownloadChannel() ? downloadChannelForCurrent() : activeChannel"></div>
+                            <div style="display:flex;flex:1;overflow:hidden;">
+                                <div style="flex:1;overflow-y:auto;" class="irc-messages irc-log-pane">
+                                    <template x-if="currentChannelHasDownloadChannel()">
+                                        <div>
+                                            <template x-for="(msg, i) in (ircMessages[channelKey(activeServer, downloadChannelForCurrent())] || [])" :key="i">
+                                                <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                                    <span class="time" x-text="formatTime(msg.timestamp)"></span>
+                                                    <span class="nick" x-text="msg.nick + ':'"></span>
+                                                    <span x-text="msg.message"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <template x-if="!currentChannelHasDownloadChannel()">
+                                        <div>
+                                            <template x-for="(msg, i) in currentChannelMessages()" :key="i">
+                                                <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                                    <span class="time" x-text="formatTime(msg.timestamp)"></span>
+                                                    <span class="nick" x-text="msg.nick + ':'"></span>
+                                                    <span x-text="msg.message"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="user-list-sidebar" x-show="appMode === 'advanced'">
+                                    <div class="user-list-header">
+                                        <span>Users</span>
+                                        <button @click="loadUserList(activeServer, currentChannelHasDownloadChannel() ? downloadChannelForCurrent() : activeChannel)" title="Refresh">↺</button>
+                                    </div>
+                                    <div class="user-list-body">
+                                        <template x-if="userListLoading[channelKey(activeServer, currentChannelHasDownloadChannel() ? downloadChannelForCurrent() : activeChannel)]">
+                                            <div class="text-muted p-2">Loading...</div>
+                                        </template>
+                                        <template x-for="nick in userLists[channelKey(activeServer, currentChannelHasDownloadChannel() ? downloadChannelForCurrent() : activeChannel)] || []" :key="nick">
+                                            <div @click="selectUser(nick.replace(/^[@+%]/, ''))"
+                                                 :class="isUserSelected(nick.replace(/^[@+%]/, '')) ? 'user-selected' : ''"
+                                                 class="user-list-item" x-text="nick"></div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="irc-input">
+                                <input
+                                    type="text"
+                                    placeholder="Type a message or /command..."
+                                    x-model="ircInput"
+                                    @keydown.enter="sendIrcToChannel(activeServer, currentChannelHasDownloadChannel() ? downloadChannelForCurrent() : activeChannel)"
+                                >
+                            </div>
+                        </div>
+
+                    </div>
+                </template>
+
             </div>
         </template>
 
@@ -480,61 +819,56 @@
                         </div>
                     </template>
 
-                    <!-- File Routing tab -->
+                    <!-- File Routing tab — grouped by destination dir -->
                     <template x-if="settingsTab === 'routing'">
                         <div style="padding-top:16px;">
-                            <button class="btn btn-primary btn-sm" @click="openRoutingForm(null)">Add Rule</button>
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                <h3 style="margin:0; font-size:14px;">File Routing</h3>
+                                <button class="btn btn-primary btn-sm" @click="showAddDestForm = !showAddDestForm">+ Add destination</button>
+                            </div>
 
-                            <template x-if="routingRules.length > 0">
-                                <table style="margin-top:12px;">
-                                    <thead>
-                                        <tr>
-                                            <th>Pattern</th>
-                                            <th>Destination</th>
-                                            <th>Priority</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <template x-for="r in routingRules" :key="r.id">
-                                            <tr>
-                                                <td x-text="r.pattern"></td>
-                                                <td x-text="r.destination_dir"></td>
-                                                <td x-text="r.priority"></td>
-                                                <td style="white-space:nowrap;">
-                                                    <button class="btn btn-sm" @click="openRoutingForm(r)">Edit</button>
-                                                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteRoutingRule(r.id)">Delete</button>
-                                                </td>
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
-                            </template>
-                            <template x-if="routingRules.length === 0">
-                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No routing rules configured.</p>
-                            </template>
-
-                            <!-- Routing inline form -->
-                            <template x-if="showRoutingForm">
-                                <div style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px;">
-                                    <h3 style="margin:0 0 16px;" x-text="routingForm.id ? 'Edit Rule' : 'Add Rule'"></h3>
-                                    <div class="form-group">
-                                        <label>Pattern</label>
-                                        <input type="text" x-model="routingForm.pattern" placeholder="*.mkv">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Destination Dir</label>
-                                        <input type="text" x-model="routingForm.destination_dir" placeholder="/mnt/media/video">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Priority</label>
-                                        <input type="number" x-model.number="routingForm.priority">
-                                    </div>
-                                    <div style="margin-top:12px; display:flex; gap:8px;">
-                                        <button class="btn btn-primary btn-sm" @click="saveRoutingRule()">Save</button>
-                                        <button class="btn btn-sm" @click="showRoutingForm = false">Cancel</button>
+                            <!-- Add destination form -->
+                            <div x-show="showAddDestForm" style="padding:16px; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary); margin-bottom:16px;">
+                                <div style="display:flex; gap:8px;">
+                                    <input type="text" x-model="routingNewDir" placeholder="/srv/downloads" style="flex:1; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
+                                    <button @click="openDirPicker(routingNewDir, d => routingNewDir = d)" class="btn btn-sm">📁</button>
+                                </div>
+                                <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center;">
+                                    <template x-for="ext in predefinedExtensions()" :key="ext">
+                                        <button @click="addRoutingRuleForDir(routingNewDir, ext)" style="padding:3px 10px; border:1px solid var(--border); border-radius:12px; background:var(--bg-input); color:var(--text-secondary); font-size:12px; cursor:pointer;">
+                                            + <span x-text="ext"></span>
+                                        </button>
+                                    </template>
+                                    <div style="display:flex; gap:6px; align-items:center;">
+                                        <input type="text" x-model="routingNewExt" placeholder="custom ext" maxlength="10" style="padding:3px 8px; width:100px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:12px;">
+                                        <button @click="addRoutingRuleForDir(routingNewDir, routingNewExt); routingNewExt = ''" class="btn btn-primary btn-sm">Add</button>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- Groups -->
+                            <div style="display:flex; flex-direction:column; gap:12px;">
+                                <template x-for="(exts, dir) in groupedRoutingRules()" :key="dir">
+                                    <div style="padding:14px 16px; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary);">
+                                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                                            <div style="font-family:monospace; font-size:13px; color:var(--text-primary);" x-text="dir"></div>
+                                            <button @click="openDirPicker(dir, d => renameRoutingDir(dir, d))" class="btn btn-sm">📁 Change</button>
+                                        </div>
+                                        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                                            <template x-for="item in exts" :key="item.id">
+                                                <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border:1px solid var(--border); border-radius:12px; background:var(--bg-input); font-size:12px; color:var(--text-secondary);">
+                                                    <span x-text="item.ext"></span>
+                                                    <button @click="deleteRoutingRule(item.id)" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; line-height:1; padding:0 2px;">×</button>
+                                                </span>
+                                            </template>
+                                            <button @click="routingNewDir = dir; showAddDestForm = true" style="padding:2px 10px; border:1px dashed var(--border); border-radius:12px; background:transparent; color:var(--text-muted); font-size:12px; cursor:pointer;">+ ext</button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <template x-if="routingRules.length === 0">
+                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No routing rules configured.</p>
                             </template>
                         </div>
                     </template>
@@ -621,7 +955,321 @@
             </div>
         </template>
 
+
+        <!-- File Manager view -->
+        <div x-show="activeView === 'files'" class="p-4 h-full flex flex-col">
+            <h2>File Manager</h2>
+            <div style="display:flex;gap:1rem;flex:1;overflow:hidden;">
+                <!-- Dir list (left) -->
+                <div style="width:12rem;flex-shrink:0;">
+                    <div class="text-muted text-xs mb-2">Destinations</div>
+                    <template x-for="dir in Object.keys(groupedRoutingRules())" :key="dir">
+                        <button @click="loadFileManager(dir)"
+                                :class="fileManagerDir === dir ? 'active' : ''"
+                                class="file-dir-btn" x-text="dir"></button>
+                    </template>
+                </div>
+                <!-- File list (right) -->
+                <div style="flex:1;overflow:auto;">
+                    <div x-show="!fileManagerDir" class="text-muted text-sm">Select a directory.</div>
+                    <div x-show="fileManagerLoading" class="text-muted text-sm">Loading...</div>
+                    <table x-show="fileManagerDir && !fileManagerLoading" class="w-full text-sm">
+                        <thead>
+                            <tr class="text-muted border-b">
+                                <th class="text-left pb-2 pr-4">Filename</th>
+                                <th class="text-left pb-2 pr-4">Size</th>
+                                <th class="text-left pb-2">Modified</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr x-show="fileManagerFiles.length === 0">
+                                <td colspan="3" class="text-muted py-4">No files.</td>
+                            </tr>
+                            <template x-for="f in fileManagerFiles" :key="f.name">
+                                <tr class="border-b hover-row">
+                                    <td class="py-1 pr-4 font-mono text-xs" x-text="f.name"></td>
+                                    <td class="py-1 pr-4 text-muted text-xs" x-text="formatSize(f.size)"></td>
+                                    <td class="py-1 text-muted text-xs" x-text="formatDate(f.modified)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats view -->
+        <div x-show="activeView === 'stats'" class="p-4 overflow-auto">
+            <h2>Download Statistics</h2>
+
+            <!-- Summary cards (4 cards) -->
+            <div x-show="statsSummary" class="stats-cards mb-4">
+                <div class="stat-card">
+                    <div class="stat-number" x-text="statsSummary && statsSummary.total_transfers || 0"></div>
+                    <div class="stat-label">Total transfers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" x-text="statsSummary ? statsSummary.success_rate.toFixed(1) + '%' : '—'"></div>
+                    <div class="stat-label">Success rate</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" x-text="statsSummary ? formatSize(statsSummary.total_bytes) : '—'"></div>
+                    <div class="stat-label">Total transferred</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" x-text="statsSummary ? formatSize(statsSummary.total_saved) : '—'"></div>
+                    <div class="stat-label">Saved to disk</div>
+                </div>
+            </div>
+
+            <!-- Stats-only toggle -->
+            <div class="settings-card mb-4" style="display:flex;align-items:center;gap:1rem;">
+                <label class="text-sm">Download mode:</label>
+                <button @click="statsOnlyDefault = false; localStorage.setItem('xirc_stats_only', 'false')"
+                        :class="!statsOnlyDefault ? 'active' : ''"
+                        class="mode-btn">Save file</button>
+                <button @click="statsOnlyDefault = true; localStorage.setItem('xirc_stats_only', 'true')"
+                        :class="statsOnlyDefault ? 'active-warning' : ''"
+                        class="mode-btn">Stats only (don't save)</button>
+                <span x-show="statsOnlyDefault" class="text-muted text-xs">
+                    Files will be downloaded then immediately deleted — only statistics are kept.
+                </span>
+            </div>
+
+            <!-- History table -->
+            <h3 class="mb-2">History</h3>
+            <div style="overflow-x:auto;">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-muted border-b">
+                            <th class="text-left pb-2 pr-3">Filename</th>
+                            <th class="text-left pb-2 pr-3">Size</th>
+                            <th class="text-left pb-2 pr-3">Bot</th>
+                            <th class="text-left pb-2 pr-3">Status</th>
+                            <th class="text-left pb-2">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="d in statsHistory" :key="d.id">
+                            <tr class="border-b hover-row">
+                                <td class="py-1 pr-3 font-mono text-xs" x-text="d.filename"></td>
+                                <td class="py-1 pr-3 text-muted text-xs" x-text="formatSize(d.size_bytes)"></td>
+                                <td class="py-1 pr-3 text-xs" x-text="d.bot_nick"></td>
+                                <td class="py-1 pr-3 text-xs">
+                                    <span :class="{
+                                        'text-success': d.status === 'completed' || d.status === 'stats_only',
+                                        'text-danger': d.status === 'failed',
+                                        'text-muted': d.status === 'cancelled'
+                                    }" x-text="d.status"></span>
+                                </td>
+                                <td class="py-1 text-muted text-xs" x-text="formatDate(d.completed_at)"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            <button @click="loadMoreHistory()"
+                    x-show="statsHistory.length > 0 && statsHistory.length === statsHistoryOffset"
+                    class="btn-secondary mt-3">Load more</button>
+        </div>
+
+        <!-- Home / Dashboard view -->
+        <template x-if="activeView === 'home'">
+            <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <div class="content-header">
+                    <span>Overview</span>
+                </div>
+                <div class="content-body" style="overflow-y:auto; flex:1;">
+
+                    <!-- Server status cards -->
+                    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-bottom:24px;">
+                        <template x-for="srv in servers" :key="srv.id">
+                            <div style="background:var(--bg-secondary); border-radius:6px; padding:16px; cursor:pointer;"
+                                 @click="selectServer(srv)">
+                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                                    <span style="font-weight:500;" x-text="srv.name"></span>
+                                    <span class="badge"
+                                          :class="'badge-' + serverStatus(srv.id)"
+                                          x-text="serverStatus(srv.id)"></span>
+                                </div>
+                                <div style="font-size:12px; color:var(--text-muted); display:flex; flex-direction:column; gap:4px;">
+                                    <template x-if="ircStatus[srv.id] && ircStatus[srv.id].connected_at">
+                                        <div x-text="'Connected since: ' + formatTime(ircStatus[srv.id].connected_at)"></div>
+                                    </template>
+                                    <div x-text="'Reconnects: ' + (ircStatus[srv.id] ? ircStatus[srv.id].reconnect_count || 0 : 0)"></div>
+                                    <template x-if="ircStatus[srv.id] && ircStatus[srv.id].lag_ms">
+                                        <div x-text="'Lag: ' + ircStatus[srv.id].lag_ms + 'ms'"></div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Error overview -->
+                    <div style="background:var(--bg-secondary); border-radius:6px; padding:16px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                            <span style="font-weight:500;">
+                                Recent Errors
+                                <span x-show="unreadErrors > 0"
+                                      style="margin-left:8px; background:var(--danger); color:#fff; font-size:11px; border-radius:9999px; padding:1px 6px;"
+                                      x-text="unreadErrors"></span>
+                            </span>
+                            <button @click="clearErrors()" class="btn btn-sm">Clear all</button>
+                        </div>
+                        <div x-show="errors.length === 0" style="color:var(--text-muted); font-size:13px;">No recent errors.</div>
+                        <div style="display:flex; flex-direction:column; gap:8px; max-height:256px; overflow-y:auto;">
+                            <template x-for="(err, idx) in errors.slice(0,20)" :key="idx">
+                                <div style="display:flex; align-items:flex-start; gap:8px; font-size:13px; background:var(--bg-input); border-radius:4px; padding:8px;">
+                                    <span style="color:var(--danger); flex-shrink:0;">&#9888;</span>
+                                    <div style="flex:1; min-width:0;">
+                                        <div style="color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="err.message"></div>
+                                        <div style="font-size:11px; color:var(--text-muted);" x-text="err.timestamp"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </template>
+
+        <!-- Server view -->
+        <template x-if="activeView === 'server'">
+            <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <div class="content-header" style="display:flex; align-items:center; gap:12px;">
+                    <h2 style="margin:0; font-size:1.1rem; font-weight:600;" x-text="activeServerObj && activeServerObj.name"></h2>
+                    <span style="font-size:11px; padding:2px 8px; border-radius:9999px;"
+                          :style="{
+                              background: serverStatus(activeServer) === 'connected' ? 'var(--success-bg, #14532d)' : serverStatus(activeServer) === 'connecting' ? 'var(--warning-bg, #713f12)' : 'var(--danger-bg, #7f1d1d)',
+                              color: serverStatus(activeServer) === 'connected' ? 'var(--success-text, #bbf7d0)' : serverStatus(activeServer) === 'connecting' ? 'var(--warning-text, #fef08a)' : 'var(--danger-text, #fecaca)'
+                          }"
+                          x-text="serverStatus(activeServer)"></span>
+                </div>
+
+                <!-- Stats card -->
+                <div style="padding:12px 16px; display:grid; grid-template-columns:repeat(3,1fr); gap:10px; border-bottom:1px solid var(--border); font-size:13px;">
+                    <div style="background:var(--bg-secondary); border-radius:6px; padding:10px;">
+                        <div style="color:var(--text-muted); font-size:11px; margin-bottom:4px;">Connected since</div>
+                        <div x-text="ircStatus[activeServer] && ircStatus[activeServer].connected_at ? formatDate(ircStatus[activeServer].connected_at) : '—'"></div>
+                    </div>
+                    <div style="background:var(--bg-secondary); border-radius:6px; padding:10px;">
+                        <div style="color:var(--text-muted); font-size:11px; margin-bottom:4px;">Reconnects</div>
+                        <div x-text="ircStatus[activeServer] ? ircStatus[activeServer].reconnect_count || 0 : 0"></div>
+                    </div>
+                    <div style="background:var(--bg-secondary); border-radius:6px; padding:10px;">
+                        <div style="color:var(--text-muted); font-size:11px; margin-bottom:4px;">Lag</div>
+                        <div x-text="ircStatus[activeServer] && ircStatus[activeServer].lag_ms ? ircStatus[activeServer].lag_ms + ' ms' : '—'"></div>
+                    </div>
+                </div>
+
+                <!-- Raw IRC log -->
+                <div style="flex:1; overflow-y:auto; font-family:monospace; font-size:12px; padding:10px; display:flex; flex-direction:column; gap:2px;"
+                     x-ref="serverLog"
+                     @scroll="$el.scrollTop <= 20 && activeServerObj && loadMoreServerMessages(activeServerObj.id)">
+                    <template x-for="(msg, idx) in serverMessages[activeServer] || []" :key="idx">
+                        <div style="display:flex; gap:8px;">
+                            <span style="color:var(--text-muted); flex-shrink:0;" x-text="formatTime(msg.timestamp)"></span>
+                            <span style="color:var(--accent, #60a5fa); flex-shrink:0;" x-text="msg.nick ? '&lt;' + msg.nick + '&gt;' : '*'"></span>
+                            <span style="color:var(--text-primary); word-break:break-all;" x-text="msg.text || msg.message"></span>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Connect/Disconnect buttons (advanced mode) -->
+                <div x-show="appMode === 'advanced'" style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px;">
+                    <button @click="api.connectServer(activeServer).catch(console.error)"
+                            class="btn btn-primary btn-sm">Connect</button>
+                    <button @click="api.disconnectServer(activeServer).catch(console.error)"
+                            class="btn btn-danger btn-sm">Disconnect</button>
+                </div>
+            </div>
+        </template>
+
     </main>
+</div>
+
+<!-- Directory Picker Modal -->
+<div x-show="dirPickerOpen"
+     @keydown.escape.window="cancelDirPicker()"
+     style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;"
+     :style="dirPickerOpen ? 'display:flex;' : 'display:none;'">
+    <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; width:480px; max-width:90vw; max-height:70vh; display:flex; flex-direction:column; overflow:hidden;">
+        <!-- Modal header -->
+        <div style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:14px; font-weight:600;">Select Directory</span>
+            <button @click="cancelDirPicker()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:18px; line-height:1; padding:0 4px;">×</button>
+        </div>
+
+        <!-- Breadcrumb / current path -->
+        <div style="padding:10px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button @click="browseDirUp()" class="btn btn-sm" style="flex-shrink:0;">.. (up)</button>
+            <span style="font-family:monospace; font-size:12px; color:var(--text-secondary); word-break:break-all;" x-text="dirPickerPath"></span>
+        </div>
+
+        <!-- Directory listing -->
+        <div style="flex:1; overflow-y:auto;">
+            <template x-if="dirPickerEntries.filter(e => e.is_dir).length === 0">
+                <div style="padding:16px; color:var(--text-muted); font-size:13px;">No subdirectories</div>
+            </template>
+            <template x-for="entry in dirPickerEntries.filter(e => e.is_dir)" :key="entry.name">
+                <div @click="browseDir(dirPickerPath.replace(/\/$/, '') + '/' + entry.name)"
+                     style="padding:8px 16px; cursor:pointer; font-size:13px; font-family:monospace; color:var(--text-secondary); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px;"
+                     onmouseover="this.style.background='var(--bg-tertiary)'"
+                     onmouseout="this.style.background=''"
+                >
+                    <span style="color:var(--accent);">📁</span>
+                    <span x-text="entry.name"></span>
+                </div>
+            </template>
+        </div>
+
+        <!-- Modal footer -->
+        <div style="padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end;">
+            <button @click="cancelDirPicker()" class="btn btn-sm">Cancel</button>
+            <button @click="selectDir()" class="btn btn-primary btn-sm">Select</button>
+        </div>
+    </div>
+
+    <!-- Startup wizard overlay -->
+    <div :style="setupRequired ? 'display:flex' : 'display:none'"
+         style="position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center;">
+        <div style="background:var(--bg-secondary,#1e1e2e); border-radius:8px; padding:32px; max-width:560px; width:100%; box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+            <h2 style="margin:0 0 8px; font-size:18px;">Setup Required</h2>
+            <p style="color:var(--text-secondary,#888); margin:0 0 24px; font-size:13px;">
+                The following destination directories do not exist. Enter valid paths to continue.
+            </p>
+
+            <template x-for="(m, i) in setupMappings" :key="i">
+                <div style="margin-bottom:16px;">
+                    <div style="font-size:11px; color:var(--text-secondary,#888); margin-bottom:4px;" x-text="'Was: ' + m.old_dir"></div>
+                    <input type="text"
+                           x-model="setupMappings[i].new_dir"
+                           style="width:100%; box-sizing:border-box; padding:8px 10px; background:var(--bg-primary,#12121c); border:1px solid var(--border,#333); border-radius:4px; color:inherit; font-family:monospace; font-size:13px;"
+                           :placeholder="m.suggestion">
+                </div>
+            </template>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:24px;">
+                <button @click="cancelSetup()"
+                        style="padding:8px 16px; background:transparent; border:1px solid var(--border,#444); border-radius:4px; cursor:pointer; color:inherit;">
+                    Use Defaults
+                </button>
+                <button @click="applySetup()"
+                        :disabled="setupMappings.some(m => !m.new_dir.trim())"
+                        style="padding:8px 16px; background:#4f6ef7; border:none; border-radius:4px; cursor:pointer; color:#fff;">
+                    Apply
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Post-setup restart banner -->
+    <div :style="setupBanner ? 'display:block' : 'display:none'"
+         style="position:fixed; top:0; left:0; right:0; z-index:9998; background:#1a5c2a; color:#fff; padding:10px 20px; font-size:13px; text-align:center;">
+        Setup complete — restart xirc for changes to take effect.
+        <button @click="setupBanner=false" style="margin-left:12px; background:transparent; border:none; color:#fff; cursor:pointer; font-size:16px;">×</button>
+    </div>
 </div>
 </body>
 </html>

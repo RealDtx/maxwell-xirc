@@ -11,7 +11,16 @@ const (
 	EventDownloadProgress EventType = "download_progress"
 	EventDownloadStatus   EventType = "download_status"
 	EventNotification     EventType = "notification"
+	EventError            EventType = "error_event"
 )
+
+// ErrorEvent is the payload for EventError bus events.
+type ErrorEvent struct {
+	ErrorType string `json:"error_type"` // "irc_disconnect", "download_failed", "hook_failed"
+	ServerID  int64  `json:"server_id,omitempty"`
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"` // RFC3339
+}
 
 type Event struct {
 	Type     EventType   `json:"type"`

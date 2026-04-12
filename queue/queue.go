@@ -21,7 +21,7 @@ func New(store db.Store, maxConcurrent int) *Queue {
 	}
 }
 
-func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64) (*db.Download, error) {
+func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64, statsOnly bool) (*db.Download, error) {
 	dl := &db.Download{
 		ServerID:   serverID,
 		Channel:    channel,
@@ -30,6 +30,7 @@ func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, fil
 		Filename:   filename,
 		Filesize:   filesize,
 		Status:     "queued",
+		StatsOnly:  statsOnly,
 	}
 
 	if err := q.store.CreateDownload(dl); err != nil {

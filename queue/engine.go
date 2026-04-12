@@ -236,6 +236,24 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	if err != nil {
 		log.Printf("transfer failed for download %d: %v", downloadID, err)
 		e.queue.MarkFailed(downloadID, err.Error())
+		if dl, dlErr := e.store.GetDownload(downloadID); dlErr == nil && dl != nil {
+			now := time.Now()
+			stat := &db.DownloadStat{
+				Filename:    dl.Filename,
+				SizeBytes:   dl.Filesize,
+				ServerID:    dl.ServerID,
+				Channel:     dl.Channel,
+				BotNick:     dl.BotNick,
+				PackNumber:  dl.PackNumber,
+				StartedAt:   dl.StartedAt,
+				CompletedAt: &now,
+				Status:      dl.Status,
+				StatsOnly:   dl.StatsOnly,
+			}
+			if recordErr := e.store.CreateDownloadStat(stat); recordErr != nil {
+				log.Printf("warning: could not record download stat: %v", recordErr)
+			}
+		}
 		e.bus.Publish(irc.Event{
 			Type: irc.EventDownloadStatus,
 			Data: map[string]interface{}{
@@ -248,6 +266,30 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	}
 
 	e.queue.MarkCompleted(downloadID, destPath, tr.PeakSpeed(), tr.AverageSpeed())
+
+	// Record download stat
+	if dl, dlErr := e.store.GetDownload(downloadID); dlErr == nil && dl != nil {
+		now := time.Now()
+		stat := &db.DownloadStat{
+			Filename:    dl.Filename,
+			SizeBytes:   dl.Filesize,
+			ServerID:    dl.ServerID,
+			Channel:     dl.Channel,
+			BotNick:     dl.BotNick,
+			PackNumber:  dl.PackNumber,
+			StartedAt:   dl.StartedAt,
+			CompletedAt: &now,
+			Status:      dl.Status,
+			StatsOnly:   dl.StatsOnly,
+		}
+		if dl.StatsOnly && dl.Status == "completed" {
+			os.Remove(dl.DestinationPath)
+			stat.Status = "stats_only"
+		}
+		if recordErr := e.store.CreateDownloadStat(stat); recordErr != nil {
+			log.Printf("warning: could not record download stat: %v", recordErr)
+		}
+	}
 
 	// Apply file routing rules
 	finalPath := destPath

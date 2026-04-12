@@ -32,6 +32,7 @@ type Store interface {
 
 	// Search Results
 	GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error)
+	GetAllSearchResults(query string) ([]SearchResult, error)
 	CreateSearchResult(r *SearchResult) error
 
 	// Saved Searches
@@ -58,4 +59,9 @@ type Store interface {
 	CreateFileRoutingRule(r *FileRoutingRule) error
 	UpdateFileRoutingRule(r *FileRoutingRule) error
 	DeleteFileRoutingRule(id int64) error
+
+	// Download Stats
+	CreateDownloadStat(s *DownloadStat) error
+	GetDownloadStatsSummary() (*DownloadStatsSummary, error)
+	GetDownloadHistory(offset, limit int) ([]DownloadStat, error)
 }

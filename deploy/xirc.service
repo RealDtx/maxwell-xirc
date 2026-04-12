@@ -11,6 +11,9 @@ WorkingDirectory=/opt/xirc
 ExecStart=/opt/xirc/xirc --config /opt/xirc/config.yaml
 Restart=always
 RestartSec=5
+StartLimitIntervalSec=120
+StartLimitBurst=5
+RestartPreventExitStatus=78
 StandardOutput=journal
 StandardError=journal
 
