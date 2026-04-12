@@ -271,61 +271,61 @@ func (s *MySQLStore) DeleteServer(id int64) error {
 	return err
 }
 
-// --- Channels ---
+// --- Realms ---
 
-func (s *MySQLStore) GetChannels(serverID int64) ([]Channel, error) {
+func (s *MySQLStore) GetRealms(serverID int64) ([]Realm, error) {
 	rows, err := s.db.Query(
-		"SELECT id, server_id, name, `key`, search_command, download_channel, auto_join, enabled FROM channels WHERE server_id=? ORDER BY name", serverID,
+		"SELECT id, server_id, name, display_name, `key`, search_command, download_channel, auto_join, enabled FROM realms WHERE server_id=? ORDER BY name", serverID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	channels := []Channel{}
+	realms := []Realm{}
 	for rows.Next() {
-		var ch Channel
-		if err := rows.Scan(&ch.ID, &ch.ServerID, &ch.Name, &ch.Key, &ch.SearchCommand, &ch.DownloadChannel, &ch.AutoJoin, &ch.Enabled); err != nil {
+		var r Realm
+		if err := rows.Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.AutoJoin, &r.Enabled); err != nil {
 			return nil, err
 		}
-		channels = append(channels, ch)
+		realms = append(realms, r)
 	}
-	return channels, rows.Err()
+	return realms, rows.Err()
 }
 
-func (s *MySQLStore) GetChannel(id int64) (*Channel, error) {
-	var ch Channel
+func (s *MySQLStore) GetRealm(id int64) (*Realm, error) {
+	var r Realm
 	err := s.db.QueryRow(
-		"SELECT id, server_id, name, `key`, search_command, download_channel, auto_join, enabled FROM channels WHERE id=?", id,
-	).Scan(&ch.ID, &ch.ServerID, &ch.Name, &ch.Key, &ch.SearchCommand, &ch.DownloadChannel, &ch.AutoJoin, &ch.Enabled)
+		"SELECT id, server_id, name, display_name, `key`, search_command, download_channel, auto_join, enabled FROM realms WHERE id=?", id,
+	).Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.AutoJoin, &r.Enabled)
 	if err != nil {
 		return nil, err
 	}
-	return &ch, nil
+	return &r, nil
 }
 
-func (s *MySQLStore) CreateChannel(ch *Channel) error {
+func (s *MySQLStore) CreateRealm(r *Realm) error {
 	result, err := s.db.Exec(
-		"INSERT INTO channels (server_id, name, `key`, search_command, download_channel, auto_join, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		ch.ServerID, ch.Name, ch.Key, ch.SearchCommand, ch.DownloadChannel, ch.AutoJoin, ch.Enabled,
+		"INSERT INTO realms (server_id, name, display_name, `key`, search_command, download_channel, auto_join, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		r.ServerID, r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.AutoJoin, r.Enabled,
 	)
 	if err != nil {
 		return err
 	}
-	ch.ID, _ = result.LastInsertId()
+	r.ID, _ = result.LastInsertId()
 	return nil
 }
 
-func (s *MySQLStore) UpdateChannel(ch *Channel) error {
+func (s *MySQLStore) UpdateRealm(r *Realm) error {
 	_, err := s.db.Exec(
-		"UPDATE channels SET name=?, `key`=?, search_command=?, download_channel=?, auto_join=?, enabled=? WHERE id=?",
-		ch.Name, ch.Key, ch.SearchCommand, ch.DownloadChannel, ch.AutoJoin, ch.Enabled, ch.ID,
+		"UPDATE realms SET name=?, display_name=?, `key`=?, search_command=?, download_channel=?, auto_join=?, enabled=? WHERE id=?",
+		r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.AutoJoin, r.Enabled, r.ID,
 	)
 	return err
 }
 
-func (s *MySQLStore) DeleteChannel(id int64) error {
-	_, err := s.db.Exec("DELETE FROM channels WHERE id=?", id)
+func (s *MySQLStore) DeleteRealm(id int64) error {
+	_, err := s.db.Exec("DELETE FROM realms WHERE id=?", id)
 	return err
 }
 
