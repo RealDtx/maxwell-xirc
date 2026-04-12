@@ -108,14 +108,14 @@ func TestDeleteServer(t *testing.T) {
 	}
 }
 
-func TestGetChannelsForServer(t *testing.T) {
+func TestGetRealmsForServer(t *testing.T) {
 	srv, store, cleanup := newTestServerWithStore(t)
 	defer cleanup()
 
 	s := &db.Server{Name: "srv", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(s)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/servers/%d/channels", s.ID), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/servers/%d/realms", s.ID), nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -123,16 +123,16 @@ func TestGetChannelsForServer(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var channels []db.Channel
-	if err := json.NewDecoder(w.Body).Decode(&channels); err != nil {
+	var realms []db.Realm
+	if err := json.NewDecoder(w.Body).Decode(&realms); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if len(channels) != 0 {
-		t.Errorf("expected empty slice, got %d channels", len(channels))
+	if len(realms) != 0 {
+		t.Errorf("expected empty slice, got %d realms", len(realms))
 	}
 }
 
-func TestCreateChannel(t *testing.T) {
+func TestCreateRealm(t *testing.T) {
 	srv, store, cleanup := newTestServerWithStore(t)
 	defer cleanup()
 
@@ -140,7 +140,7 @@ func TestCreateChannel(t *testing.T) {
 	store.CreateServer(s)
 
 	body := fmt.Sprintf(`{"server_id":%d,"name":"#test","auto_join":true,"enabled":true}`, s.ID)
-	req := httptest.NewRequest("POST", "/api/channels", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/realms", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -149,30 +149,30 @@ func TestCreateChannel(t *testing.T) {
 		t.Errorf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result db.Channel
+	var result db.Realm
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if result.ID == 0 {
-		t.Errorf("expected channel ID to be set, got 0")
+		t.Errorf("expected realm ID to be set, got 0")
 	}
 	if result.Name != "#test" {
 		t.Errorf("expected name #test, got %q", result.Name)
 	}
 }
 
-func TestUpdateChannel(t *testing.T) {
+func TestUpdateRealm(t *testing.T) {
 	srv, store, cleanup := newTestServerWithStore(t)
 	defer cleanup()
 
 	s := &db.Server{Name: "srv", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(s)
 
-	ch := &db.Channel{ServerID: s.ID, Name: "#old", AutoJoin: true, Enabled: true}
-	store.CreateChannel(ch)
+	ch := &db.Realm{ServerID: s.ID, Name: "#old", AutoJoin: true, Enabled: true}
+	store.CreateRealm(ch)
 
 	body := fmt.Sprintf(`{"server_id":%d,"name":"#new","auto_join":true,"enabled":true}`, s.ID)
-	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/channels/%d", ch.ID), strings.NewReader(body))
+	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/realms/%d", ch.ID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -181,7 +181,7 @@ func TestUpdateChannel(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result db.Channel
+	var result db.Realm
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -190,17 +190,17 @@ func TestUpdateChannel(t *testing.T) {
 	}
 }
 
-func TestDeleteChannel(t *testing.T) {
+func TestDeleteRealm(t *testing.T) {
 	srv, store, cleanup := newTestServerWithStore(t)
 	defer cleanup()
 
 	s := &db.Server{Name: "srv", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(s)
 
-	ch := &db.Channel{ServerID: s.ID, Name: "#tobedeleted", AutoJoin: false, Enabled: true}
-	store.CreateChannel(ch)
+	ch := &db.Realm{ServerID: s.ID, Name: "#tobedeleted", AutoJoin: false, Enabled: true}
+	store.CreateRealm(ch)
 
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/channels/%d", ch.ID), nil)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/realms/%d", ch.ID), nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -257,11 +257,11 @@ func TestMethodNotAllowed_Servers(t *testing.T) {
 	}
 }
 
-func TestMethodNotAllowed_Channels(t *testing.T) {
+func TestMethodNotAllowed_Realms(t *testing.T) {
 	srv, _, cleanup := newTestServerWithStore(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("GET", "/api/channels", nil)
+	req := httptest.NewRequest("GET", "/api/realms", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
