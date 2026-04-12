@@ -54,13 +54,29 @@
                     <!-- Channels under this server -->
                     <template x-if="isExpanded(server.id)">
                         <div>
-                            <template x-for="ch in (server.channels || [])" :key="ch">
-                                <div
-                                    class="channel-item"
-                                    :class="{ active: activeServer === server.id && activeChannel === ch && activeView === 'channel' }"
-                                    @click="selectChannel(server.id, ch); sidebarOpen = false"
-                                    x-text="ch"
-                                ></div>
+                            <template x-if="realmsForServer(server.id).length > 0">
+                                <div>
+                                    <template x-for="realm in realmsForServer(server.id)" :key="realm.name">
+                                        <div
+                                            class="channel-item"
+                                            :class="{ active: activeServer === server.id && activeChannel === realm.name && activeView === 'channel' }"
+                                            @click="selectRealm(server.id, realm.name); sidebarOpen = false"
+                                            x-text="realm.display_name || realm.name"
+                                        ></div>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="realmsForServer(server.id).length === 0">
+                                <div>
+                                    <template x-for="ch in (server.channels || [])" :key="ch">
+                                        <div
+                                            class="channel-item"
+                                            :class="{ active: activeServer === server.id && activeChannel === ch && activeView === 'channel' }"
+                                            @click="selectChannel(server.id, ch); sidebarOpen = false"
+                                            x-text="ch"
+                                        ></div>
+                                    </template>
+                                </div>
                             </template>
                         </div>
                     </template>
@@ -654,7 +670,7 @@
                     <!-- Settings tab bar -->
                     <div class="tabs">
                         <div class="tab" :class="{ active: settingsTab === 'servers' }" @click="settingsTab = 'servers'">Servers</div>
-                        <div class="tab" :class="{ active: settingsTab === 'channels' }" @click="settingsTab = 'channels'">Channels</div>
+                        <div class="tab" :class="{ active: settingsTab === 'realms' }" @click="settingsTab = 'realms'">Realms</div>
                         <div class="tab" :class="{ active: settingsTab === 'routing' }" @click="settingsTab = 'routing'">File Routing</div>
                         <div class="tab" :class="{ active: settingsTab === 'hooks' }" @click="settingsTab = 'hooks'">Post-Hooks</div>
                         <div class="tab" :class="{ active: settingsTab === 'general' }" @click="settingsTab = 'general'">General</div>
@@ -741,12 +757,12 @@
                         </div>
                     </template>
 
-                    <!-- Channels tab -->
-                    <template x-if="settingsTab === 'channels'">
+                    <!-- Realms tab -->
+                    <template x-if="settingsTab === 'realms'">
                         <div style="padding-top:16px;">
                             <div class="form-group" style="max-width:320px;">
                                 <label>Server</label>
-                                <select @change="loadSettingsChannels(parseInt($event.target.value))" style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px; width:100%;">
+                                <select @change="loadSettingsRealms(parseInt($event.target.value))" style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px; width:100%;">
                                     <option value="">Select a server…</option>
                                     <template x-for="s in settingsServers" :key="s.id">
                                         <option :value="s.id" :selected="settingsServerId === s.id" x-text="s.name"></option>
@@ -754,13 +770,14 @@
                                 </select>
                             </div>
 
-                            <button class="btn btn-primary btn-sm" :disabled="!settingsServerId" @click="openChannelForm(null)">Add Channel</button>
+                            <button class="btn btn-primary btn-sm" :disabled="!settingsServerId" @click="openRealmForm(null)">Add Realm</button>
 
-                            <template x-if="settingsServerId && settingsChannels.length > 0">
+                            <template x-if="settingsServerId && settingsRealms.length > 0">
                                 <table style="margin-top:12px;">
                                     <thead>
                                         <tr>
                                             <th>Name</th>
+                                            <th>Display Name</th>
                                             <th>Search Command</th>
                                             <th>Download Channel</th>
                                             <th>Auto-join</th>
@@ -768,51 +785,56 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <template x-for="ch in settingsChannels" :key="ch.id">
+                                        <template x-for="realm in settingsRealms" :key="realm.id">
                                             <tr>
-                                                <td x-text="ch.name"></td>
-                                                <td x-text="ch.search_command || '-'"></td>
-                                                <td x-text="ch.download_channel || '-'"></td>
-                                                <td x-text="ch.auto_join ? 'Yes' : 'No'"></td>
+                                                <td x-text="realm.name"></td>
+                                                <td x-text="realm.display_name || '-'"></td>
+                                                <td x-text="realm.search_command || '-'"></td>
+                                                <td x-text="realm.download_channel || '-'"></td>
+                                                <td x-text="realm.auto_join ? 'Yes' : 'No'"></td>
                                                 <td style="white-space:nowrap;">
-                                                    <button class="btn btn-sm" @click="openChannelForm(ch)">Edit</button>
-                                                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteChannel(ch.id)">Delete</button>
+                                                    <button class="btn btn-sm" @click="openRealmForm(realm)">Edit</button>
+                                                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteRealm(realm.id)">Delete</button>
                                                 </td>
                                             </tr>
                                         </template>
                                     </tbody>
                                 </table>
                             </template>
-                            <template x-if="settingsServerId && settingsChannels.length === 0">
-                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No channels configured for this server.</p>
+                            <template x-if="settingsServerId && settingsRealms.length === 0">
+                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No realms configured for this server.</p>
                             </template>
 
-                            <!-- Channel inline form -->
-                            <template x-if="showChannelForm">
+                            <!-- Realm inline form -->
+                            <template x-if="showRealmForm">
                                 <div style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px;">
-                                    <h3 style="margin:0 0 16px;" x-text="channelForm.id ? 'Edit Channel' : 'Add Channel'"></h3>
+                                    <h3 style="margin:0 0 16px;" x-text="realmForm.id ? 'Edit Realm' : 'Add Realm'"></h3>
                                     <div class="form-group">
                                         <label>Name</label>
-                                        <input type="text" x-model="channelForm.name" placeholder="#channel">
+                                        <input type="text" x-model="realmForm.name" placeholder="#search-bot">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Display Name</label>
+                                        <input type="text" x-model="realmForm.display_name" placeholder="Movies">
                                     </div>
                                     <div class="form-group">
                                         <label>Search Command</label>
-                                        <input type="text" x-model="channelForm.search_command" placeholder="!search">
+                                        <input type="text" x-model="realmForm.search_command" placeholder="!search">
                                     </div>
                                     <div class="form-group">
                                         <label>Download Channel</label>
-                                        <input type="text" x-model="channelForm.download_channel" placeholder="#download-channel">
+                                        <input type="text" x-model="realmForm.download_channel" placeholder="#download-bot">
                                     </div>
                                     <div class="form-group">
                                         <label>Auto-join</label>
                                         <label class="toggle">
-                                            <input type="checkbox" x-model="channelForm.auto_join">
+                                            <input type="checkbox" x-model="realmForm.auto_join">
                                             <span class="toggle-slider"></span>
                                         </label>
                                     </div>
                                     <div style="margin-top:12px; display:flex; gap:8px;">
-                                        <button class="btn btn-primary btn-sm" @click="saveChannel()">Save</button>
-                                        <button class="btn btn-sm" @click="showChannelForm = false">Cancel</button>
+                                        <button class="btn btn-primary btn-sm" @click="saveRealm()">Save</button>
+                                        <button class="btn btn-sm" @click="showRealmForm = false">Cancel</button>
                                     </div>
                                 </div>
                             </template>
@@ -1174,6 +1196,16 @@
                             <span style="color:var(--text-primary); word-break:break-all;" x-text="msg.text || msg.message"></span>
                         </div>
                     </template>
+                </div>
+
+                <!-- Server IRC input -->
+                <div class="irc-input" style="border-top:1px solid var(--border);">
+                    <input
+                        type="text"
+                        placeholder="Type /command or raw IRC..."
+                        x-model="ircInput"
+                        @keydown.enter="sendToServer(activeServer)"
+                    >
                 </div>
 
                 <!-- Connect/Disconnect buttons (advanced mode) -->

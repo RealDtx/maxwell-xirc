@@ -44,6 +44,12 @@ document.addEventListener('alpine:init', () => {
 
         // Channel configs map: channelKey -> download_channel
         _channelConfigs: {},
+        // Realm configs map: channelKey -> realm object {id, name, display_name, download_channel, search_command}
+        _realmConfigs: {},
+        // Settings - Realms (replaces settingsChannels)
+        settingsRealms: [],
+        realmForm: { id: null, server_id: null, name: '', display_name: '', search_command: '', download_channel: '', auto_join: false, enabled: true },
+        showRealmForm: false,
 
         // Active server (for server view)
         activeServerObj: null,
@@ -259,6 +265,59 @@ document.addEventListener('alpine:init', () => {
             if (!text || !serverId || !channel) return;
             this.ircInput = '';
             api.sendMessage(serverId, channel, text).catch(console.error);
+        },
+
+        // Returns array of realm objects for a server (from _realmConfigs)
+        realmsForServer(serverId) {
+            const result = [];
+            const seen = {};
+            for (const key in this._realmConfigs) {
+                const cfg = this._realmConfigs[key];
+                if (cfg.server_id === serverId && !seen[cfg.name]) {
+                    seen[cfg.name] = true;
+                    result.push(cfg);
+                }
+            }
+            result.sort(function(a, b) {
+                var na = (a.display_name || a.name).toLowerCase();
+                var nb = (b.display_name || b.name).toLowerCase();
+                return na < nb ? -1 : na > nb ? 1 : 0;
+            });
+            return result;
+        },
+
+        // Display name for a realm channel
+        realmDisplayName(serverId, channelName) {
+            const cfg = this._realmConfigs[this.channelKey(serverId, channelName)];
+            return cfg ? (cfg.display_name || cfg.name) : channelName;
+        },
+
+        selectRealm(serverId, channelName) {
+            this.selectChannel(serverId, channelName);
+        },
+
+        // Send message to a channel with slash command support
+        sendToChannel(serverId, channel) {
+            const text = this.ircInput.trim();
+            if (!text || !serverId || !channel) return;
+            this.ircInput = '';
+            if (text.startsWith('/')) {
+                api.sendRaw(serverId, text.slice(1)).catch(console.error);
+            } else {
+                api.sendMessage(serverId, channel, text).catch(console.error);
+            }
+        },
+
+        // Send raw command to server (for server view input)
+        sendToServer(serverId) {
+            const text = this.ircInput.trim();
+            if (!text || !serverId) return;
+            this.ircInput = '';
+            if (text.startsWith('/')) {
+                api.sendRaw(serverId, text.slice(1)).catch(console.error);
+            } else {
+                api.sendRaw(serverId, 'PRIVMSG * :' + text).catch(console.error);
+            }
         },
 
         // --- IRC actions ---
@@ -690,7 +749,7 @@ document.addEventListener('alpine:init', () => {
 
         loadSettingsChannels(serverId) {
             this.settingsServerId = serverId;
-            return api.getChannels(serverId).then(r => { this.settingsChannels = Array.isArray(r) ? r : []; });
+            return api.getRealms(serverId).then(r => { this.settingsChannels = Array.isArray(r) ? r : []; this.settingsRealms = this.settingsChannels; });
         },
 
         openServerForm(server) {
@@ -724,8 +783,8 @@ document.addEventListener('alpine:init', () => {
 
         saveChannel() {
             const p = this.channelForm.id
-                ? api.updateChannel(this.channelForm.id, this.channelForm)
-                : api.createChannel(this.channelForm);
+                ? api.updateRealm(this.channelForm.id, this.channelForm)
+                : api.createRealm(this.channelForm);
             return p.then(async () => {
                 this.showChannelForm = false;
                 await this.loadSettingsChannels(this.settingsServerId);
@@ -751,7 +810,41 @@ document.addEventListener('alpine:init', () => {
 
         deleteChannel(id) {
             if (!confirm('Delete channel?')) return;
-            return api.deleteChannel(id).then(() => this.loadSettingsChannels(this.settingsServerId)).catch(console.error);
+            return api.deleteRealm(id).then(() => this.loadSettingsChannels(this.settingsServerId)).catch(console.error);
+        },
+
+        loadSettingsRealms(serverId) {
+            this.settingsServerId = serverId;
+            return api.getRealms(serverId).then(r => { this.settingsRealms = Array.isArray(r) ? r : []; });
+        },
+
+        openRealmForm(realm) {
+            this.realmForm = realm
+                ? Object.assign({}, realm)
+                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', search_command: '', download_channel: '', auto_join: false, enabled: true };
+            this.showRealmForm = true;
+        },
+
+        saveRealm() {
+            const p = this.realmForm.id
+                ? api.updateRealm(this.realmForm.id, this.realmForm)
+                : api.createRealm(this.realmForm);
+            return p.then(async () => {
+                this.showRealmForm = false;
+                await this.loadSettingsRealms(this.settingsServerId);
+                // Re-load realm configs
+                const realms = await api.getRealms(this.settingsServerId).catch(() => []);
+                for (const r of (realms || [])) {
+                    const key = this.channelKey(this.settingsServerId, r.name);
+                    this._realmConfigs[key] = Object.assign({}, r, { server_id: this.settingsServerId });
+                    this._channelConfigs[key] = r.download_channel || r.name;
+                }
+            }).catch(console.error);
+        },
+
+        deleteRealm(id) {
+            if (!confirm('Delete realm?')) return;
+            return api.deleteRealm(id).then(() => this.loadSettingsRealms(this.settingsServerId)).catch(console.error);
         },
 
         openRoutingForm(rule) {
@@ -913,12 +1006,13 @@ document.addEventListener('alpine:init', () => {
                 console.error('loadIRCStatus error', e);
             }
 
-            // Load channel configs (for download_channel mapping)
+            // Load realm configs (for download_channel and display name mapping)
             for (const srv of this.servers) {
-                const channels = await api.getChannels(srv.id).catch(() => []);
-                for (const ch of (channels || [])) {
-                    const key = this.channelKey(srv.id, ch.name);
-                    this._channelConfigs[key] = ch.download_channel || ch.name;
+                const realms = await api.getRealms(srv.id).catch(() => []);
+                for (const r of (realms || [])) {
+                    const key = this.channelKey(srv.id, r.name);
+                    this._channelConfigs[key] = r.download_channel || r.name;
+                    this._realmConfigs[key] = Object.assign({}, r, { server_id: srv.id });
                 }
             }
 
