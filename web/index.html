@@ -402,7 +402,7 @@
                         >
                             <div style="display:flex; flex:1; overflow:hidden;">
                                 <div style="flex:1; overflow-y:auto;" class="irc-messages irc-log-pane" x-ref="ircLogDownload">
-                                    <template x-for="(msg, i) in (ircMessages[channelKey(activeServer, downloadChannelForCurrent())] || [])" :key="i">
+                                    <template x-for="(msg, i) in currentDownloadChannelMessages()" :key="i">
                                         <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
                                             <span class="time" x-text="formatTime(msg.timestamp)"></span>
                                             <span class="nick" x-text="msg.nick + ':'"></span>
@@ -534,7 +534,7 @@
                                 <div style="flex:1;overflow-y:auto;" class="irc-messages irc-log-pane">
                                     <template x-if="currentChannelHasDownloadChannel()">
                                         <div>
-                                            <template x-for="(msg, i) in (ircMessages[channelKey(activeServer, downloadChannelForCurrent())] || [])" :key="i">
+                                            <template x-for="(msg, i) in currentDownloadChannelMessages()" :key="i">
                                                 <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
                                                     <span class="time" x-text="formatTime(msg.timestamp)"></span>
                                                     <span class="nick" x-text="msg.nick + ':'"></span>
@@ -1209,7 +1209,7 @@
                 <div style="flex:1; overflow-y:auto; font-family:monospace; font-size:12px; padding:10px; display:flex; flex-direction:column; gap:2px;"
                      x-ref="serverLog"
                      @scroll="$el.scrollTop <= 20 && activeServerObj && loadMoreServerMessages(activeServerObj.id)">
-                    <template x-for="(msg, idx) in serverMessages[activeServer] || []" :key="idx">
+                    <template x-for="(msg, idx) in currentServerMessages(activeServer)" :key="idx">
                         <div style="display:flex; gap:8px;">
                             <span style="color:var(--text-muted); flex-shrink:0;" x-text="formatTime(msg.timestamp)"></span>
                             <span style="color:var(--accent, #60a5fa); flex-shrink:0;" x-text="msg.nick ? '&lt;' + msg.nick + '&gt;' : '*'"></span>

@@ -15,6 +15,7 @@ document.addEventListener('alpine:init', () => {
         downloads: [],
         downloadFilter: 'all',
         ircMessages: {},
+        _msgVersion: 0,  // bumped whenever ircMessages or serverMessages change; forces x-for re-eval
         ircInput: '',
         showIrcConsole: false,
         ws: null,
@@ -131,8 +132,23 @@ document.addEventListener('alpine:init', () => {
         },
 
         currentChannelMessages() {
+            void this._msgVersion; // track _msgVersion so x-for re-evaluates when messages arrive
             if (!this.activeServer || !this.activeChannel) return [];
             return this.ircMessages[this.channelKey(this.activeServer, this.activeChannel)] || [];
+        },
+
+        currentServerMessages(serverId) {
+            void this._msgVersion; // track _msgVersion so x-for re-evaluates when messages arrive
+            if (!serverId) return [];
+            return this.serverMessages[serverId] || [];
+        },
+
+        currentDownloadChannelMessages() {
+            void this._msgVersion;
+            if (!this.activeServer || !this.activeChannel) return [];
+            const dlChan = this.downloadChannelForCurrent();
+            if (!dlChan) return [];
+            return this.ircMessages[this.channelKey(this.activeServer, dlChan)] || [];
         },
 
         // --- Navigation ---
@@ -155,6 +171,12 @@ document.addEventListener('alpine:init', () => {
             this.activeChannel = channelName;
             this.activeView = 'channel';
             this.loadChannelMessages(serverId, channelName);
+            // Also pre-load download channel if one is configured
+            const dlKey = this.channelKey(serverId, channelName);
+            const dlChan = this._channelConfigs && this._channelConfigs[dlKey];
+            if (dlChan && dlChan !== channelName) {
+                this.loadChannelMessages(serverId, dlChan);
+            }
         },
 
         async loadChannelMessages(serverId, channelName) {
@@ -165,6 +187,7 @@ document.addEventListener('alpine:init', () => {
                     this.ircMessages = Object.assign({}, this.ircMessages, {
                         [key]: msgs.map(m => ({ nick: m.nick, message: m.text || m.message || '', timestamp: m.timestamp }))
                     });
+                    this._msgVersion++;
                 }
             } catch(e) {
                 console.error('loadChannelMessages', e);
@@ -183,6 +206,7 @@ document.addEventListener('alpine:init', () => {
                     this.ircMessages = Object.assign({}, this.ircMessages, {
                         [key]: normalized.concat(existing)
                     });
+                    this._msgVersion++;
                 }
             } catch(e) {
                 console.error('loadMoreChannelMessages', e);
@@ -216,7 +240,10 @@ document.addEventListener('alpine:init', () => {
             this.serverMsgLoading[serverId] = true;
             try {
                 const msgs = await api.getIRCMessages(serverId, '', null, 200);
-                this.serverMessages[serverId] = Array.isArray(msgs) ? msgs : [];
+                this.serverMessages = Object.assign({}, this.serverMessages, {
+                    [serverId]: Array.isArray(msgs) ? msgs : []
+                });
+                this._msgVersion++;
             } catch(e) {
                 console.error('loadServerMessages', e);
             } finally {
@@ -231,7 +258,10 @@ document.addEventListener('alpine:init', () => {
             try {
                 const msgs = await api.getIRCMessages(serverId, '', oldest, 200);
                 if (msgs && msgs.length > 0) {
-                    this.serverMessages[serverId] = msgs.concat(existing);
+                    this.serverMessages = Object.assign({}, this.serverMessages, {
+                        [serverId]: msgs.concat(existing)
+                    });
+                    this._msgVersion++;
                 }
             } catch(e) {
                 console.error('loadMoreServerMessages', e);
@@ -252,6 +282,13 @@ document.addEventListener('alpine:init', () => {
         },
         setActiveTab(key, tab) {
             this.activeChannelTab = Object.assign({}, this.activeChannelTab, {[key]: tab});
+            // Pre-load download channel messages when switching to Bot IRC tab
+            if (tab === 'download' && this.activeServer && this.activeChannel) {
+                const dlChan = this.downloadChannelForCurrent();
+                if (dlChan && dlChan !== this.activeChannel) {
+                    this.loadChannelMessages(this.activeServer, dlChan);
+                }
+            }
         },
 
         // --- User list ---
@@ -620,6 +657,7 @@ document.addEventListener('alpine:init', () => {
                     let msgs = existing.concat([newMsg]);
                     if (msgs.length > 500) msgs = msgs.slice(msgs.length - 500);
                     this.ircMessages = Object.assign({}, this.ircMessages, { [key]: msgs });
+                    this._msgVersion++;
                     // Auto-scroll if this message is for the active channel
                     if (data.server_id === this.activeServer && data.channel === this.activeChannel) {
                         setTimeout(() => {
@@ -639,6 +677,7 @@ document.addEventListener('alpine:init', () => {
                     let msgs = existing.concat([newMsg]);
                     if (msgs.length > 500) msgs = msgs.slice(msgs.length - 500);
                     this.serverMessages = Object.assign({}, this.serverMessages, { [sid]: msgs });
+                    this._msgVersion++;
                 }
             } else if (type === 'download_progress') {
                 const p = data.data;
