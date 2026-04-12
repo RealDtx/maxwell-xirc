@@ -7,8 +7,8 @@ database:
   path: ./data/xirc.db
 
 storage:
-  media_dir: /root/media
-  downloads_dir: /root/dl
+  media_dir: /home/private/Videos
+  downloads_dir: /home/private/Downloads
   temp_dir: /srv/downloads/.tmp
   min_free_space: 1GB
   critical_free_space: 500MB
