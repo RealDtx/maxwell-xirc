@@ -35,6 +35,9 @@ document.addEventListener('alpine:init', () => {
         showChannelForm: false,
         showRoutingForm: false,
         showHookForm: false,
+        routingNewDir: '',
+        routingNewExt: '',
+        showAddDestForm: false,
 
         // Mode
         appMode: localStorage.getItem('xirc_mode') || 'simple',
@@ -84,6 +87,22 @@ document.addEventListener('alpine:init', () => {
         statsOnlyDefault: false,
 
         // --- Computed helpers ---
+
+        groupedRoutingRules() {
+            var groups = {};
+            for (var i = 0; i < this.routingRules.length; i++) {
+                var r = this.routingRules[i];
+                var dir = r.destination_dir;
+                if (!groups[dir]) groups[dir] = [];
+                var ext = r.pattern.replace(/^\*\./, '');
+                groups[dir].push({ id: r.id, ext: ext, rule: r });
+            }
+            return groups;
+        },
+
+        predefinedExtensions() {
+            return ['mkv', 'mp4', 'avi', 'mp3', 'flac', 'epub', 'pdf', 'zip', 'cbz'];
+        },
 
         serverStatus(serverId) {
             const s = this.ircStatus[serverId];
@@ -694,6 +713,23 @@ document.addEventListener('alpine:init', () => {
         deleteHook(id) {
             if (!confirm('Delete hook?')) return;
             return api.deleteHook(id).then(() => this.loadSettingsData()).catch(console.error);
+        },
+
+        async addRoutingRuleForDir(dir, ext) {
+            if (!dir || !ext) return;
+            const pattern = '*.' + ext.replace(/^\./, '');
+            await api.createRoutingRule({ pattern, destination_dir: dir, priority: 0 });
+            await this.loadSettingsData();
+        },
+
+        async renameRoutingDir(oldDir, newDir) {
+            if (!newDir || newDir === oldDir) return;
+            const groups = this.groupedRoutingRules();
+            const rules = groups[oldDir] || [];
+            for (const item of rules) {
+                await api.updateRoutingRule(item.id, Object.assign({}, item.rule, { destination_dir: newDir }));
+            }
+            await this.loadSettingsData();
         },
 
         // --- Init ---
