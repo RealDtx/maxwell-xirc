@@ -12,12 +12,12 @@ type Store interface {
 	UpdateServer(s *Server) error
 	DeleteServer(id int64) error
 
-	// Channels
-	GetChannels(serverID int64) ([]Channel, error)
-	GetChannel(id int64) (*Channel, error)
-	CreateChannel(c *Channel) error
-	UpdateChannel(c *Channel) error
-	DeleteChannel(id int64) error
+	// Realms
+	GetRealms(serverID int64) ([]Realm, error)
+	GetRealm(id int64) (*Realm, error)
+	CreateRealm(r *Realm) error
+	UpdateRealm(r *Realm) error
+	DeleteRealm(id int64) error
 
 	// Downloads
 	// GetDownloads returns downloads filtered by status, ordered by created_at DESC.

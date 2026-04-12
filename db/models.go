@@ -39,11 +39,12 @@ type Server struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-type Channel struct {
+type Realm struct {
 	ID              int64  `json:"id"`
 	ServerID        int64  `json:"server_id"`
 	Name            string `json:"name"`
-	Key             string `json:"-"`
+	DisplayName     string `json:"display_name"`
+	Key             string `json:"key,omitempty"`
 	SearchCommand   string `json:"search_command"`
 	DownloadChannel string `json:"download_channel"`
 	AutoJoin        bool   `json:"auto_join"`
