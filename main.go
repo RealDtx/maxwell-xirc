@@ -153,6 +153,12 @@ func main() {
 		log.Printf("warning: could not determine home dir: %v", err)
 	}
 
+	// Sync DB routing rules to match config.yaml BEFORE checking directories,
+	// so that a changed config is reflected in checkDirectories immediately.
+	if err := routing.SyncBuiltinRuleDirs(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {
+		log.Printf("warning: failed to sync builtin routing rules: %v", err)
+	}
+
 	badDirs := checkDirectories(store)
 
 	setupState := &server.SetupState{
@@ -180,10 +186,6 @@ func main() {
 	// Seed default parse patterns
 	if err := parser.SeedPatterns(store); err != nil {
 		log.Printf("warning: failed to seed patterns: %v", err)
-	}
-
-	if err := routing.SyncBuiltinRuleDirs(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {
-		log.Printf("warning: failed to sync builtin routing rules: %v", err)
 	}
 
 	if err := routing.SeedRoutingRules(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {
