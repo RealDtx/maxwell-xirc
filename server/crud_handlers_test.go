@@ -269,3 +269,68 @@ func TestMethodNotAllowed_Channels(t *testing.T) {
 		t.Errorf("expected 405, got %d", w.Code)
 	}
 }
+
+// --- Nickname validation tests ---
+
+func TestCreateServer_RejectsEmptyNickname(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	body := `{"name":"testserver","host":"irc.example.com","port":6667,"nickname":"","enabled":true}`
+	req := httptest.NewRequest("POST", "/api/servers", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty nickname, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateServer_RejectsMissingNickname(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	body := `{"name":"testserver","host":"irc.example.com","port":6667,"enabled":true}`
+	req := httptest.NewRequest("POST", "/api/servers", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing nickname, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateServer_RejectsEmptyNickname(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	s := &db.Server{Name: "old", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(s)
+
+	body := fmt.Sprintf(`{"id":%d,"name":"old","host":"irc.example.com","port":6667,"nickname":"","enabled":true}`, s.ID)
+	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/servers/%d", s.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty nickname on update, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateServer_AcceptsValidNickname(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	body := `{"name":"testserver","host":"irc.example.com","port":6667,"nickname":"mybot","enabled":true}`
+	req := httptest.NewRequest("POST", "/api/servers", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("expected 201 for valid nickname, got %d: %s", w.Code, w.Body.String())
+	}
+}
