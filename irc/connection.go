@@ -252,10 +252,16 @@ func (c *Connection) applyHandlers(client IRCClient) {
 	})
 
 	client.OnMessage(func(nick, target, message string) {
+		channel := target
+		// DM detection: if target is not a channel (doesn't start with #, &, !, +),
+		// it's a direct message to us. Key it by the sender's nick.
+		if len(target) > 0 && target[0] != '#' && target[0] != '&' && target[0] != '!' && target[0] != '+' {
+			channel = nick
+		}
 		c.bus.Publish(Event{
 			Type:     EventIRCMessage,
 			ServerID: c.server.ID,
-			Channel:  target,
+			Channel:  channel,
 			Nick:     nick,
 			Data: map[string]string{
 				"type":    "privmsg",
@@ -265,10 +271,14 @@ func (c *Connection) applyHandlers(client IRCClient) {
 	})
 
 	client.OnNotice(func(nick, target, message string) {
+		channel := target
+		if len(target) > 0 && target[0] != '#' && target[0] != '&' && target[0] != '!' && target[0] != '+' {
+			channel = nick
+		}
 		c.bus.Publish(Event{
 			Type:     EventIRCMessage,
 			ServerID: c.server.ID,
-			Channel:  target,
+			Channel:  channel,
 			Nick:     nick,
 			Data: map[string]string{
 				"type":    "notice",
@@ -460,7 +470,7 @@ func (c *Connection) pingLoop(client IRCClient, done <-chan struct{}) {
 }
 
 func (c *Connection) handleRawLine(line string) {
-	// PONG :<token>  (bare or server-prefixed: ":server PONG server :token")
+	// PONG — handle latency tracking, don't publish.
 	if strings.HasPrefix(line, "PONG ") || strings.Contains(line, " PONG ") {
 		c.mu.Lock()
 		if c.lagMs < 0 {
@@ -471,8 +481,24 @@ func (c *Connection) handleRawLine(line string) {
 		return
 	}
 
-	// Publish every non-PONG raw line to the server-level message stream
-	// (channel="") so the server view can display it.
+	// Skip user PRIVMSG and NOTICE raw lines — they are already handled by
+	// OnMessage/OnNotice and published with the correct channel target.
+	// Publishing them again here would cause duplicates in the server view.
+	parts := strings.SplitN(line, " ", 5)
+	if len(parts) >= 3 {
+		cmd := strings.ToUpper(parts[1])
+		if cmd == "PRIVMSG" || cmd == "NOTICE" {
+			// Server notices have no '!' in the prefix (nick!user@host format).
+			// User messages always have a '!' in their prefix. Skip user messages only.
+			prefix := parts[0]
+			if strings.Contains(prefix, "!") {
+				return
+			}
+			// Server NOTICE (no '!' in prefix) — fall through to publish as raw server message.
+		}
+	}
+
+	// Publish server-level raw lines (numerics, MODE, JOIN, PART, QUIT, etc.)
 	c.bus.Publish(Event{
 		Type:     EventIRCMessage,
 		ServerID: c.server.ID,
@@ -484,9 +510,13 @@ func (c *Connection) handleRawLine(line string) {
 		},
 	})
 
-	// :server 353 nick = #channel :nick1 nick2 ...
-	// :server 366 nick #channel :End of NAMES
-	parts := strings.SplitN(line, " ", 5)
+	// Handle NAMES (353/366) replies
+	c.handleNamesReply(parts)
+}
+
+// handleNamesReply processes 353 (RPL_NAMREPLY) and 366 (RPL_ENDOFNAMES) numerics.
+// parts must be from strings.SplitN(line, " ", 5).
+func (c *Connection) handleNamesReply(parts []string) {
 	if len(parts) < 4 {
 		return
 	}
@@ -496,7 +526,6 @@ func (c *Connection) handleRawLine(line string) {
 		if len(parts) < 5 {
 			return
 		}
-		// parts[4] = "#channel :nick1 nick2 ..."  (parts[3] is the mode symbol "=", "@", "*")
 		chanAndNicks := strings.SplitN(parts[4], " :", 2)
 		if len(chanAndNicks) < 2 {
 			return
