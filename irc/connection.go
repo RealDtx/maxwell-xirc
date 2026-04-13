@@ -578,7 +578,8 @@ func extractChannelFromRaw(parts []string) string {
 			return strings.TrimPrefix(parts[3], ":")
 		}
 	case "353":
-		// :server 353 nick = #channel :nicks  — parts[4] starts with "= #channel" or "@ #channel"
+		// :server 353 nick = #channel :nicks  — with SplitN(line," ",5):
+		// parts[3]="=" and parts[4]="#channel :nick1 nick2"
 		if len(parts) >= 5 {
 			p := strings.TrimPrefix(parts[4], ":")
 			fields := strings.Fields(p)

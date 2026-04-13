@@ -66,7 +66,12 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 	// Send the XDCC request to the bot.
 	if dispatchErr := s.engine.Dispatch(dl); dispatchErr != nil {
 		log.Printf("download %d queued but dispatch failed: %v", dl.ID, dispatchErr)
-		// Not fatal: download stays queued, user can retry.
+		// Return 201 with a warning so the UI can show a toast
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"download":         dl,
+			"dispatch_warning": dispatchErr.Error(),
+		})
+		return
 	}
 
 	writeJSON(w, http.StatusCreated, dl)

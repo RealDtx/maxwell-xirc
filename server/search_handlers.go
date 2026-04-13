@@ -335,6 +335,7 @@ func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {
 		Annotations []parser.Annotation `json:"annotations"`
 		Name        string              `json:"name"`
 		Preview     bool                `json:"preview"`
+		Since       *int64              `json:"since"` // Unix ms timestamp; defaults to 1 hour ago
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -367,7 +368,11 @@ func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	unmatched, err := s.store.GetAllUnparsedSince(time.Now().Add(-1 * time.Hour))
+	reprocessSince := time.Now().Add(-1 * time.Hour)
+	if req.Since != nil {
+		reprocessSince = time.UnixMilli(*req.Since)
+	}
+	unmatched, err := s.store.GetAllUnparsedSince(reprocessSince)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
