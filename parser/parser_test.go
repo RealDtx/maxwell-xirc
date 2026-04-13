@@ -235,3 +235,48 @@ func TestParser_PatternDegradation(t *testing.T) {
 	// Check by creating a fresh query that includes disabled
 	// For now, this is sufficient — the pattern accumulated failures
 }
+
+// TestParser_CatchesResultFromDifferentChannel verifies that bot responses arriving
+// on a different channel than the search session are still captured.
+func TestParser_CatchesResultFromDifferentChannel(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	// Session started for #mg-chat, but bot responds in #moviegods
+	p.StartSearch(srv.ID, "#mg-chat", "movie")
+
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#moviegods", // different channel — no explicit session
+		Nick:     "xdcc_bot",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Results should still be stored — attributed to the active session's channel
+	results, err := store.GetSearchResults("movie", srv.ID, "#mg-chat")
+	if err != nil {
+		t.Fatalf("GetSearchResults failed: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected result from bot response on a different channel to be captured")
+	}
+	if !results[0].Parsed {
+		t.Error("expected parsed=true")
+	}
+}
