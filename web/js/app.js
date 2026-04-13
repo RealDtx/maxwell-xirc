@@ -542,6 +542,8 @@ document.addEventListener('alpine:init', () => {
                 console.error('search error', e);
             } finally {
                 if (token === this.searchToken) this.searchRunning = false;
+                // Stop session so stale bot messages don't contaminate future searches
+                api.stopSearch(this.activeServer, this.activeChannel).catch(function(){});
             }
         },
 

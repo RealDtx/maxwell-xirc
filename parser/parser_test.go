@@ -187,10 +187,10 @@ func TestParser_BotPatternCache(t *testing.T) {
 
 	p.StartSearch(srv.ID, "#test", "test", "", 0)
 
-	// Send two messages from the same bot
+	// Send two messages from the same bot (filenames must contain the query "test")
 	for _, msg := range []string{
-		"#1    10x [700M] File.One.mkv",
-		"#2    5x [1.2G] File.Two.mkv",
+		"#1    10x [700M] Test.File.One.mkv",
+		"#2    5x [1.2G] Test.File.Two.mkv",
 	} {
 		bus.Publish(irc.Event{
 			Type:     irc.EventIRCMessage,
@@ -342,7 +342,7 @@ func TestParser_MultipleSessionsSameServer_PicksCorrectSession(t *testing.T) {
 	p.StartSearch(srv.ID, "#session-a", "query-a", "", 0)
 	p.StartSearch(srv.ID, "#session-b", "query-b", "", 0)
 
-	// Bot responds via DM — should match the most recent session
+	// Bot responds via DM — should match the most recent session (#session-b)
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
@@ -350,7 +350,7 @@ func TestParser_MultipleSessionsSameServer_PicksCorrectSession(t *testing.T) {
 		Nick:     "xdcc_bot",
 		Data: map[string]string{
 			"type":    "privmsg",
-			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+			"message": "#5    34x [1.4G] Query-B.2024.1080p.mkv",
 		},
 	})
 
@@ -607,4 +607,97 @@ func TestParser_AutoDetect_SavesFirstBot(t *testing.T) {
 	if len(results2) != 1 {
 		t.Fatalf("expected still 1 result after second bot, got %d", len(results2))
 	}
+}
+
+func TestParser_QueryRelevanceFilter_RejectsIrrelevant(t *testing.T) {
+store, cleanup := newTestStore(t)
+defer cleanup()
+
+SeedPatterns(store)
+
+bus := irc.NewEventBus()
+p := New(store, bus)
+p.Start()
+defer p.Stop()
+
+srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+store.CreateServer(srv)
+
+// Search for "movie" with a known bot
+p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+
+// Bot sends a parseable line that does NOT match "movie" (broadcast)
+bus.Publish(irc.Event{
+Type:     irc.EventIRCMessage,
+ServerID: srv.ID,
+Channel:  "#test",
+Nick:     "BotReign",
+Data: map[string]string{
+"type":    "privmsg",
+"message": "#12   8x [700M] Unrelated.Game.2024.iso",
+},
+})
+
+time.Sleep(200 * time.Millisecond)
+
+results, _ := store.GetSearchResults("movie", srv.ID, "#test")
+if len(results) != 0 {
+t.Fatalf("expected 0 results for irrelevant broadcast, got %d", len(results))
+}
+}
+
+func TestParser_QueryRelevanceFilter_AcceptsRelevant(t *testing.T) {
+store, cleanup := newTestStore(t)
+defer cleanup()
+
+SeedPatterns(store)
+
+bus := irc.NewEventBus()
+p := New(store, bus)
+p.Start()
+defer p.Stop()
+
+srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+store.CreateServer(srv)
+
+p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+
+// Bot sends a parseable line that DOES match "movie"
+bus.Publish(irc.Event{
+Type:     irc.EventIRCMessage,
+ServerID: srv.ID,
+Channel:  "#test",
+Nick:     "BotReign",
+Data: map[string]string{
+"type":    "privmsg",
+"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+},
+})
+
+time.Sleep(200 * time.Millisecond)
+
+results, _ := store.GetSearchResults("movie", srv.ID, "#test")
+if len(results) != 1 {
+t.Fatalf("expected 1 result for relevant match, got %d", len(results))
+}
+}
+
+func TestMessageMatchesQuery(t *testing.T) {
+tests := []struct {
+msg, query string
+want       bool
+}{
+{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie", true},
+{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "Movie", true},
+{"#5    34x [1.4G] Lord.of.the.Rings.mkv", "lord rings", true},
+{"#12   8x [700M] Unrelated.Game.2024.iso", "movie", false},
+{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie 2024", true},
+{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie 2025", false},
+}
+for _, tt := range tests {
+got := messageMatchesQuery(tt.msg, tt.query)
+if got != tt.want {
+t.Errorf("messageMatchesQuery(%q, %q) = %v, want %v", tt.msg, tt.query, got, tt.want)
+}
+}
 }

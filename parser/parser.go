@@ -107,6 +107,20 @@ func sessionKey(serverID int64, channel string) string {
 	return fmt.Sprintf("%d:%s", serverID, channel)
 }
 
+// messageMatchesQuery returns true if the message line contains all words
+// of the search query (case-insensitive).  This filters out periodic bot
+// broadcasts that list ALL packages — those won't contain the search terms.
+func messageMatchesQuery(message, query string) bool {
+	lower := strings.ToLower(message)
+	words := strings.Fields(strings.ToLower(query))
+	for _, w := range words {
+		if !strings.Contains(lower, w) {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *Parser) loop() {
 	for {
 		select {
@@ -270,6 +284,13 @@ func (p *Parser) handleMessage(ev irc.Event) {
 				log.Printf("failed to store unmatched search result: %v", err)
 			}
 		}
+		return
+	}
+
+	// Query relevance filter: only accept parsed results whose raw line
+	// contains all words of the search query.  This prevents periodic bot
+	// broadcasts (which list ALL packages) from polluting search results.
+	if !messageMatchesQuery(message, session.Query) {
 		return
 	}
 
