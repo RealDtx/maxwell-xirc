@@ -71,6 +71,7 @@ func (p *Parser) StartSearch(serverID int64, channel, query string) {
 		Query:    query,
 	}
 	p.mu.Unlock()
+	log.Printf("[SEARCH-SESSION] started server=%d channel=%q query=%q", serverID, channel, query)
 }
 
 func (p *Parser) StopSearch(serverID int64, channel string) {
@@ -128,15 +129,19 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		return
 	}
 
+	// Log ALL messages while any search session is active — helps identify bot response channels/formats
+	p.mu.RLock()
+	anyActive := len(p.activeSessions) > 0
+	p.mu.RUnlock()
+	if anyActive {
+		log.Printf("[SEARCH-ALL] type=%s nick=%q channel=%q msg=%.120q", msgType, ev.Nick, ev.Channel, message)
+	}
+
 	// Check if there's an active search session for this channel
 	key := sessionKey(ev.ServerID, ev.Channel)
 	p.mu.RLock()
 	session, hasSession := p.activeSessions[key]
 	p.mu.RUnlock()
-
-	if hasSession {
-		log.Printf("[CHAN-TRACE] type=%s nick=%q channel=%q msg=%q", msgType, ev.Nick, ev.Channel, message)
-	}
 
 	wasDM := false
 	if !hasSession {
@@ -156,14 +161,12 @@ func (p *Parser) handleMessage(ev irc.Event) {
 				}
 			}
 			p.mu.RUnlock()
-			if wasDM {
-				log.Printf("[DM-TRACE] type=%s nick=%q msg=%q", msgType, ev.Nick, message)
-			}
 		}
 		if !hasSession {
 			return
 		}
 	}
+	_ = wasDM
 
 	// Load patterns
 	patterns, err := p.store.GetParsePatterns()
@@ -231,8 +234,11 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	// Only store and publish if the line actually matched a parse pattern.
 	// Unmatched lines are regular user chat — not valid search results.
 	if result == nil {
+		log.Printf("[SEARCH-NOMATCH] nick=%q channel=%q msg=%.120q", ev.Nick, ev.Channel, message)
 		return
 	}
+
+	log.Printf("[SEARCH-MATCH] nick=%q file=%q size=%q", ev.Nick, result.Filename, result.Filesize)
 
 	// Store result
 	if err := p.store.CreateSearchResult(sr); err != nil {
