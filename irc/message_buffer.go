@@ -2,6 +2,10 @@ package irc
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,22 +23,32 @@ type BufferedMessage struct {
 // MessageBuffer is an in-memory ring buffer per (server_id, channel).
 // It subscribes to the EventBus and buffers EventIRCMessage events.
 type MessageBuffer struct {
-	mu     sync.RWMutex
-	bus    *EventBus
-	cap    int
-	bufs   map[string][]BufferedMessage
-	stopCh chan struct{}
-	once   sync.Once
+	mu       sync.RWMutex
+	bus      *EventBus
+	cap      int
+	bufs     map[string][]BufferedMessage
+	stopCh   chan struct{}
+	once     sync.Once
+	logDir   string
+	logFiles map[string]*os.File
+	logMu    sync.Mutex
 }
 
 // NewMessageBuffer creates a MessageBuffer with the given per-channel capacity.
 func NewMessageBuffer(bus *EventBus, capacity int) *MessageBuffer {
 	return &MessageBuffer{
-		bus:    bus,
-		cap:    capacity,
-		bufs:   make(map[string][]BufferedMessage),
-		stopCh: make(chan struct{}),
+		bus:      bus,
+		cap:      capacity,
+		bufs:     make(map[string][]BufferedMessage),
+		stopCh:   make(chan struct{}),
+		logFiles: make(map[string]*os.File),
 	}
+}
+
+func (mb *MessageBuffer) SetLogDir(dir string) {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+	mb.logDir = dir
 }
 
 // Start begins consuming events from the bus in a background goroutine.
@@ -73,7 +87,17 @@ func (mb *MessageBuffer) Start() {
 
 // Stop terminates the background goroutine.
 func (mb *MessageBuffer) Stop() {
-	mb.once.Do(func() { close(mb.stopCh) })
+	mb.once.Do(func() {
+		close(mb.stopCh)
+		mb.logMu.Lock()
+		defer mb.logMu.Unlock()
+		for key, file := range mb.logFiles {
+			if err := file.Close(); err != nil {
+				log.Printf("message buffer: close log file %s failed: %v", key, err)
+			}
+		}
+		mb.logFiles = make(map[string]*os.File)
+	})
 }
 
 func (mb *MessageBuffer) key(serverID int64, channel string) string {
@@ -90,6 +114,34 @@ func (mb *MessageBuffer) append(serverID int64, channel string, msg BufferedMess
 		buf = buf[len(buf)-mb.cap:]
 	}
 	mb.bufs[k] = buf
+	mb.writeLogLine(serverID, channel, msg)
+}
+
+func (mb *MessageBuffer) writeLogLine(serverID int64, channel string, msg BufferedMessage) {
+	if mb.logDir == "" {
+		return
+	}
+	channelSafe := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(channel)
+	dir := filepath.Join(mb.logDir, fmt.Sprintf("%d", serverID))
+	path := filepath.Join(dir, channelSafe+".log")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("message buffer: create log dir %s failed: %v", dir, err)
+		return
+	}
+	f := mb.logFiles[path]
+	if f == nil {
+		var err error
+		f, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			log.Printf("message buffer: open log file %s failed: %v", path, err)
+			return
+		}
+		mb.logFiles[path] = f
+	}
+	line := fmt.Sprintf("[%s] <%s> %s\n", msg.Timestamp.Format(time.RFC3339), msg.Nick, msg.Text)
+	if _, err := f.WriteString(line); err != nil {
+		log.Printf("message buffer: write log file %s failed: %v", path, err)
+	}
 }
 
 // GetMessages returns up to limit messages with timestamp strictly before

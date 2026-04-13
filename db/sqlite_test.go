@@ -1,11 +1,13 @@
 package db
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestSQLiteStore(t *testing.T) (*SQLiteStore, func()) {
@@ -465,6 +467,48 @@ func TestSQLiteStore_GetAllSearchResults(t *testing.T) {
 	}
 	if len(results) != 2 {
 		t.Fatalf("expected 2 parsed results, got %d", len(results))
+	}
+}
+
+func TestSQLiteStore_GetAllSearchResults_LimitedTo500(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	for i := 0; i < 510; i++ {
+		raw := fmt.Sprintf("raw-%d", i)
+		res := &SearchResult{
+			ServerID:    srv.ID,
+			Channel:     "#cap",
+			BotNick:     "bot",
+			RawLine:     raw,
+			SearchQuery: "limit-test",
+			Parsed:      true,
+		}
+		if err := store.CreateSearchResult(res); err != nil {
+			t.Fatalf("CreateSearchResult %d failed: %v", i, err)
+		}
+	}
+
+	results, err := store.GetAllSearchResults("limit-test", nil)
+	if err != nil {
+		t.Fatalf("GetAllSearchResults nil since failed: %v", err)
+	}
+	if len(results) != 500 {
+		t.Fatalf("expected 500 results with nil since, got %d", len(results))
+	}
+
+	since := time.Now().Add(-time.Hour)
+	results, err = store.GetAllSearchResults("limit-test", &since)
+	if err != nil {
+		t.Fatalf("GetAllSearchResults with since failed: %v", err)
+	}
+	if len(results) != 500 {
+		t.Fatalf("expected 500 results with since, got %d", len(results))
 	}
 }
 

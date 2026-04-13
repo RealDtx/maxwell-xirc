@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -197,6 +198,7 @@ func main() {
 	_ = browserNotifier // Used by engine for explicit notifications
 
 	msgBuf := ircpkg.NewMessageBuffer(bus, 1000)
+	msgBuf.SetLogDir(filepath.Dir(cfg.Database.Path) + "/logs")
 	msgBuf.Start()
 	defer msgBuf.Stop()
 

@@ -265,8 +265,53 @@ func TestMethodNotAllowed_Realms(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetRealms_ByServerID(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	s1 := &db.Server{Name: "srv1", Host: "irc.example.com", Port: 6667, Nickname: "bot1", Enabled: true}
+	s2 := &db.Server{Name: "srv2", Host: "irc2.example.com", Port: 6667, Nickname: "bot2", Enabled: true}
+	if err := store.CreateServer(s1); err != nil {
+		t.Fatalf("CreateServer s1 failed: %v", err)
+	}
+	if err := store.CreateServer(s2); err != nil {
+		t.Fatalf("CreateServer s2 failed: %v", err)
+	}
+
+	if err := store.CreateRealm(&db.Realm{ServerID: s1.ID, Name: "#one", AutoJoin: true, Enabled: true}); err != nil {
+		t.Fatalf("CreateRealm #one failed: %v", err)
+	}
+	if err := store.CreateRealm(&db.Realm{ServerID: s1.ID, Name: "#two", AutoJoin: false, Enabled: true}); err != nil {
+		t.Fatalf("CreateRealm #two failed: %v", err)
+	}
+	if err := store.CreateRealm(&db.Realm{ServerID: s2.ID, Name: "#other", AutoJoin: true, Enabled: true}); err != nil {
+		t.Fatalf("CreateRealm #other failed: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/realms?server_id=%d", s1.ID), nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var realms []db.Realm
+	if err := json.NewDecoder(w.Body).Decode(&realms); err != nil {
+		t.Fatalf("failed to decode realms: %v", err)
+	}
+	if len(realms) != 2 {
+		t.Fatalf("expected 2 realms for server %d, got %d", s1.ID, len(realms))
+	}
+	for _, realm := range realms {
+		if realm.ServerID != s1.ID {
+			t.Fatalf("expected only server %d realms, got server %d", s1.ID, realm.ServerID)
+		}
 	}
 }
 

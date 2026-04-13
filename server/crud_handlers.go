@@ -58,11 +58,32 @@ func (s *Server) handleServerByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRealms(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetRealms(w, r)
+	case http.MethodPost:
+		s.handleCreateRealm(w, r)
+	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) handleGetRealms(w http.ResponseWriter, r *http.Request) {
+	serverIDStr := r.URL.Query().Get("server_id")
+	serverID, err := strconv.ParseInt(serverIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "server_id is required")
 		return
 	}
-	s.handleCreateRealm(w, r)
+	realms, err := s.store.GetRealms(serverID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if realms == nil {
+		realms = []db.Realm{}
+	}
+	writeJSON(w, http.StatusOK, realms)
 }
 
 func (s *Server) handleRealmByID(w http.ResponseWriter, r *http.Request) {

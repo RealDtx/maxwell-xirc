@@ -291,12 +291,12 @@ func (s *SQLiteStore) GetAllSearchResults(query string, since *time.Time) ([]Sea
 	var err error
 	if since != nil {
 		rows, err = s.db.Query(
-			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 AND created_at > ? ORDER BY created_at DESC",
+			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 AND created_at > ? ORDER BY created_at DESC LIMIT 500",
 			query, since.UTC().Format(time.RFC3339Nano),
 		)
 	} else {
 		rows, err = s.db.Query(
-			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 ORDER BY created_at DESC",
+			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 ORDER BY created_at DESC LIMIT 500",
 			query,
 		)
 	}
