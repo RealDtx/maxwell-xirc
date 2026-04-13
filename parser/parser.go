@@ -21,9 +21,10 @@ func stripIRCFormatting(s string) string {
 }
 
 type searchSession struct {
-	ServerID int64
-	Channel  string
-	Query    string
+	ServerID  int64
+	Channel   string
+	Query     string
+	CreatedAt int64 // monotonic counter for ordering
 }
 
 type Parser struct {
@@ -33,6 +34,7 @@ type Parser struct {
 	stopCh               chan struct{}
 	mu                   sync.RWMutex
 	activeSessions       map[string]*searchSession // key: "serverID:channel"
+	sessionCounter       int64                     // monotonic counter for session ordering
 	botPatternCache      map[string]int64          // key: botNick, value: patternID
 	degradationThreshold int
 }
@@ -65,10 +67,12 @@ func (p *Parser) Stop() {
 func (p *Parser) StartSearch(serverID int64, channel, query string) {
 	key := sessionKey(serverID, channel)
 	p.mu.Lock()
+	p.sessionCounter++
 	p.activeSessions[key] = &searchSession{
-		ServerID: serverID,
-		Channel:  channel,
-		Query:    query,
+		ServerID:  serverID,
+		Channel:   channel,
+		Query:     query,
+		CreatedAt: p.sessionCounter,
 	}
 	p.mu.Unlock()
 }
@@ -152,15 +156,17 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	p.mu.RUnlock()
 
 	if !hasSession {
-		// Find any active session on this server — covers both DMs from bots AND
-		// bot responses on channels we didn't explicitly start a session for.
+		// Find the most recently created session on this server — covers both
+		// DMs from bots AND bot responses on channels we didn't explicitly
+		// start a session for. Deterministic: always picks the newest session.
 		prefix := fmt.Sprintf("%d:", ev.ServerID)
 		p.mu.RLock()
+		var bestCreatedAt int64
 		for k, s := range p.activeSessions {
-			if strings.HasPrefix(k, prefix) {
+			if strings.HasPrefix(k, prefix) && s.CreatedAt > bestCreatedAt {
 				session = s
 				hasSession = true
-				break
+				bestCreatedAt = s.CreatedAt
 			}
 		}
 		p.mu.RUnlock()
@@ -254,7 +260,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	p.bus.Publish(irc.Event{
 		Type:     irc.EventSearchResult,
 		ServerID: ev.ServerID,
-		Channel:  ev.Channel,
+		Channel:  session.Channel,
 		Nick:     ev.Nick,
 		Data:     sr,
 	})

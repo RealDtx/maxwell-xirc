@@ -323,3 +323,48 @@ func TestParser_CatchesResultFromDifferentChannel(t *testing.T) {
 		t.Error("expected parsed=true")
 	}
 }
+
+func TestParser_MultipleSessionsSameServer_PicksCorrectSession(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	// Start two sessions on the same server
+	p.StartSearch(srv.ID, "#session-a", "query-a")
+	p.StartSearch(srv.ID, "#session-b", "query-b")
+
+	// Bot responds on an unrelated channel — should match the most recent session
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#other-channel",
+		Nick:     "xdcc_bot",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	// The result should be stored under the most recently started session (#session-b)
+	resultsB, _ := store.GetSearchResults("query-b", srv.ID, "#session-b")
+	resultsA, _ := store.GetSearchResults("query-a", srv.ID, "#session-a")
+
+	total := len(resultsA) + len(resultsB)
+	if total != 1 {
+		t.Fatalf("expected exactly 1 result total, got %d (A=%d, B=%d)", total, len(resultsA), len(resultsB))
+	}
+	if len(resultsB) != 1 {
+		t.Fatalf("expected result under #session-b (most recent session), got A=%d B=%d", len(resultsA), len(resultsB))
+	}
+}
