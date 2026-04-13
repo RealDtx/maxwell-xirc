@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -100,7 +101,10 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 
 	// Send the search command via IRC
 	if s.ircMgr != nil {
-		if err := s.ircMgr.SendMessage(req.ServerID, req.Channel, searchCmd+" "+req.Query); err != nil {
+		cmd := searchCmd + " " + req.Query
+		log.Printf("[SEARCH-CMD] server=%d channel=%q cmd=%q", req.ServerID, req.Channel, cmd)
+		if err := s.ircMgr.SendMessage(req.ServerID, req.Channel, cmd); err != nil {
+			log.Printf("[SEARCH-CMD] send failed: %v", err)
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
