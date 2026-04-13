@@ -31,6 +31,8 @@ func migrationStatements() []string {
 			key TEXT NOT NULL DEFAULT '',
 			search_command TEXT NOT NULL DEFAULT '!s',
 			download_channel TEXT NOT NULL DEFAULT '',
+			search_bot TEXT NOT NULL DEFAULT '',
+			search_timeout INTEGER NOT NULL DEFAULT 10,
 			auto_join INTEGER NOT NULL DEFAULT 1,
 			enabled INTEGER NOT NULL DEFAULT 1,
 			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
@@ -136,6 +138,9 @@ func migrationStatements() []string {
 		// Realm rename: channels → realms
 		`ALTER TABLE channels RENAME TO realms`,
 		`ALTER TABLE realms ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
+
+		`ALTER TABLE realms ADD COLUMN search_bot TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE realms ADD COLUMN search_timeout INTEGER NOT NULL DEFAULT 10`,
 	}
 }
 

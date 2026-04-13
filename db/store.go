@@ -20,6 +20,7 @@ type Store interface {
 	CreateRealm(r *Realm) error
 	UpdateRealm(r *Realm) error
 	DeleteRealm(id int64) error
+	UpdateRealmSearchBot(id int64, botNick string) error
 
 	// Downloads
 	// GetDownloads returns downloads filtered by status, ordered by created_at DESC.

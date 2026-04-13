@@ -10,6 +10,7 @@
     </style>
     <script src="/js/utils.js"></script>
     <script src="/js/api.js"></script>
+    <script src="/js/irc-colors.js"></script>
     <script src="/js/app.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
@@ -238,6 +239,13 @@
                                     No results. Enter a query and press Search.
                                 </div>
                             </template>
+                            <template x-if="searchBotWarning">
+                                <div class="search-bot-warning">
+                                    <span>⚠</span>
+                                    <span x-text="searchBotWarning"></span>
+                                    <button @click="searchBotWarning = null">&times;</button>
+                                </div>
+                            </template>
                             <template x-if="searchResults.length > 0">
                                 <table class="table">
                                     <thead>
@@ -302,7 +310,7 @@
                                             <template x-if="msg.msg_type !== 'raw'">
                                                 <span class="nick" x-text="msg.nick + ':'"></span>
                                             </template>
-                                            <span x-text="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : (msg.message || msg.text || '')"></span>
+                                            <span x-html="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : formatIrcMessage(msg.message || msg.text || '')"></span>
                                         </div>
                                     </template>
                                     <template x-if="currentChannelMessages().length === 0">
@@ -385,6 +393,13 @@
                                     </select>
                                 </div>
 
+                                <template x-if="searchBotWarning">
+                                    <div class="search-bot-warning">
+                                        <span>⚠</span>
+                                        <span x-text="searchBotWarning"></span>
+                                        <button @click="searchBotWarning = null">&times;</button>
+                                    </div>
+                                </template>
                                 <template x-if="searchResults.length > 0">
                                     <table>
                                         <thead>
@@ -455,7 +470,7 @@
                                             <template x-if="msg.msg_type !== 'raw'">
                                                 <span class="nick" x-text="msg.nick + ':'"></span>
                                             </template>
-                                            <span x-text="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : (msg.message || msg.text || '')"></span>
+                                            <span x-html="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : formatIrcMessage(msg.message || msg.text || '')"></span>
                                         </div>
                                     </template>
                                 </div>
@@ -537,6 +552,13 @@
                                     </select>
                                 </div>
 
+                                <template x-if="searchBotWarning">
+                                    <div class="search-bot-warning">
+                                        <span>⚠</span>
+                                        <span x-text="searchBotWarning"></span>
+                                        <button @click="searchBotWarning = null">&times;</button>
+                                    </div>
+                                </template>
                                 <template x-if="searchResults.length > 0">
                                     <table>
                                         <thead>
@@ -606,7 +628,7 @@
                                                     <template x-if="msg.msg_type !== 'raw'">
                                                         <span class="nick" x-text="msg.nick + ':'"></span>
                                                     </template>
-                                                    <span x-text="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : (msg.message || msg.text || '')"></span>
+                                                    <span x-html="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : formatIrcMessage(msg.message || msg.text || '')"></span>
                                                 </div>
                                             </template>
                                         </div>
@@ -620,7 +642,7 @@
                                                     <template x-if="msg.msg_type !== 'raw'">
                                                         <span class="nick" x-text="msg.nick + ':'"></span>
                                                     </template>
-                                                    <span x-text="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : (msg.message || msg.text || '')"></span>
+                                                    <span x-html="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : formatIrcMessage(msg.message || msg.text || '')"></span>
                                                 </div>
                                             </template>
                                         </div>
@@ -874,6 +896,8 @@
                                             <th>Display Name</th>
                                             <th>Search Command</th>
                                             <th>Download Channel</th>
+                                            <th>Search Bot</th>
+                                            <th>Timeout</th>
                                             <th>Auto-join</th>
                                             <th>Actions</th>
                                         </tr>
@@ -885,6 +909,8 @@
                                                 <td x-text="realm.display_name || '-'"></td>
                                                 <td x-text="realm.search_command || '-'"></td>
                                                 <td x-text="realm.download_channel || '-'"></td>
+                                                <td x-text="realm.search_bot || 'Auto-detect'"></td>
+                                                <td x-text="realm.search_timeout || 10"></td>
                                                 <td x-text="realm.auto_join ? 'Yes' : 'No'"></td>
                                                 <td style="white-space:nowrap;">
                                                     <button class="btn btn-sm" @click="openRealmForm(realm)">Edit</button>
@@ -918,6 +944,18 @@
                                     <div class="form-group">
                                         <label>Download Channel</label>
                                         <input type="text" x-model="realmForm.download_channel" placeholder="#download-bot">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Search Bot</label>
+                                        <div style="display:flex; gap:8px; align-items:center;">
+                                            <input type="text" x-model="realmForm.search_bot" placeholder="Auto-detect on first search" style="flex:1;">
+                                            <button class="btn btn-sm" @click="realmForm.search_bot = ''" x-show="realmForm.search_bot" type="button">Clear</button>
+                                        </div>
+                                        <small style="color:var(--text-muted); font-size:11px;">Leave empty to auto-detect the search bot on first search</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Search Timeout (seconds)</label>
+                                        <input type="number" x-model.number="realmForm.search_timeout" placeholder="10" min="5" max="120" style="width:100px;">
                                     </div>
                                     <div class="form-group">
                                         <label>Auto-join</label>

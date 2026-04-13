@@ -78,12 +78,11 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.parser != nil {
-		s.parser.StartSearch(req.ServerID, req.Channel, req.Query)
-	}
-
-	// Get the search command for this channel
+	// Look up the realm for this channel to get search command, bot, and timeout
 	var searchCmd = "!s"
+	var searchBot string
+	var searchTimeout = 10
+	var realmID int64
 	if s.store != nil {
 		realms, err := s.store.GetRealms(req.ServerID)
 		if err != nil {
@@ -95,9 +94,18 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 				if r.SearchCommand != "" {
 					searchCmd = r.SearchCommand
 				}
+				searchBot = r.SearchBot
+				if r.SearchTimeout > 0 {
+					searchTimeout = r.SearchTimeout
+				}
+				realmID = r.ID
 				break
 			}
 		}
+	}
+
+	if s.parser != nil {
+		s.parser.StartSearch(req.ServerID, req.Channel, req.Query, searchBot, realmID)
 	}
 
 	// Send the search command via IRC
@@ -109,7 +117,11 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "searching"})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":         "searching",
+		"search_bot":     searchBot,
+		"search_timeout": searchTimeout,
+	})
 }
 
 func (s *Server) handleStopSearch(w http.ResponseWriter, r *http.Request) {

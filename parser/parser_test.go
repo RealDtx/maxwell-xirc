@@ -50,7 +50,7 @@ func TestParser_ProcessesSearchResults(t *testing.T) {
 	store.CreateServer(srv)
 
 	// Start a search session
-	p.StartSearch(srv.ID, "#test", "movie")
+	p.StartSearch(srv.ID, "#test", "movie", "", 0)
 
 	// Simulate bot response via event bus
 	bus.Publish(irc.Event{
@@ -106,7 +106,7 @@ func TestParser_UnparsedChat_NotStored(t *testing.T) {
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	p.StartSearch(srv.ID, "#test", "stuff")
+	p.StartSearch(srv.ID, "#test", "stuff", "", 0)
 
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
@@ -144,7 +144,7 @@ func TestParser_UnparsedListingLike_Stored(t *testing.T) {
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	p.StartSearch(srv.ID, "#test", "stuff")
+	p.StartSearch(srv.ID, "#test", "stuff", "", 0)
 
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
@@ -185,7 +185,7 @@ func TestParser_BotPatternCache(t *testing.T) {
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	p.StartSearch(srv.ID, "#test", "test")
+	p.StartSearch(srv.ID, "#test", "test", "", 0)
 
 	// Send two messages from the same bot
 	for _, msg := range []string{
@@ -247,7 +247,7 @@ func TestParser_PatternDegradation(t *testing.T) {
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	p.StartSearch(srv.ID, "#test", "degrade")
+	p.StartSearch(srv.ID, "#test", "degrade", "", 0)
 
 	// Send enough messages to trigger degradation
 	for i := 0; i < 6; i++ {
@@ -296,7 +296,7 @@ func TestParser_CatchesResultFromDifferentChannel(t *testing.T) {
 	store.CreateServer(srv)
 
 	// Session started for #mg-chat, but bot responds via DM
-	p.StartSearch(srv.ID, "#mg-chat", "movie")
+	p.StartSearch(srv.ID, "#mg-chat", "movie", "", 0)
 
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
@@ -339,8 +339,8 @@ func TestParser_MultipleSessionsSameServer_PicksCorrectSession(t *testing.T) {
 	store.CreateServer(srv)
 
 	// Start two sessions on the same server
-	p.StartSearch(srv.ID, "#session-a", "query-a")
-	p.StartSearch(srv.ID, "#session-b", "query-b")
+	p.StartSearch(srv.ID, "#session-a", "query-a", "", 0)
+	p.StartSearch(srv.ID, "#session-b", "query-b", "", 0)
 
 	// Bot responds via DM — should match the most recent session
 	bus.Publish(irc.Event{
@@ -384,7 +384,7 @@ func TestParser_FallbackCrossChannel_WithinWindow(t *testing.T) {
 	store.CreateServer(srv)
 
 	// Session on #mg-chat, bot responds on #moviegods (different channel)
-	p.StartSearch(srv.ID, "#mg-chat", "movie")
+	p.StartSearch(srv.ID, "#mg-chat", "movie", "", 0)
 
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
@@ -429,6 +429,8 @@ func TestParser_FallbackExpired_Ignored(t *testing.T) {
 		ServerID:      srv.ID,
 		Channel:       "#mg-chat",
 		Query:         "movie",
+		SearchBot:     "",
+		RealmID:       0,
 		CreatedAt:     p.sessionCounter,
 		CreatedAtTime: time.Now().Add(-10 * time.Minute), // 10 min ago — outside window
 	}
@@ -454,5 +456,155 @@ func TestParser_FallbackExpired_Ignored(t *testing.T) {
 	}
 	if len(results) != 0 {
 		t.Fatalf("expected expired session to NOT capture fallback results, got %d", len(results))
+	}
+}
+
+func TestParser_SearchBotFilter_RejectsWrongBot(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	// Session with specific search bot
+	p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+
+	// Message from a DIFFERENT bot — should be ignored
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "OtherBot",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	results, _ := store.GetSearchResults("movie", srv.ID, "#test")
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results from wrong bot, got %d", len(results))
+	}
+}
+
+func TestParser_SearchBotFilter_AcceptsCorrectBot(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	// Session with specific search bot
+	p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+
+	// Message from the correct bot — should be processed
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "BotReign",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	results, _ := store.GetSearchResults("movie", srv.ID, "#test")
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result from correct bot, got %d", len(results))
+	}
+}
+
+func TestParser_AutoDetect_SavesFirstBot(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	// Create a realm so auto-detect has somewhere to persist
+	realm := &db.Realm{ServerID: srv.ID, Name: "#test", SearchCommand: "!s", Enabled: true}
+	store.CreateRealm(realm)
+
+	// Session with empty search bot (auto-detect) and realm ID
+	p.StartSearch(srv.ID, "#test", "movie", "", realm.ID)
+
+	// Subscribe to events to check for search_bot_detected
+	evCh := bus.Subscribe()
+
+	// First bot responds
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "BotReign",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify result was stored
+	results, _ := store.GetSearchResults("movie", srv.ID, "#test")
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	// Verify realm was updated with detected bot
+	got, err := store.GetRealm(realm.ID)
+	if err != nil {
+		t.Fatalf("GetRealm failed: %v", err)
+	}
+	if got.SearchBot != "BotReign" {
+		t.Errorf("expected realm search_bot 'BotReign', got '%s'", got.SearchBot)
+	}
+
+	// Verify search_bot_detected event was published
+	bus.Unsubscribe(evCh)
+
+	// Now a second bot responds — should be ignored because SearchBot is now locked
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "OtherBot",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#10   5x [2.1G] Another.Movie.2024.720p.mkv",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	results2, _ := store.GetSearchResults("movie", srv.ID, "#test")
+	if len(results2) != 1 {
+		t.Fatalf("expected still 1 result after second bot, got %d", len(results2))
 	}
 }

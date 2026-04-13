@@ -58,6 +58,7 @@ document.addEventListener('alpine:init', () => {
         searchToken: 0,
         _searchSince: null,
         _searchDisplayLimit: 200,
+        searchBotWarning: null,
         downloads: [],
         downloadFilter: 'all',
         ircMessages: {},
@@ -75,7 +76,7 @@ document.addEventListener('alpine:init', () => {
         routingRules: [],
         hooks: [],
         serverForm: { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true },
-        channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', auto_join: false, enabled: true },
+        channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
         routingForm: { id: null, pattern: '', destination_dir: '', priority: 0 },
         hookForm: { id: null, name: '', scope: 'global', hook_type: 'script', config: '', enabled: true },
         showServerForm: false,
@@ -96,7 +97,7 @@ document.addEventListener('alpine:init', () => {
         // Settings - Realms (replaces settingsChannels)
         realms: [],
         settingsRealms: [],
-        realmForm: { id: null, server_id: null, name: '', display_name: '', search_command: '', download_channel: '', auto_join: false, enabled: true },
+        realmForm: { id: null, server_id: null, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
         showRealmForm: false,
 
         // Active server (for server view)
@@ -508,17 +509,31 @@ document.addEventListener('alpine:init', () => {
             if (!this.activeServer || !this.activeChannel || !this.searchQuery.trim()) return;
             const token = ++this.searchToken;
             this.searchRunning = true;
+            this.searchBotWarning = null;
             this.searchResults = [];
             this._searchDisplayLimit = 200;
-            this._searchSince = Date.now();
+            const searchStarted = Date.now();
+            this._searchSince = searchStarted;
             try {
-                await api.startSearch(this.activeServer, this.activeChannel, this.searchQuery);
+                var searchBot = null;
+                var searchTimeout = 10;
+                try {
+                    // startSearch now returns {status, search_bot, search_timeout}
+                    var startRes = await api.startSearch(this.activeServer, this.activeChannel, this.searchQuery);
+                    searchBot = startRes && startRes.search_bot;
+                    searchTimeout = (startRes && startRes.search_timeout > 0) ? startRes.search_timeout : 10;
+                } catch(e) {
+                    console.error('startSearch failed', e);
+                }
                 // Poll up to 5 times with 1s delay; stop early when results arrive.
                 var results = [];
                 for (var attempt = 0; attempt < 5; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     var res = await api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
                     results = res || [];
+                    if (searchBot && !this.searchBotWarning && (Date.now() - searchStarted > searchTimeout * 1000) && results.length === 0) {
+                        this.searchBotWarning = 'No response from ' + searchBot + ' after ' + searchTimeout + 's — check bot name in realm settings';
+                    }
                     if (results.length > 0) break;
                 }
                 if (token !== this.searchToken) return;
@@ -565,11 +580,14 @@ document.addEventListener('alpine:init', () => {
             if (!this.searchQuery.trim()) return;
             const token = ++this.searchToken;
             this.searchRunning = true;
+            this.searchBotWarning = null;
             this.searchResults = [];
             this._searchDisplayLimit = 200;
             const searchStarted = Date.now();
             this._searchSince = searchStarted;
             const targets = [];
+            var searchBot = null;
+            var searchTimeout = 10;
             try {
                 // Fire search on all matching channels
                 for (var i = 0; i < this.servers.length; i++) {
@@ -587,7 +605,12 @@ document.addEventListener('alpine:init', () => {
                 }
                 // Kick off searches (ignore errors — bot may not be present on all channels)
                 for (var k = 0; k < targets.length; k++) {
-                    api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).catch(function(){});
+                    api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).then(function(r) {
+                        if (!searchBot && r && r.search_bot) {
+                            searchBot = r.search_bot;
+                            searchTimeout = (r && r.search_timeout > 0) ? r.search_timeout : 10;
+                        }
+                    }).catch(function(){});
                 }
                 // Poll for aggregated results — only results created after this search started.
                 // Stop early if results haven't grown for 10 consecutive polls.
@@ -606,6 +629,9 @@ document.addEventListener('alpine:init', () => {
                             stableCount = 0;
                             lastCount = res.length;
                         }
+                    }
+                    if (searchBot && !this.searchBotWarning && (Date.now() - searchStarted > searchTimeout * 1000) && this.searchResults.length === 0) {
+                        this.searchBotWarning = 'No response from ' + searchBot + ' after ' + searchTimeout + 's — check bot name in realm settings';
                     }
                 }
                 // If no fresh results arrived, show cached results as fallback
@@ -1054,6 +1080,22 @@ document.addEventListener('alpine:init', () => {
                         if (Array.isArray(res) && res.length > 0) this.searchResults = res;
                     }).catch(() => {});
                 }
+            } else if (type === 'search_bot_detected') {
+                // Auto-detection saved a search bot — update local realm config
+                const d = data.data;
+                if (d && d.realm_id && d.bot_nick) {
+                    // Update _realmConfigs
+                    for (const key in this._realmConfigs) {
+                        if (this._realmConfigs[key].id === parseInt(d.realm_id)) {
+                            this._realmConfigs[key].search_bot = d.bot_nick;
+                            break;
+                        }
+                    }
+                    // Refresh settings if viewing realms
+                    if (this.settingsServerId) {
+                        this.loadSettingsRealms(this.settingsServerId);
+                    }
+                }
             }
         },
 
@@ -1195,7 +1237,7 @@ document.addEventListener('alpine:init', () => {
         openChannelForm(channel) {
             this.channelForm = channel
                 ? Object.assign({}, channel)
-                : { id: null, server_id: this.settingsServerId, name: '', search_command: '', download_channel: '', auto_join: false, enabled: true };
+                : { id: null, server_id: this.settingsServerId, name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true };
             this.showChannelForm = true;
         },
 
@@ -1239,8 +1281,21 @@ document.addEventListener('alpine:init', () => {
         openRealmForm(realm) {
             this.realmForm = realm
                 ? Object.assign({}, realm)
-                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', search_command: '', download_channel: '', auto_join: false, enabled: true };
+                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true };
             this.showRealmForm = true;
+        },
+
+        formatIrcMessage(text) {
+            if (typeof ircColors !== 'undefined' && ircColors.toHtml) {
+                return ircColors.toHtml(text);
+            }
+            return this.escapeHtml(text);
+        },
+
+        escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         },
 
         saveRealm() {

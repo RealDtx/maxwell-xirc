@@ -47,6 +47,8 @@ type Realm struct {
 	Key             string `json:"key,omitempty"`
 	SearchCommand   string `json:"search_command"`
 	DownloadChannel string `json:"download_channel"`
+	SearchBot       string `json:"search_bot"`
+	SearchTimeout   int    `json:"search_timeout"`
 	AutoJoin        bool   `json:"auto_join"`
 	Enabled         bool   `json:"enabled"`
 }

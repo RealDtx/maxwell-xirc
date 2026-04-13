@@ -7,13 +7,14 @@ import (
 type EventType string
 
 const (
-	EventIRCMessage       EventType = "irc_message"
-	EventConnectionStatus EventType = "connection_status"
-	EventSearchResult     EventType = "search_result"
-	EventDownloadProgress EventType = "download_progress"
-	EventDownloadStatus   EventType = "download_status"
-	EventNotification     EventType = "notification"
-	EventError            EventType = "error_event"
+	EventIRCMessage        EventType = "irc_message"
+	EventConnectionStatus  EventType = "connection_status"
+	EventSearchResult      EventType = "search_result"
+	EventSearchBotDetected EventType = "search_bot_detected"
+	EventDownloadProgress  EventType = "download_progress"
+	EventDownloadStatus    EventType = "download_status"
+	EventNotification      EventType = "notification"
+	EventError             EventType = "error_event"
 )
 
 // ErrorEvent is the payload for EventError bus events.

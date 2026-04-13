@@ -36,6 +36,7 @@ func (m *mockStore) GetRealm(id int64) (*db.Realm, error)         { return nil, 
 func (m *mockStore) CreateRealm(r *db.Realm) error                { return nil }
 func (m *mockStore) UpdateRealm(r *db.Realm) error                { return nil }
 func (m *mockStore) DeleteRealm(id int64) error                   { return nil }
+func (m *mockStore) UpdateRealmSearchBot(id int64, botNick string) error { return nil }
 func (m *mockStore) GetDownloads(status string) ([]db.Download, error) {
 	return nil, nil
 }

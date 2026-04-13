@@ -556,3 +556,60 @@ tr:hover { background: rgba(255,255,255,0.02); }
     cursor: pointer;
 }
 .btn-secondary:hover { color: var(--text-primary); border-color: var(--accent); }
+
+/* --- IRC Color Palette --- */
+.irc-fg-0  { color: #ffffff; }
+.irc-fg-1  { color: #000000; }
+.irc-fg-2  { color: #00007f; }
+.irc-fg-3  { color: #009300; }
+.irc-fg-4  { color: #ff0000; }
+.irc-fg-5  { color: #7f0000; }
+.irc-fg-6  { color: #9c009c; }
+.irc-fg-7  { color: #fc7f00; }
+.irc-fg-8  { color: #ffff00; }
+.irc-fg-9  { color: #00fc00; }
+.irc-fg-10 { color: #009393; }
+.irc-fg-11 { color: #00ffff; }
+.irc-fg-12 { color: #0000fc; }
+.irc-fg-13 { color: #ff00ff; }
+.irc-fg-14 { color: #7f7f7f; }
+.irc-fg-15 { color: #d2d2d2; }
+
+.irc-bg-0  { background-color: #ffffff; }
+.irc-bg-1  { background-color: #000000; }
+.irc-bg-2  { background-color: #00007f; }
+.irc-bg-3  { background-color: #009300; }
+.irc-bg-4  { background-color: #ff0000; }
+.irc-bg-5  { background-color: #7f0000; }
+.irc-bg-6  { background-color: #9c009c; }
+.irc-bg-7  { background-color: #fc7f00; }
+.irc-bg-8  { background-color: #ffff00; }
+.irc-bg-9  { background-color: #00fc00; }
+.irc-bg-10 { background-color: #009393; }
+.irc-bg-11 { background-color: #00ffff; }
+.irc-bg-12 { background-color: #0000fc; }
+.irc-bg-13 { background-color: #ff00ff; }
+.irc-bg-14 { background-color: #7f7f7f; }
+.irc-bg-15 { background-color: #d2d2d2; }
+
+/* Timeout warning banner */
+.search-bot-warning {
+    background: rgba(255, 209, 102, 0.15);
+    border: 1px solid var(--warning);
+    color: var(--warning);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.search-bot-warning button {
+    background: none;
+    border: none;
+    color: var(--warning);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 4px;
+}
