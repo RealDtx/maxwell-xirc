@@ -134,6 +134,10 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	session, hasSession := p.activeSessions[key]
 	p.mu.RUnlock()
 
+	if hasSession {
+		log.Printf("[CHAN-TRACE] type=%s nick=%q channel=%q msg=%q", msgType, ev.Nick, ev.Channel, message)
+	}
+
 	wasDM := false
 	if !hasSession {
 		// DMs: ev.Channel is the sender's nick (not a channel).
@@ -152,6 +156,9 @@ func (p *Parser) handleMessage(ev irc.Event) {
 				}
 			}
 			p.mu.RUnlock()
+			if wasDM {
+				log.Printf("[DM-TRACE] type=%s nick=%q msg=%q", msgType, ev.Nick, message)
+			}
 		}
 		if !hasSession {
 			return
@@ -217,15 +224,8 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		p.botPatternCache[ev.Nick] = matchedPatternID
 		p.mu.Unlock()
 
-		// Update pattern match count
+		// Update pattern match count (success only — no auto-disable on failure)
 		p.updatePatternStats(matchedPatternID, true)
-	} else if wasDM {
-		// Only track failures for DM messages — those are actual (potential) bot responses.
-		// Regular channel messages that don't match are not bot output and must not
-		// degrade pattern stats.
-		for _, pat := range patterns {
-			p.updatePatternStats(pat.ID, false)
-		}
 	}
 
 	// Only store and publish if the line actually matched a parse pattern.

@@ -530,7 +530,7 @@ document.addEventListener('alpine:init', () => {
                     api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).catch(function(){});
                 }
                 // Poll for aggregated results — only results created after this search started
-                for (var attempt = 0; attempt < 8; attempt++) {
+                for (var attempt = 0; attempt < 20; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     if (token !== this.searchToken) return;
                     var res = await api.getAllSearchResults(this.searchQuery, searchStarted);
