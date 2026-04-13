@@ -57,6 +57,7 @@ document.addEventListener('alpine:init', () => {
         searchSort: { col: 'pack_number', dir: 'asc' },
         searchToken: 0,
         _searchSince: null,
+        _searchDisplayLimit: 200,
         downloads: [],
         downloadFilter: 'all',
         ircMessages: {},
@@ -93,6 +94,7 @@ document.addEventListener('alpine:init', () => {
         // Realm configs map: channelKey -> realm object {id, name, display_name, download_channel, search_command}
         _realmConfigs: {},
         // Settings - Realms (replaces settingsChannels)
+        realms: [],
         settingsRealms: [],
         realmForm: { id: null, server_id: null, name: '', display_name: '', search_command: '', download_channel: '', auto_join: false, enabled: true },
         showRealmForm: false,
@@ -507,6 +509,7 @@ document.addEventListener('alpine:init', () => {
             const token = ++this.searchToken;
             this.searchRunning = true;
             this.searchResults = [];
+            this._searchDisplayLimit = 200;
             try {
                 await api.startSearch(this.activeServer, this.activeChannel, this.searchQuery);
                 // Poll up to 5 times with 1s delay; stop early when results arrive.
@@ -562,6 +565,7 @@ document.addEventListener('alpine:init', () => {
             const token = ++this.searchToken;
             this.searchRunning = true;
             this.searchResults = [];
+            this._searchDisplayLimit = 200;
             const searchStarted = Date.now();
             this._searchSince = searchStarted;
             const targets = [];
@@ -570,7 +574,12 @@ document.addEventListener('alpine:init', () => {
                 for (var i = 0; i < this.servers.length; i++) {
                     var srv = this.servers[i];
                     if (this.globalSearchServerId && srv.id !== parseInt(this.globalSearchServerId)) continue;
-                    var channels = srv.channels || [];
+                    // Only search channels configured as realm search channels
+                    var searchChannels = this.realms
+                        .filter(function(realm) { return realm.server_id === srv.id && realm.enabled; })
+                        .map(function(realm) { return realm.name; });
+                    // Fallback to all channels if no realms configured
+                    var channels = searchChannels.length > 0 ? searchChannels : (srv.channels || []);
                     for (var j = 0; j < channels.length; j++) {
                         targets.push({ server_id: srv.id, channel: channels[j] });
                     }
@@ -586,6 +595,13 @@ document.addEventListener('alpine:init', () => {
                     var res = await api.getAllSearchResults(this.searchQuery, searchStarted);
                     if (Array.isArray(res) && res.length > 0) {
                         this.searchResults = res;
+                    }
+                }
+                // If no fresh results arrived, show cached results as fallback
+                if (token === this.searchToken && this.searchResults.length === 0) {
+                    var cached = await api.getAllSearchResults(this.searchQuery, null);
+                    if (Array.isArray(cached) && cached.length > 0) {
+                        this.searchResults = cached;
                     }
                 }
             } catch (e) {
@@ -652,7 +668,11 @@ document.addEventListener('alpine:init', () => {
                 }
                 return dir === 'asc' ? cmp : -cmp;
             });
-            return arr;
+            return arr.slice(0, this._searchDisplayLimit);
+        },
+
+        loadMoreResults() {
+            this._searchDisplayLimit += 200;
         },
 
         downloadPack(row) {
@@ -1387,9 +1407,11 @@ document.addEventListener('alpine:init', () => {
             }
 
             // Load realm configs (for download_channel and display name mapping)
+            this.realms = [];
             for (const srv of this.servers) {
                 const realms = await api.getRealms(srv.id).catch(() => []);
                 for (const r of (realms || [])) {
+                    this.realms.push(Object.assign({}, r, { server_id: srv.id }));
                     const key = this.channelKey(srv.id, r.name);
                     this._channelConfigs[key] = r.download_channel || r.name;
                     this._realmConfigs[key] = Object.assign({}, r, { server_id: srv.id });

@@ -271,6 +271,13 @@
                                         </template>
                                     </tbody>
                                 </table>
+                                <template x-if="searchResults.length > _searchDisplayLimit">
+                                    <div class="d-flex justify-content-center mt-2">
+                                        <button class="btn btn-outline-secondary btn-sm" @click="loadMoreResults()">
+                                            Load More (<span x-text="searchResults.length - _searchDisplayLimit"></span> more)
+                                        </button>
+                                    </div>
+                                </template>
                             </template>
                         </div>
                     </div>
@@ -418,6 +425,13 @@
                                             </template>
                                         </tbody>
                                     </table>
+                                    <template x-if="searchResults.length > _searchDisplayLimit">
+                                        <div class="d-flex justify-content-center mt-2">
+                                            <button class="btn btn-outline-secondary btn-sm" @click="loadMoreResults()">
+                                                Load More (<span x-text="searchResults.length - _searchDisplayLimit"></span> more)
+                                            </button>
+                                        </div>
+                                    </template>
                                 </template>
 
                                 <template x-if="searchResults.length === 0 && !searchRunning">
@@ -563,6 +577,13 @@
                                             </template>
                                         </tbody>
                                     </table>
+                                    <template x-if="searchResults.length > _searchDisplayLimit">
+                                        <div class="d-flex justify-content-center mt-2">
+                                            <button class="btn btn-outline-secondary btn-sm" @click="loadMoreResults()">
+                                                Load More (<span x-text="searchResults.length - _searchDisplayLimit"></span> more)
+                                            </button>
+                                        </div>
+                                    </template>
                                 </template>
 
                                 <template x-if="searchResults.length === 0 && !searchRunning">

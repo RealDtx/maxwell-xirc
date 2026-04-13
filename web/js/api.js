@@ -32,7 +32,7 @@ const api = {
     createServer(s)        { return this.post('/servers', s); },
     updateServer(id, s)    { return this.put('/servers/' + id, s); },
     deleteServer(id)       { return this.del('/servers/' + id); },
-    getRealms(serverId)    { return this.get('/servers/' + serverId + '/realms'); },
+    getRealms(serverId)    { return this.get(`/realms?server_id=${serverId}`); },
     createRealm(r)         { return this.post('/realms', r); },
     updateRealm(id, r)     { return this.put('/realms/' + id, r); },
     deleteRealm(id)        { return this.del('/realms/' + id); },
