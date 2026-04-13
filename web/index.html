@@ -261,9 +261,11 @@
                                                 <td x-text="getServerName(r.server_id)"></td>
                                                 <td x-text="r.channel || '—'"></td>
                                                 <td>
-                                                    <button class="btn btn-sm btn-primary"
+                                                    <button class="btn btn-sm"
+                                                            :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!r.parsed">Download</button>
+                                                            :disabled="!r.parsed || isDownloadPending(r)"
+                                                            x-text="downloadPackLabel(r)"></button>
                                                 </td>
                                             </tr>
                                         </template>
@@ -407,10 +409,10 @@
                                                     <td x-text="r.downloads_count != null ? r.downloads_count : '-'"></td>
                                                     <td>
                                                         <button
-                                                            class="btn btn-primary btn-sm"
+                                                            :class="'btn btn-sm ' + (isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary')"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!r.parsed"
-                                                        >Download</button>
+                                                            :disabled="!r.parsed || isDownloadPending(r)"
+                                                            x-text="downloadPackLabel(r)"></button>
                                                     </td>
                                                 </tr>
                                             </template>
@@ -552,10 +554,10 @@
                                                     <td x-text="r.downloads_count != null ? r.downloads_count : '-'"></td>
                                                     <td>
                                                         <button
-                                                            class="btn btn-primary btn-sm"
+                                                            :class="'btn btn-sm ' + (isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary')"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!r.parsed"
-                                                        >Download</button>
+                                                            :disabled="!r.parsed || isDownloadPending(r)"
+                                                            x-text="downloadPackLabel(r)"></button>
                                                     </td>
                                                 </tr>
                                             </template>

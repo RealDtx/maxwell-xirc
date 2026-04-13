@@ -138,6 +138,9 @@ document.addEventListener('alpine:init', () => {
         // Stats-only setting
         statsOnlyDefault: false,
 
+        // Download button state tracking: "serverID:packNumber" → 'queuing'|'queued'
+        _downloadingKeys: {},
+
         // Setup wizard
         setupRequired: false,
         setupMappings: [],  // [{old_dir, new_dir, suggestion}]
@@ -653,6 +656,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         downloadPack(row) {
+            const key = (row.server_id || this.activeServer) + ':' + (row.pack_number || '');
+            this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queuing' });
             api.requestDownload({
                 server_id: row.server_id || this.activeServer,
                 channel: row.channel || this.activeChannel || '',
@@ -661,7 +666,34 @@ document.addEventListener('alpine:init', () => {
                 filename: row.filename || '',
                 filesize: row.filesize || 0,
                 stats_only: this.statsOnlyDefault,
-            }).then(() => this.loadDownloads()).catch(function(e) { console.error('download request error', e); });
+            }).then(() => {
+                this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queued' });
+                this.loadDownloads();
+                // Reset button label after 3 seconds
+                setTimeout(() => {
+                    const updated = Object.assign({}, this._downloadingKeys);
+                    delete updated[key];
+                    this._downloadingKeys = updated;
+                }, 3000);
+            }).catch((e) => {
+                console.error('download request error', e);
+                const updated = Object.assign({}, this._downloadingKeys);
+                delete updated[key];
+                this._downloadingKeys = updated;
+            });
+        },
+
+        downloadPackLabel(row) {
+            const key = (row.server_id || this.activeServer) + ':' + (row.pack_number || '');
+            const state = this._downloadingKeys && this._downloadingKeys[key];
+            if (state === 'queuing') return 'Queuing…';
+            if (state === 'queued') return '✓ Queued';
+            return 'Download';
+        },
+
+        isDownloadPending(row) {
+            const key = (row.server_id || this.activeServer) + ':' + (row.pack_number || '');
+            return !!(this._downloadingKeys && this._downloadingKeys[key]);
         },
 
         clearChannelMessages() {
