@@ -368,3 +368,91 @@ func TestParser_MultipleSessionsSameServer_PicksCorrectSession(t *testing.T) {
 		t.Fatalf("expected result under #session-b (most recent session), got A=%d B=%d", len(resultsA), len(resultsB))
 	}
 }
+
+func TestParser_FallbackCrossChannel_WithinWindow(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	// Session on #mg-chat, bot responds on #moviegods (different channel)
+	p.StartSearch(srv.ID, "#mg-chat", "movie")
+
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#moviegods", // different channel — triggers fallback
+		Nick:     "xdcc_bot",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	results, err := store.GetSearchResults("movie", srv.ID, "#mg-chat")
+	if err != nil {
+		t.Fatalf("GetSearchResults failed: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected cross-channel result within fallback window to be captured")
+	}
+}
+
+func TestParser_FallbackExpired_Ignored(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	// Create a session with an artificially old timestamp
+	p.mu.Lock()
+	p.sessionCounter++
+	p.activeSessions[sessionKey(srv.ID, "#mg-chat")] = &searchSession{
+		ServerID:      srv.ID,
+		Channel:       "#mg-chat",
+		Query:         "movie",
+		CreatedAt:     p.sessionCounter,
+		CreatedAtTime: time.Now().Add(-10 * time.Minute), // 10 min ago — outside window
+	}
+	p.mu.Unlock()
+
+	// Bot responds on a different channel — should NOT match (session too old)
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#moviegods",
+		Nick:     "xdcc_bot",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	results, err := store.GetSearchResults("movie", srv.ID, "#mg-chat")
+	if err != nil {
+		t.Fatalf("GetSearchResults failed: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected expired session to NOT capture fallback results, got %d", len(results))
+	}
+}

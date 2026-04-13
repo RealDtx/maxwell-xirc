@@ -20,11 +20,19 @@ func stripIRCFormatting(s string) string {
 	return ircFormattingRe.ReplaceAllString(s, "")
 }
 
+// fallbackWindow is the maximum age of a session that is eligible for
+// server-wide fallback matching.  Messages arriving on channels (or via DM)
+// that don't have an explicit session are only routed to a session created
+// within this window — this prevents periodic bot announcements from polluting
+// search results long after the search was started.
+const fallbackWindow = 5 * time.Minute
+
 type searchSession struct {
-	ServerID  int64
-	Channel   string
-	Query     string
-	CreatedAt int64 // monotonic counter for ordering
+	ServerID      int64
+	Channel       string
+	Query         string
+	CreatedAt     int64     // monotonic counter for ordering
+	CreatedAtTime time.Time // wall-clock time for fallback window
 }
 
 type Parser struct {
@@ -69,10 +77,11 @@ func (p *Parser) StartSearch(serverID int64, channel, query string) {
 	p.mu.Lock()
 	p.sessionCounter++
 	p.activeSessions[key] = &searchSession{
-		ServerID:  serverID,
-		Channel:   channel,
-		Query:     query,
-		CreatedAt: p.sessionCounter,
+		ServerID:      serverID,
+		Channel:       channel,
+		Query:         query,
+		CreatedAt:     p.sessionCounter,
+		CreatedAtTime: time.Now(),
 	}
 	p.mu.Unlock()
 }
@@ -156,18 +165,17 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	p.mu.RUnlock()
 
 	if !hasSession {
-		// Only fall back to server-wide session matching for DMs (non-channel
-		// messages). Channel messages without an explicit session are background
-		// chatter (e.g. bot announcements) and must not pollute search results.
-		if len(ev.Channel) > 0 && (ev.Channel[0] == '#' || ev.Channel[0] == '&' || ev.Channel[0] == '!' || ev.Channel[0] == '+') {
-			return
-		}
-		// DM from a bot — find the most recently created session on this server.
+		// Fall back to the most recently created session on the same server,
+		// but only if it was created within the fallback window.  This covers
+		// both DMs from bots AND bot responses on different channels (e.g.
+		// #moviegods responding to a search started on #mg-chat) while
+		// preventing stale sessions from capturing periodic bot announcements.
+		now := time.Now()
 		prefix := fmt.Sprintf("%d:", ev.ServerID)
 		p.mu.RLock()
 		var bestCreatedAt int64
 		for k, s := range p.activeSessions {
-			if strings.HasPrefix(k, prefix) && s.CreatedAt > bestCreatedAt {
+			if strings.HasPrefix(k, prefix) && s.CreatedAt > bestCreatedAt && now.Sub(s.CreatedAtTime) <= fallbackWindow {
 				session = s
 				hasSession = true
 				bestCreatedAt = s.CreatedAt
