@@ -71,7 +71,6 @@ func (p *Parser) StartSearch(serverID int64, channel, query string) {
 		Query:    query,
 	}
 	p.mu.Unlock()
-	log.Printf("[SEARCH-SESSION] started server=%d channel=%q query=%q", serverID, channel, query)
 }
 
 func (p *Parser) StopSearch(serverID int64, channel string) {
@@ -129,25 +128,13 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		return
 	}
 
-	// Log ALL messages while any search session is active — helps identify bot response channels/formats
-	p.mu.RLock()
-	anyActive := len(p.activeSessions) > 0
-	p.mu.RUnlock()
-	if anyActive {
-		log.Printf("[SEARCH-ALL] type=%s nick=%q channel=%q msg=%.120q", msgType, ev.Nick, ev.Channel, message)
-	}
-
 	// Check if there's an active search session for this channel
 	key := sessionKey(ev.ServerID, ev.Channel)
 	p.mu.RLock()
 	session, hasSession := p.activeSessions[key]
 	p.mu.RUnlock()
 
-	wasDM := false
 	if !hasSession {
-		// Check if message is a DM (target is not a channel)
-		isDM := len(ev.Channel) == 0 || (ev.Channel[0] != '#' && ev.Channel[0] != '&' && ev.Channel[0] != '!' && ev.Channel[0] != '+')
-
 		// Find any active session on this server — covers both DMs from bots AND
 		// bot responses on channels we didn't explicitly start a session for.
 		prefix := fmt.Sprintf("%d:", ev.ServerID)
@@ -156,7 +143,6 @@ func (p *Parser) handleMessage(ev irc.Event) {
 			if strings.HasPrefix(k, prefix) {
 				session = s
 				hasSession = true
-				wasDM = isDM
 				break
 			}
 		}
@@ -165,7 +151,6 @@ func (p *Parser) handleMessage(ev irc.Event) {
 			return
 		}
 	}
-	_ = wasDM
 
 	// Load patterns
 	patterns, err := p.store.GetParsePatterns()
@@ -236,11 +221,8 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	// Only store and publish if the line actually matched a parse pattern.
 	// Unmatched lines are regular user chat — not valid search results.
 	if result == nil {
-		log.Printf("[SEARCH-NOMATCH] nick=%q channel=%q msg=%.120q", ev.Nick, ev.Channel, message)
 		return
 	}
-
-	log.Printf("[SEARCH-MATCH] nick=%q file=%v size=%v", ev.Nick, result.Filename, result.Filesize)
 
 	// Store result
 	if err := p.store.CreateSearchResult(sr); err != nil {
