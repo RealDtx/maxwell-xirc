@@ -90,10 +90,9 @@ func TestParser_ProcessesSearchResults(t *testing.T) {
 	}
 }
 
-// TestParser_UnparsedResult_NotStored verifies that messages that don't match any
-// parse pattern are NOT stored as search results. This prevents other IRC users'
-// regular chat messages from contaminating search results.
-func TestParser_UnparsedResult_NotStored(t *testing.T) {
+// TestParser_UnparsedChat_NotStored verifies that unmatched regular chat
+// messages are not stored as search results.
+func TestParser_UnparsedChat_NotStored(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
@@ -116,15 +115,59 @@ func TestParser_UnparsedResult_NotStored(t *testing.T) {
 		Nick:     "someuser",
 		Data: map[string]string{
 			"type":    "privmsg",
-			"message": "!gets some.file.mkv",
+			"message": "hello folks",
 		},
 	})
 
 	time.Sleep(200 * time.Millisecond)
 
-	results, _ := store.GetSearchResults("stuff", srv.ID, "#test")
-	if len(results) != 0 {
-		t.Fatalf("expected no results for unmatched message, got %d", len(results))
+	unparsed, err := store.GetAllUnparsedSince(time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("GetAllUnparsedSince failed: %v", err)
+	}
+	if len(unparsed) != 0 {
+		t.Fatalf("expected no unparsed results for chat message, got %d", len(unparsed))
+	}
+}
+
+func TestParser_UnparsedListingLike_Stored(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	p.StartSearch(srv.ID, "#test", "stuff")
+
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "someuser",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "random line with Some.Release.2024.mkv but not full format",
+		},
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	unparsed, err := store.GetAllUnparsedSince(time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("GetAllUnparsedSince failed: %v", err)
+	}
+	if len(unparsed) != 1 {
+		t.Fatalf("expected 1 unparsed listing-like result, got %d", len(unparsed))
+	}
+	if unparsed[0].Parsed {
+		t.Fatal("expected stored listing-like result to have parsed=false")
 	}
 }
 

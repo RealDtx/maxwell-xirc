@@ -114,6 +114,23 @@ func stripCTCP(msg string) string {
 	return msg
 }
 
+// looksLikeListing returns true if msg resembles a file listing line.
+// Used to filter out regular chat from unmatched search responses.
+var (
+	listingExtRe  = regexp.MustCompile(`(?i)\.\w{2,5}(?:\s|$|\|)`)
+	listingSizeRe = regexp.MustCompile(`\d+\.?\d*\s*[KMGTP]`)
+	listingPackRe = regexp.MustCompile(`(?:^|\s)#\d+\s|^\d+\)\s`)
+)
+
+func looksLikeListing(msg string) bool {
+	if len(msg) < 15 {
+		return false
+	}
+	return listingExtRe.MatchString(msg) ||
+		listingSizeRe.MatchString(msg) ||
+		listingPackRe.MatchString(msg)
+}
+
 func (p *Parser) handleMessage(ev irc.Event) {
 	data, ok := ev.Data.(map[string]string)
 	if !ok {
@@ -218,9 +235,13 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		p.updatePatternStats(matchedPatternID, true)
 	}
 
-	// Only store and publish if the line actually matched a parse pattern.
-	// Unmatched lines are regular user chat — not valid search results.
 	if result == nil {
+		// Store unmatched lines that look like listings for the pattern trainer.
+		if looksLikeListing(message) {
+			if err := p.store.CreateSearchResult(sr); err != nil {
+				log.Printf("failed to store unmatched search result: %v", err)
+			}
+		}
 		return
 	}
 
