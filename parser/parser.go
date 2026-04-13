@@ -220,6 +220,9 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		sr.Filename = result.Filename
 		sr.Filesize = result.Filesize
 		sr.DownloadsCount = result.DownloadsCount
+		if result.BotNick != nil {
+			sr.BotNick = *result.BotNick
+		}
 
 		// Update bot-pattern cache
 		p.mu.Lock()

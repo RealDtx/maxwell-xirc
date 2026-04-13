@@ -20,6 +20,7 @@ type ParsedResult struct {
 	Filename       *string
 	Filesize       *string
 	DownloadsCount *int
+	BotNick        *string
 }
 
 type fieldMapping struct {
@@ -27,6 +28,7 @@ type fieldMapping struct {
 	DownloadsCount int `json:"downloads_count"`
 	Filesize       int `json:"filesize"`
 	Filename       int `json:"filename"`
+	BotNick        int `json:"bot_nick"`
 }
 
 // regexCache avoids recompiling the same regex on every call.
@@ -105,6 +107,10 @@ func MatchLine(line string, patterns []db.ParsePattern) (*ParsedResult, int64, e
 			if n, err := strconv.Atoi(matches[fm.DownloadsCount]); err == nil {
 				result.DownloadsCount = &n
 			}
+		}
+		if fm.BotNick > 0 && fm.BotNick < len(matches) {
+			s := strings.TrimSpace(matches[fm.BotNick])
+			result.BotNick = &s
 		}
 
 		return result, p.ID, nil

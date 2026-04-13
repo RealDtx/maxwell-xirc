@@ -63,6 +63,13 @@ func BuiltinPatterns() []BuiltinPattern {
 			FieldMapping: `{"pack_number":1,"filename":2}`,
 			Priority:     10,
 		},
+		// BotReign/search-bot format: NNN) Nx | SizeU | filename | /msg BotNick XDCC SEND PackNum
+		{
+			Name:         "botreign-pipe-xdcc",
+			Regex:        `^\d+\)\s+(\d+)x\s*\|\s*([0-9][0-9.]*[KMGTP]?)\s*\|\s*(.+?)\s*\|\s*/msg\s+(\S+)\s+XDCC\s+SEND\s+(\d+)`,
+			FieldMapping: `{"downloads_count":1,"filesize":2,"filename":3,"bot_nick":4,"pack_number":5}`,
+			Priority:     75,
+		},
 	}
 }
 
