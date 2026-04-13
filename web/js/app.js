@@ -510,6 +510,7 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchResults = [];
             this._searchDisplayLimit = 200;
+            this._searchSince = Date.now();
             try {
                 await api.startSearch(this.activeServer, this.activeChannel, this.searchQuery);
                 // Poll up to 5 times with 1s delay; stop early when results arrive.
@@ -588,13 +589,23 @@ document.addEventListener('alpine:init', () => {
                 for (var k = 0; k < targets.length; k++) {
                     api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).catch(function(){});
                 }
-                // Poll for aggregated results — only results created after this search started
+                // Poll for aggregated results — only results created after this search started.
+                // Stop early if results haven't grown for 10 consecutive polls.
+                var stableCount = 0;
+                var lastCount = 0;
                 for (var attempt = 0; attempt < 60; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     if (token !== this.searchToken) return;
                     var res = await api.getAllSearchResults(this.searchQuery, searchStarted);
                     if (Array.isArray(res) && res.length > 0) {
                         this.searchResults = res;
+                        if (res.length === lastCount) {
+                            stableCount++;
+                            if (stableCount >= 10) break;
+                        } else {
+                            stableCount = 0;
+                            lastCount = res.length;
+                        }
                     }
                 }
                 // If no fresh results arrived, show cached results as fallback
