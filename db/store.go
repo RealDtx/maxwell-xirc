@@ -36,6 +36,15 @@ type Store interface {
 	GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error)
 	GetAllSearchResults(query string, since *time.Time) ([]SearchResult, error)
 	CreateSearchResult(r *SearchResult) error
+	// GetUnparsedSearchSamples returns distinct raw_line samples for unmatched results.
+	// Only returns results with RFC3339 timestamps (new-format entries).
+	// Results are ordered by created_at DESC, limited to limit rows.
+	GetUnparsedSearchSamples(serverID int64, query string, since time.Time, limit int) ([]SearchResult, error)
+	// GetAllUnparsedSince returns all unmatched (parsed=0) results created after since.
+	// Only returns results with RFC3339 timestamps (new-format entries).
+	GetAllUnparsedSince(since time.Time) ([]SearchResult, error)
+	// MarkSearchResultParsed updates a search result to parsed=1 with the extracted fields.
+	MarkSearchResultParsed(id int64, botNick string, packNumber *int, filename *string, filesize *string, downloadsCount *int) error
 
 	// Saved Searches
 	GetSavedSearches() ([]SavedSearch, error)

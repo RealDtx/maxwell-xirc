@@ -477,6 +477,68 @@ func (s *MySQLStore) CreateSearchResult(r *SearchResult) error {
 	return nil
 }
 
+func (s *MySQLStore) GetUnparsedSearchSamples(serverID int64, query string, since time.Time, limit int) ([]SearchResult, error) {
+	rows, err := s.db.Query(
+		`SELECT raw_line, bot_nick, MAX(created_at) as created_at
+		FROM search_results
+		WHERE search_query=? AND server_id=? AND parsed=0 AND created_at > ?
+		GROUP BY raw_line
+		ORDER BY created_at DESC
+		LIMIT ?`,
+		query, serverID, since, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []SearchResult{}
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(&r.RawLine, &r.BotNick, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
+func (s *MySQLStore) GetAllUnparsedSince(since time.Time) ([]SearchResult, error) {
+	rows, err := s.db.Query(
+		`SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize,
+		       downloads_count, raw_line, search_query, parsed, created_at
+		FROM search_results
+		WHERE parsed=0 AND created_at > ?`,
+		since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []SearchResult{}
+	for rows.Next() {
+		var r SearchResult
+		if err := rows.Scan(&r.ID, &r.ServerID, &r.Channel, &r.BotNick, &r.PackNumber,
+			&r.Filename, &r.Filesize, &r.DownloadsCount, &r.RawLine, &r.SearchQuery,
+			&r.Parsed, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
+func (s *MySQLStore) MarkSearchResultParsed(id int64, botNick string, packNumber *int, filename *string, filesize *string, downloadsCount *int) error {
+	_, err := s.db.Exec(
+		`UPDATE search_results
+		SET parsed=1, bot_nick=?, pack_number=?, filename=?, filesize=?, downloads_count=?
+		WHERE id=?`,
+		botNick, packNumber, filename, filesize, downloadsCount, id,
+	)
+	return err
+}
+
 // --- Saved Searches ---
 
 func (s *MySQLStore) GetSavedSearches() ([]SavedSearch, error) {
