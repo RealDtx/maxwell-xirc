@@ -238,7 +238,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		return
 	}
 
-	log.Printf("[SEARCH-MATCH] nick=%q file=%q size=%q", ev.Nick, result.Filename, result.Filesize)
+	log.Printf("[SEARCH-MATCH] nick=%q file=%v size=%v", ev.Nick, result.Filename, result.Filesize)
 
 	// Store result
 	if err := p.store.CreateSearchResult(sr); err != nil {

@@ -12,6 +12,7 @@ document.addEventListener('alpine:init', () => {
         savedSearches: [],
         searchSort: { col: 'pack_number', dir: 'asc' },
         searchToken: 0,
+        _searchSince: null,
         downloads: [],
         downloadFilter: 'all',
         ircMessages: {},
@@ -514,6 +515,7 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchResults = [];
             const searchStarted = Date.now();
+            this._searchSince = searchStarted;
             const targets = [];
             try {
                 // Fire search on all matching channels
@@ -530,12 +532,13 @@ document.addEventListener('alpine:init', () => {
                     api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).catch(function(){});
                 }
                 // Poll for aggregated results — only results created after this search started
-                for (var attempt = 0; attempt < 20; attempt++) {
+                for (var attempt = 0; attempt < 60; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     if (token !== this.searchToken) return;
                     var res = await api.getAllSearchResults(this.searchQuery, searchStarted);
-                    this.searchResults = Array.isArray(res) ? res : [];
-                    if (this.searchResults.length > 0) break;
+                    if (Array.isArray(res) && res.length > 0) {
+                        this.searchResults = res;
+                    }
                 }
             } catch (e) {
                 console.error('global search error', e);
@@ -773,6 +776,14 @@ document.addEventListener('alpine:init', () => {
                 this.errors.unshift(data.data || data);
                 if (this.errors.length > 200) this.errors.pop();
                 this.unreadErrors++;
+            } else if (type === 'search_result') {
+                // Real-time push from parser — immediately refresh results if search is running
+                const d = data.data;
+                if (d && d.parsed && d.search_query === this.searchQuery && this.searchRunning && this._searchSince) {
+                    api.getAllSearchResults(this.searchQuery, this._searchSince).then((res) => {
+                        if (Array.isArray(res) && res.length > 0) this.searchResults = res;
+                    }).catch(() => {});
+                }
             }
         },
 
