@@ -258,6 +258,15 @@ func (c *Connection) applyHandlers(client IRCClient) {
 		if len(target) > 0 && target[0] != '#' && target[0] != '&' && target[0] != '!' && target[0] != '+' {
 			channel = nick
 		}
+
+		// Detect CTCP: messages wrapped in \x01...\x01 (e.g. DCC SEND)
+		msgType := "privmsg"
+		msgContent := message
+		if len(message) >= 2 && message[0] == '\x01' && message[len(message)-1] == '\x01' {
+			msgType = "ctcp"
+			msgContent = message[1 : len(message)-1]
+		}
+
 		c.bus.Publish(Event{
 			Type:      EventIRCMessage,
 			ServerID:  c.server.ID,
@@ -265,8 +274,8 @@ func (c *Connection) applyHandlers(client IRCClient) {
 			Nick:      nick,
 			Timestamp: time.Now().Format(time.RFC3339Nano),
 			Data: map[string]string{
-				"type":    "privmsg",
-				"message": message,
+				"type":    msgType,
+				"message": msgContent,
 			},
 		})
 	})
