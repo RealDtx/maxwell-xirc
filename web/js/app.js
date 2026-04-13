@@ -711,13 +711,26 @@ document.addEventListener('alpine:init', () => {
         downloadPack(row) {
             const key = (row.server_id || this.activeServer) + ':' + (row.bot_nick || '') + ':' + (row.pack_number || '');
             this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queuing' });
+            // Parse human-readable filesize (e.g. "6.1G", "204M") to bytes
+            var filesizeBytes = 0;
+            if (typeof row.filesize === 'number') {
+                filesizeBytes = row.filesize;
+            } else if (typeof row.filesize === 'string') {
+                var match = row.filesize.match(/^([\d.]+)\s*([KMGTP]?)i?[Bb]?$/i);
+                if (match) {
+                    var val = parseFloat(match[1]);
+                    var unit = (match[2] || '').toUpperCase();
+                    var multipliers = { '': 1, 'K': 1024, 'M': 1024*1024, 'G': 1024*1024*1024, 'T': 1024*1024*1024*1024 };
+                    filesizeBytes = Math.round(val * (multipliers[unit] || 1));
+                }
+            }
             api.requestDownload({
                 server_id: row.server_id || this.activeServer,
                 channel: row.channel || this.activeChannel || '',
                 bot_nick: row.bot_nick,
                 pack_number: row.pack_number,
                 filename: row.filename || '',
-                filesize: row.filesize || 0,
+                filesize: filesizeBytes,
                 stats_only: this.statsOnlyDefault,
             }).then(() => {
                 this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queued' });
