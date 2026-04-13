@@ -687,7 +687,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         downloadPack(row) {
-            const key = (row.server_id || this.activeServer) + ':' + (row.pack_number || '');
+            const key = (row.server_id || this.activeServer) + ':' + (row.bot_nick || '') + ':' + (row.pack_number || '');
             this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queuing' });
             api.requestDownload({
                 server_id: row.server_id || this.activeServer,
@@ -715,7 +715,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         downloadPackLabel(row) {
-            const key = (row.server_id || this.activeServer) + ':' + (row.pack_number || '');
+            const key = (row.server_id || this.activeServer) + ':' + (row.bot_nick || '') + ':' + (row.pack_number || '');
             const state = this._downloadingKeys && this._downloadingKeys[key];
             if (state === 'queuing') return 'Queuing…';
             if (state === 'queued') return '✓ Queued';
@@ -723,7 +723,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         isDownloadPending(row) {
-            const key = (row.server_id || this.activeServer) + ':' + (row.pack_number || '');
+            const key = (row.server_id || this.activeServer) + ':' + (row.bot_nick || '') + ':' + (row.pack_number || '');
             return !!(this._downloadingKeys && this._downloadingKeys[key]);
         },
 
