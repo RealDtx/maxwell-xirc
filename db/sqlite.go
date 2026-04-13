@@ -355,9 +355,18 @@ func (s *SQLiteStore) GetUnparsedSearchSamples(serverID int64, query string, sin
 	results := []SearchResult{}
 	for rows.Next() {
 		var r SearchResult
-		if err := rows.Scan(&r.RawLine, &r.BotNick, &r.CreatedAt); err != nil {
+		var createdAt string
+		if err := rows.Scan(&r.RawLine, &r.BotNick, &createdAt); err != nil {
 			return nil, err
 		}
+		parsedTime, err := time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			parsedTime, err = time.Parse(time.RFC3339, createdAt)
+			if err != nil {
+				return nil, err
+			}
+		}
+		r.CreatedAt = parsedTime
 		results = append(results, r)
 	}
 	return results, rows.Err()
