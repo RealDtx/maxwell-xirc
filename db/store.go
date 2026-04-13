@@ -37,7 +37,7 @@ type Store interface {
 	GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error)
 	GetAllSearchResults(query string, since *time.Time) ([]SearchResult, error)
 	CreateSearchResult(r *SearchResult) error
-	DeleteSearchResults(query string, serverID int64, channel string) error
+	DeleteSearchResults(serverID int64, channel string) error
 	// GetUnparsedSearchSamples returns distinct raw_line samples for unmatched results.
 	// Only returns results with RFC3339 timestamps (new-format entries).
 	// Results are ordered by created_at DESC, limited to limit rows.

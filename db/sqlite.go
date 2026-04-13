@@ -355,10 +355,10 @@ func (s *SQLiteStore) CreateSearchResult(r *SearchResult) error {
 	return nil
 }
 
-func (s *SQLiteStore) DeleteSearchResults(query string, serverID int64, channel string) error {
+func (s *SQLiteStore) DeleteSearchResults(serverID int64, channel string) error {
 	_, err := s.db.Exec(
-		`DELETE FROM search_results WHERE search_query=? AND server_id=? AND channel=?`,
-		query, serverID, channel,
+		`DELETE FROM search_results WHERE server_id=? AND channel=?`,
+		serverID, channel,
 	)
 	return err
 }

@@ -542,8 +542,6 @@ document.addEventListener('alpine:init', () => {
                 console.error('search error', e);
             } finally {
                 if (token === this.searchToken) this.searchRunning = false;
-                // Stop session so stale bot messages don't contaminate future searches
-                api.stopSearch(this.activeServer, this.activeChannel).catch(function(){});
             }
         },
 
@@ -647,10 +645,6 @@ document.addEventListener('alpine:init', () => {
                 console.error('global search error', e);
             } finally {
                 if (token === this.searchToken) this.searchRunning = false;
-                // Stop all sessions so stale bot messages don't contaminate future searches
-                for (var t = 0; t < targets.length; t++) {
-                    api.stopSearch(targets[t].server_id, targets[t].channel).catch(function(){});
-                }
             }
         },
 
