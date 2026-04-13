@@ -185,6 +185,15 @@ func (q *Queue) MoveToFront(id int64) error {
 	return q.store.UpdateDownload(dl)
 }
 
+func (q *Queue) UpdateDestinationPath(id int64, path string) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.DestinationPath = path
+	return q.store.UpdateDownload(dl)
+}
+
 func (q *Queue) UpdateProgress(id int64, bytesReceived, peakSpeed, avgSpeed int64) error {
 	dl, err := q.store.GetDownload(id)
 	if err != nil {

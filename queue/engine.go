@@ -52,6 +52,9 @@ func (e *Engine) Queue() *Queue {
 }
 
 func (e *Engine) Start() {
+	if err := e.queue.RequeueInterrupted(); err != nil {
+		log.Printf("warning: failed to requeue interrupted downloads: %v", err)
+	}
 	e.eventCh = e.bus.Subscribe()
 	go e.loop()
 }
@@ -374,6 +377,13 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		if result.NewPath != "" {
 			finalPath = result.NewPath
 			hCtx.FilePath = finalPath
+		}
+	}
+
+	// Update destination_path in DB to the final routed location
+	if finalPath != destPath {
+		if err := e.queue.UpdateDestinationPath(downloadID, finalPath); err != nil {
+			log.Printf("failed to update destination path for download %d: %v", downloadID, err)
 		}
 	}
 

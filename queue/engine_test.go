@@ -175,6 +175,44 @@ func TestEngine_StartsAndStops(t *testing.T) {
 	engine.Stop()
 }
 
+func TestEngine_Start_RequeuesInterruptedDownloads(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	bus := irc.NewEventBus()
+	ircMgr := irc.NewManager(store, bus)
+	storageCfg := &config.StorageConfig{
+		DownloadsDir: "data",
+		TempDir:      "data/tmp",
+		MinFreeSpace: "0",
+	}
+	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
+
+	dl, err := engine.queue.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false)
+	if err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if _, err := engine.queue.NextAndMarkDownloading(); err != nil {
+		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	}
+
+	before, _ := store.GetDownload(dl.ID)
+	if before.Status != "downloading" {
+		t.Fatalf("expected precondition Status=downloading, got %s", before.Status)
+	}
+
+	engine.Start()
+	defer engine.Stop()
+
+	after, _ := store.GetDownload(dl.ID)
+	if after.Status != "queued" {
+		t.Errorf("expected Status=queued after Start, got %s", after.Status)
+	}
+	if after.StartedAt != nil {
+		t.Error("expected StartedAt=nil after Start requeue")
+	}
+}
+
 func TestEngine_Dispatch_NoConnection(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()

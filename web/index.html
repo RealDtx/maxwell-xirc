@@ -733,7 +733,7 @@
                                                     <span class="tooltip-text" x-text="dl.filesize || '-'"></span>
                                                 </span>
                                             </td>
-                                            <td x-text="dl.filesize || '-'"></td>
+                                            <td x-text="dl.filesize ? formatSize(dl.filesize) : '-'"></td>
                                             <td>
                                                 <template x-if="dl.status === 'downloading'">
                                                     <div class="progress">

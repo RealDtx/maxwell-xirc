@@ -327,6 +327,25 @@ func TestQueue_UpdateProgress(t *testing.T) {
 	}
 }
 
+func TestQueue_UpdateDestinationPath(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	q := New(store, 2)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false)
+
+	newPath := "/downloads/final/file.txt"
+	err := q.UpdateDestinationPath(dl.ID, newPath)
+	if err != nil {
+		t.Fatalf("UpdateDestinationPath failed: %v", err)
+	}
+
+	retrieved, _ := store.GetDownload(dl.ID)
+	if retrieved.DestinationPath != newPath {
+		t.Errorf("expected DestinationPath=%s, got %s", newPath, retrieved.DestinationPath)
+	}
+}
+
 func TestQueue_RequeueInterrupted(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
