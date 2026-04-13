@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -324,6 +325,20 @@ func (s *SQLiteStore) GetAllSearchResults(query string, since *time.Time) ([]Sea
 }
 
 func (s *SQLiteStore) CreateSearchResult(r *SearchResult) error {
+	// Trim and normalize fields before storage
+	r.SearchQuery = strings.TrimSpace(r.SearchQuery)
+	r.RawLine = strings.TrimSpace(r.RawLine)
+	r.BotNick = strings.TrimSpace(r.BotNick)
+	r.Channel = strings.TrimSpace(r.Channel)
+	if r.Filename != nil {
+		trimmed := strings.TrimSpace(*r.Filename)
+		r.Filename = &trimmed
+	}
+	if r.Filesize != nil {
+		trimmed := strings.TrimSpace(*r.Filesize)
+		r.Filesize = &trimmed
+	}
+
 	now := time.Now().UTC()
 	nowStr := now.Format(time.RFC3339Nano)
 	result, err := s.db.Exec(
@@ -338,6 +353,14 @@ func (s *SQLiteStore) CreateSearchResult(r *SearchResult) error {
 	r.ID, _ = result.LastInsertId()
 	r.CreatedAt = now
 	return nil
+}
+
+func (s *SQLiteStore) DeleteSearchResults(query string, serverID int64, channel string) error {
+	_, err := s.db.Exec(
+		`DELETE FROM search_results WHERE search_query=? AND server_id=? AND channel=?`,
+		query, serverID, channel,
+	)
+	return err
 }
 
 func (s *SQLiteStore) GetUnparsedSearchSamples(serverID int64, query string, since time.Time, limit int) ([]SearchResult, error) {

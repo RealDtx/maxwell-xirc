@@ -50,6 +50,9 @@ func (m *mockStore) GetAllSearchResults(q string, since *time.Time) ([]db.Search
 	return nil, nil
 }
 func (m *mockStore) CreateSearchResult(r *db.SearchResult) error             { return nil }
+func (m *mockStore) DeleteSearchResults(query string, serverID int64, channel string) error {
+	return nil
+}
 func (m *mockStore) GetSavedSearches() ([]db.SavedSearch, error)             { return nil, nil }
 func (m *mockStore) CreateSavedSearch(s *db.SavedSearch) error               { return nil }
 func (m *mockStore) DeleteSavedSearch(id int64) error                        { return nil }

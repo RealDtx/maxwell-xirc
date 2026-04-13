@@ -75,6 +75,11 @@ func (p *Parser) Stop() {
 }
 
 func (p *Parser) StartSearch(serverID int64, channel, query, searchBot string, realmID int64) {
+	// Clear stale results from any previous search on this channel
+	if err := p.store.DeleteSearchResults(query, serverID, channel); err != nil {
+		log.Printf("failed to clear old search results: %v", err)
+	}
+
 	key := sessionKey(serverID, channel)
 	p.mu.Lock()
 	p.sessionCounter++
