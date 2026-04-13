@@ -46,8 +46,8 @@ func NewMessageBuffer(bus *EventBus, capacity int) *MessageBuffer {
 }
 
 func (mb *MessageBuffer) SetLogDir(dir string) {
-	mb.mu.Lock()
-	defer mb.mu.Unlock()
+	mb.logMu.Lock()
+	defer mb.logMu.Unlock()
 	mb.logDir = dir
 }
 
@@ -107,17 +107,19 @@ func (mb *MessageBuffer) key(serverID int64, channel string) string {
 func (mb *MessageBuffer) append(serverID int64, channel string, msg BufferedMessage) {
 	k := mb.key(serverID, channel)
 	mb.mu.Lock()
-	defer mb.mu.Unlock()
 	buf := mb.bufs[k]
 	buf = append(buf, msg)
 	if len(buf) > mb.cap {
 		buf = buf[len(buf)-mb.cap:]
 	}
 	mb.bufs[k] = buf
+	mb.mu.Unlock()
 	mb.writeLogLine(serverID, channel, msg)
 }
 
 func (mb *MessageBuffer) writeLogLine(serverID int64, channel string, msg BufferedMessage) {
+	mb.logMu.Lock()
+	defer mb.logMu.Unlock()
 	if mb.logDir == "" {
 		return
 	}
