@@ -213,7 +213,7 @@ func main() {
 	p := parser.New(store, bus)
 	p.Start()
 
-	eng := queue.NewEngine(store, bus, &cfg.Storage, cfg.Downloads.MaxConcurrent)
+	eng := queue.NewEngine(store, bus, ircMgr, &cfg.Storage, cfg.Downloads.MaxConcurrent)
 	eng.Start()
 
 	hub := wsPkg.NewHub(bus)

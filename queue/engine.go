@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/maxwell-xirc/xirc/config"
-	"github.com/maxwell-xirc/xirc/dcc"
 	"github.com/maxwell-xirc/xirc/db"
+	"github.com/maxwell-xirc/xirc/dcc"
 	"github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/routing"
 )
@@ -28,17 +28,19 @@ type Engine struct {
 	queue        *Queue
 	store        db.Store
 	bus          *irc.EventBus
+	ircMgr       *irc.Manager
 	storageCfg   *config.StorageConfig
 	eventCh      <-chan irc.Event
 	stopCh       chan struct{}
 	pendingByBot map[string]*PendingRequest // key: "serverID:botNick"
 }
 
-func NewEngine(store db.Store, bus *irc.EventBus, storageCfg *config.StorageConfig, maxConcurrent int) *Engine {
+func NewEngine(store db.Store, bus *irc.EventBus, ircMgr *irc.Manager, storageCfg *config.StorageConfig, maxConcurrent int) *Engine {
 	return &Engine{
 		queue:        New(store, maxConcurrent),
 		store:        store,
 		bus:          bus,
+		ircMgr:       ircMgr,
 		storageCfg:   storageCfg,
 		stopCh:       make(chan struct{}),
 		pendingByBot: make(map[string]*PendingRequest),
@@ -78,6 +80,28 @@ func (e *Engine) GetPendingRequest(serverID int64, botNick string) *PendingReque
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.pendingByBot[pendingKey(serverID, botNick)]
+}
+
+// Dispatch sends the XDCC request for a queued download and registers it as pending.
+// If the IRC connection is not available, the download remains "queued" for manual retry.
+func (e *Engine) Dispatch(dl *db.Download) error {
+	if e.ircMgr == nil {
+		return fmt.Errorf("no IRC manager configured")
+	}
+	conn := e.ircMgr.GetConnection(dl.ServerID)
+	if conn == nil {
+		return fmt.Errorf("no IRC connection for server %d", dl.ServerID)
+	}
+
+	// Register before sending to avoid race if bot responds immediately.
+	e.RegisterPendingRequest(dl.ID, dl.ServerID, dl.BotNick)
+	if err := conn.RequestPack(dl.Channel, dl.BotNick, dl.PackNumber); err != nil {
+		e.mu.Lock()
+		delete(e.pendingByBot, pendingKey(dl.ServerID, dl.BotNick))
+		e.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 func (e *Engine) loop() {
@@ -146,7 +170,7 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		return
 	}
 
-	// Update download with actual filename and size from offer
+	// Update download with actual filename, size, and status from offer
 	dl, err := e.store.GetDownload(pending.DownloadID)
 	if err != nil {
 		log.Printf("failed to get download %d: %v", pending.DownloadID, err)
@@ -154,9 +178,11 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	}
 	dl.Filename = offer.Filename
 	dl.Filesize = offer.Size
+	dl.Status = "downloading"
+	startedAt := time.Now()
+	dl.StartedAt = &startedAt
 	if err := e.store.UpdateDownload(dl); err != nil {
 		log.Printf("failed to update download %d with offer details: %v", pending.DownloadID, err)
-		// Non-fatal: continue with the transfer attempt even if metadata update fails
 	}
 
 	// Check disk space

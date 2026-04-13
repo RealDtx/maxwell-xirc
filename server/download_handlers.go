@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/maxwell-xirc/xirc/db"
@@ -60,6 +61,12 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// Send the XDCC request to the bot.
+	if dispatchErr := s.engine.Dispatch(dl); dispatchErr != nil {
+		log.Printf("download %d queued but dispatch failed: %v", dl.ID, dispatchErr)
+		// Not fatal: download stays queued, user can retry.
 	}
 
 	writeJSON(w, http.StatusCreated, dl)
