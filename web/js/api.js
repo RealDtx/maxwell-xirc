@@ -69,6 +69,13 @@ const api = {
         if (since != null) url += `&since=${since}`;
         return this.get(url);
     },
+    getUnmatchedSamples(serverId, query, since, limit) {
+        let url = `/search/unmatched?server_id=${serverId}&query=${encodeURIComponent(query)}`;
+        if (since != null) url += `&since=${since}`;
+        if (limit  != null) url += `&limit=${limit}`;
+        return this.get(url);
+    },
+    learnPattern(body) { return this.post('/search/patterns/learn', body); },
     getSavedSearches()        { return this.get('/search/saved'); },
     createSavedSearch(s)      { return this.post('/search/saved', s); },
     deleteSavedSearch(id)     { return this.del('/search/saved/' + id); },

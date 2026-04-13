@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>xirc</title>
     <link rel="stylesheet" href="/css/style.css">
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
     <script src="/js/utils.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/app.js"></script>
@@ -1331,6 +1334,109 @@
          style="position:fixed; top:0; left:0; right:0; z-index:9998; background:#1a5c2a; color:#fff; padding:10px 20px; font-size:13px; text-align:center;">
         Setup complete — restart xirc for changes to take effect.
         <button @click="setupBanner=false" style="margin-left:12px; background:transparent; border:none; color:#fff; cursor:pointer; font-size:16px;">×</button>
+    </div>
+</div>
+
+<!-- Pattern Trainer Modal -->
+<div
+    x-show="patternTrainer.open"
+    x-cloak
+    style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:center;justify-content:center;"
+    @click.self="closeTrainer()"
+>
+    <div style="background:var(--bg-secondary,#1e2029);border-radius:8px;padding:24px;width:min(700px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.5);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="margin:0;font-size:16px;">Teach the Parser</h3>
+            <button @click="closeTrainer()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">✕</button>
+        </div>
+
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+            Select a part of the line below, then label what it represents.
+        </p>
+
+        <!-- Raw line display -->
+        <div
+            id="trainer-line"
+            @mouseup="onTrainerMouseup($event)"
+            :innerHTML="trainerLineHtml()"
+            style="font-family:monospace;font-size:13px;background:var(--bg-primary,#13141a);padding:12px;border-radius:4px;border:1px solid var(--border-color,#2a2d3a);word-break:break-all;cursor:text;user-select:text;line-height:1.6;margin-bottom:12px;"
+        ></div>
+
+        <!-- Field picker popup -->
+        <div
+            x-show="patternTrainer.fieldPickerVisible"
+            :style="`position:fixed;left:${patternTrainer.fieldPickerX}px;top:${patternTrainer.fieldPickerY}px;z-index:9100;background:var(--bg-secondary,#1e2029);border:1px solid var(--border-color,#2a2d3a);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,.4);display:flex;flex-wrap:wrap;gap:6px;max-width:400px;`"
+            @click.outside="patternTrainer.fieldPickerVisible = false"
+        >
+            <template x-for="f in _trainerFields" :key="f.field">
+                <button
+                    @click="addTrainerAnnotation(f.field)"
+                    :style="`background:${f.color};color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;`"
+                    x-text="f.label"
+                ></button>
+            </template>
+        </div>
+
+        <!-- Annotation chips -->
+        <template x-if="patternTrainer.annotations.length > 0">
+            <div style="margin-bottom:12px;">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Annotations:</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                    <template x-for="(ann, idx) in patternTrainer.annotations" :key="idx">
+                        <span
+                            :style="`background:${ann.color};color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px;`"
+                        >
+                            <span x-text="ann.label + ': ' + patternTrainer.rawLine.substring(ann.start, ann.end)"></span>
+                            <button
+                                @click="removeTrainerAnnotation(idx)"
+                                style="background:none;border:none;color:#fff;cursor:pointer;font-size:14px;padding:0;line-height:1;"
+                            >×</button>
+                        </span>
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <!-- Preview regex -->
+        <template x-if="patternTrainer.previewRegex">
+            <div style="margin-bottom:12px;">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Generated regex:</div>
+                <code style="font-size:11px;background:var(--bg-primary,#13141a);padding:8px;border-radius:4px;display:block;word-break:break-all;" x-text="patternTrainer.previewRegex"></code>
+            </div>
+        </template>
+
+        <!-- Error -->
+        <template x-if="patternTrainer.error">
+            <p style="color:#ef4444;font-size:12px;margin-bottom:12px;" x-text="patternTrainer.error"></p>
+        </template>
+
+        <!-- Success -->
+        <template x-if="patternTrainer.savedCount !== null">
+            <p style="color:#10b981;font-size:12px;margin-bottom:12px;"
+               x-text="'Pattern saved! ' + patternTrainer.savedCount + ' previously unmatched result(s) now parsed.'"></p>
+        </template>
+
+        <!-- Actions -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input
+                x-model="patternTrainer.patternName"
+                placeholder="Pattern name (required to save)"
+                style="flex:1;min-width:180px;padding:6px 10px;border-radius:4px;border:1px solid var(--border-color,#2a2d3a);background:var(--bg-primary,#13141a);color:var(--text-primary,#e0e0e0);font-size:13px;"
+            />
+            <button
+                @click="previewTrainerPattern()"
+                :disabled="!patternTrainer.annotations.length"
+                class="btn btn-secondary"
+                style="white-space:nowrap;"
+            >Preview regex</button>
+            <button
+                @click="saveTrainerPattern()"
+                :disabled="!patternTrainer.annotations.length || !patternTrainer.patternName.trim() || patternTrainer.saving"
+                class="btn btn-primary"
+                style="white-space:nowrap;"
+                x-text="patternTrainer.saving ? 'Saving…' : 'Save & Apply'"
+            ></button>
+        </div>
     </div>
 </div>
 </body>

@@ -1,3 +1,22 @@
+function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getCharOffset(container, node, offset) {
+    // Walk text nodes in container up to (node, offset), summing lengths
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let count = 0;
+    let current;
+    while ((current = walker.nextNode())) {
+        if (current === node) {
+            count += offset;
+            break;
+        }
+        count += current.textContent.length;
+    }
+    return count;
+}
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('appStore', () => ({
         servers: [],
@@ -8,6 +27,31 @@ document.addEventListener('alpine:init', () => {
         expandedServers: {},
         searchQuery: '',
         searchResults: [],
+        patternTrainer: {
+            open: false,
+            rawLine: '',
+            annotations: [],
+            fieldPickerVisible: false,
+            fieldPickerX: 0,
+            fieldPickerY: 0,
+            pendingStart: null,
+            pendingEnd: null,
+            patternName: '',
+            previewRegex: '',
+            previewFieldMapping: '',
+            saving: false,
+            savedCount: null,
+            error: '',
+        },
+        _trainerFields: [
+            { field: 'filename',        label: 'Filename',      color: '#4a9eff' },
+            { field: 'pack_number',     label: 'Pack #',        color: '#f59e0b' },
+            { field: 'filesize',        label: 'File Size',     color: '#10b981' },
+            { field: 'bot_nick',        label: 'Bot Nick',      color: '#8b5cf6' },
+            { field: 'downloads_count', label: 'Downloads',     color: '#ef4444' },
+            { field: 'skip_number',     label: 'Skip (number)', color: '#6b7280' },
+            { field: 'skip',            label: 'Skip (text)',   color: '#6b7280' },
+        ],
         searchRunning: false,
         savedSearches: [],
         searchSort: { col: 'pack_number', dir: 'asc' },
@@ -618,7 +662,136 @@ document.addEventListener('alpine:init', () => {
         },
 
         teachParser(rawLine) {
-            alert(rawLine);
+            this.patternTrainer = {
+                open: true,
+                rawLine: rawLine,
+                annotations: [],
+                fieldPickerVisible: false,
+                fieldPickerX: 0,
+                fieldPickerY: 0,
+                pendingStart: null,
+                pendingEnd: null,
+                patternName: '',
+                previewRegex: '',
+                previewFieldMapping: '',
+                saving: false,
+                savedCount: null,
+                error: '',
+            };
+        },
+
+        closeTrainer() { this.patternTrainer.open = false; },
+
+        trainerLineHtml() {
+            const line = this.patternTrainer.rawLine;
+            const runes = [...line];
+            const anns = this.patternTrainer.annotations.slice()
+                .sort((a, b) => a.start - b.start);
+            let html = '';
+            let pos = 0;
+            for (const ann of anns) {
+                if (ann.start > pos) {
+                    html += escHtml(runes.slice(pos, ann.start).join(''));
+                }
+                html += `<span style="background:${ann.color};color:#fff;border-radius:3px;padding:0 2px" title="${ann.label}">${escHtml(runes.slice(ann.start, ann.end).join(''))}</span>`;
+                pos = ann.end;
+            }
+            if (pos < runes.length) html += escHtml(runes.slice(pos).join(''));
+            return html;
+        },
+
+        onTrainerMouseup($event) {
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed) return;
+            const container = $event.currentTarget;
+            const range = sel.getRangeAt(0);
+            // Calculate character offsets within container's text content
+            const start = getCharOffset(container, range.startContainer, range.startOffset);
+            const end   = getCharOffset(container, range.endContainer,   range.endOffset);
+            if (end <= start) { sel.removeAllRanges(); return; }
+            // Check for overlap with existing annotations
+            const anns = this.patternTrainer.annotations;
+            for (const ann of anns) {
+                if (start < ann.end && end > ann.start) {
+                    sel.removeAllRanges();
+                    return; // overlaps existing annotation — ignore
+                }
+            }
+            this.patternTrainer.pendingStart = start;
+            this.patternTrainer.pendingEnd   = end;
+            // Position field picker near the selection
+            const rect = range.getBoundingClientRect();
+            this.patternTrainer.fieldPickerX = rect.left + window.scrollX;
+            this.patternTrainer.fieldPickerY = rect.bottom + window.scrollY + 6;
+            this.patternTrainer.fieldPickerVisible = true;
+            sel.removeAllRanges();
+        },
+
+        addTrainerAnnotation(field) {
+            const f = this._trainerFields.find(x => x.field === field);
+            if (!f) return;
+            const { pendingStart: start, pendingEnd: end } = this.patternTrainer;
+            if (start == null || end == null) return;
+            this.patternTrainer.annotations.push({ start, end, field, label: f.label, color: f.color });
+            this.patternTrainer.annotations.sort((a, b) => a.start - b.start);
+            this.patternTrainer.fieldPickerVisible = false;
+            this.patternTrainer.pendingStart = null;
+            this.patternTrainer.pendingEnd   = null;
+            this.patternTrainer.previewRegex = '';
+            this.patternTrainer.savedCount   = null;
+            this.patternTrainer.error        = '';
+        },
+
+        removeTrainerAnnotation(idx) {
+            this.patternTrainer.annotations.splice(idx, 1);
+            this.patternTrainer.previewRegex = '';
+            this.patternTrainer.savedCount   = null;
+        },
+
+        async previewTrainerPattern() {
+            const t = this.patternTrainer;
+            if (!t.annotations.length) return;
+            t.error = '';
+            try {
+                const res = await api.learnPattern({
+                    raw_line: t.rawLine,
+                    annotations: t.annotations.map(a => ({ start: a.start, end: a.end, field: a.field })),
+                    name: t.patternName || 'custom',
+                    preview: true,
+                });
+                if (res.error) { t.error = res.error; return; }
+                t.previewRegex        = res.regex        || '';
+                t.previewFieldMapping = res.field_mapping || '';
+            } catch (e) {
+                t.error = 'Preview failed: ' + e.message;
+            }
+        },
+
+        async saveTrainerPattern() {
+            const t = this.patternTrainer;
+            if (!t.annotations.length || !t.patternName.trim()) return;
+            t.saving = true;
+            t.error  = '';
+            try {
+                const res = await api.learnPattern({
+                    raw_line: t.rawLine,
+                    annotations: t.annotations.map(a => ({ start: a.start, end: a.end, field: a.field })),
+                    name: t.patternName.trim(),
+                    preview: false,
+                });
+                if (res.error) { t.error = res.error; return; }
+                t.savedCount    = res.newly_parsed ?? 0;
+                t.previewRegex  = res.regex        || t.previewRegex;
+                // Refresh search results so newly-parsed rows appear
+                if (this.searchQuery) {
+                    const res2 = await api.getAllSearchResults(this.searchQuery, this._searchSince);
+                    if (Array.isArray(res2) && res2.length > 0) this.searchResults = res2;
+                }
+            } catch (e) {
+                t.error = 'Save failed: ' + e.message;
+            } finally {
+                t.saving = false;
+            }
         },
 
         // --- Downloads ---
