@@ -408,7 +408,7 @@ func (s *MySQLStore) UpdateDownload(dl *Download) error {
 
 func (s *MySQLStore) GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error) {
 	rows, err := s.db.Query(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND server_id=? AND channel=? ORDER BY created_at DESC",
+		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND server_id=? AND channel=? AND parsed=1 ORDER BY created_at DESC",
 		query, serverID, channel,
 	)
 	if err != nil {
@@ -434,12 +434,12 @@ func (s *MySQLStore) GetAllSearchResults(query string, since *time.Time) ([]Sear
 	var err error
 	if since != nil {
 		rows, err = s.db.Query(
-			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND created_at > ? ORDER BY created_at DESC",
+			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 AND created_at > ? ORDER BY created_at DESC LIMIT 500",
 			query, *since,
 		)
 	} else {
 		rows, err = s.db.Query(
-			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? ORDER BY created_at DESC",
+			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 ORDER BY created_at DESC LIMIT 500",
 			query,
 		)
 	}
