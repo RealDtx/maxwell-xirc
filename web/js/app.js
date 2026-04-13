@@ -1043,7 +1043,14 @@ document.addEventListener('alpine:init', () => {
                 // Real-time push from parser — immediately refresh results if search is running
                 const d = data.data;
                 if (d && d.parsed && d.search_query === this.searchQuery && this.searchRunning && this._searchSince) {
-                    api.getAllSearchResults(this.searchQuery, this._searchSince).then((res) => {
+                    // Use channel-scoped fetch for channel search, global for global search
+                    var refreshPromise;
+                    if (this.activeServer && this.activeChannel) {
+                        refreshPromise = api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
+                    } else {
+                        refreshPromise = api.getAllSearchResults(this.searchQuery, this._searchSince);
+                    }
+                    refreshPromise.then((res) => {
                         if (Array.isArray(res) && res.length > 0) this.searchResults = res;
                     }).catch(() => {});
                 }

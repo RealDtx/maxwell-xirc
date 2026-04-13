@@ -156,9 +156,13 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	p.mu.RUnlock()
 
 	if !hasSession {
-		// Find the most recently created session on this server — covers both
-		// DMs from bots AND bot responses on channels we didn't explicitly
-		// start a session for. Deterministic: always picks the newest session.
+		// Only fall back to server-wide session matching for DMs (non-channel
+		// messages). Channel messages without an explicit session are background
+		// chatter (e.g. bot announcements) and must not pollute search results.
+		if len(ev.Channel) > 0 && (ev.Channel[0] == '#' || ev.Channel[0] == '&' || ev.Channel[0] == '!' || ev.Channel[0] == '+') {
+			return
+		}
+		// DM from a bot — find the most recently created session on this server.
 		prefix := fmt.Sprintf("%d:", ev.ServerID)
 		p.mu.RLock()
 		var bestCreatedAt int64

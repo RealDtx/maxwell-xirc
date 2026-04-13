@@ -295,13 +295,13 @@ func TestParser_CatchesResultFromDifferentChannel(t *testing.T) {
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	// Session started for #mg-chat, but bot responds in #moviegods
+	// Session started for #mg-chat, but bot responds via DM
 	p.StartSearch(srv.ID, "#mg-chat", "movie")
 
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
-		Channel:  "#moviegods", // different channel — no explicit session
+		Channel:  "myNick", // DM — channel is the recipient's nick, not a #channel
 		Nick:     "xdcc_bot",
 		Data: map[string]string{
 			"type":    "privmsg",
@@ -342,11 +342,11 @@ func TestParser_MultipleSessionsSameServer_PicksCorrectSession(t *testing.T) {
 	p.StartSearch(srv.ID, "#session-a", "query-a")
 	p.StartSearch(srv.ID, "#session-b", "query-b")
 
-	// Bot responds on an unrelated channel — should match the most recent session
+	// Bot responds via DM — should match the most recent session
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
-		Channel:  "#other-channel",
+		Channel:  "myNick", // DM — not a #channel
 		Nick:     "xdcc_bot",
 		Data: map[string]string{
 			"type":    "privmsg",
