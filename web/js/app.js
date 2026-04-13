@@ -536,9 +536,10 @@ document.addEventListener('alpine:init', () => {
             if (!this.searchQuery.trim()) return;
             try {
                 await api.createSavedSearch({
-                    query: this.searchQuery,
-                    server_id: this.activeServer,
-                    channel: this.activeChannel,
+                    name: this.searchQuery.trim(),
+                    query: this.searchQuery.trim(),
+                    server_id: this.activeServer || 0,
+                    channel: this.activeChannel || '',
                 });
                 await this.loadSavedSearches();
             } catch (e) {
@@ -653,12 +654,38 @@ document.addEventListener('alpine:init', () => {
 
         downloadPack(row) {
             api.requestDownload({
-                server_id: this.activeServer,
-                channel: this.activeChannel,
+                server_id: row.server_id || this.activeServer,
+                channel: row.channel || this.activeChannel || '',
                 bot_nick: row.bot_nick,
                 pack_number: row.pack_number,
+                filename: row.filename || '',
+                filesize: row.filesize || 0,
                 stats_only: this.statsOnlyDefault,
-            }).catch(function(e) { console.error('download request error', e); });
+            }).then(() => this.loadDownloads()).catch(function(e) { console.error('download request error', e); });
+        },
+
+        clearChannelMessages() {
+            if (!this.activeServer || !this.activeChannel) return;
+            const key = this.channelKey(this.activeServer, this.activeChannel);
+            this.ircMessages = Object.assign({}, this.ircMessages, { [key]: [] });
+            this._msgVersion++;
+        },
+
+        clearSpecificChannelMessages(serverId, channel) {
+            if (!serverId || !channel) return;
+            const key = this.channelKey(serverId, channel);
+            this.ircMessages = Object.assign({}, this.ircMessages, { [key]: [] });
+            this._msgVersion++;
+        },
+
+        clearServerMessages(serverId) {
+            if (!serverId) return;
+            this.serverMessages = Object.assign({}, this.serverMessages, { [serverId]: [] });
+            this._msgVersion++;
+        },
+
+        clearSearchResults() {
+            this.searchResults = [];
         },
 
         teachParser(rawLine) {

@@ -213,6 +213,23 @@
                                     :disabled="searchRunning || !searchQuery.trim()"
                                     class="btn btn-primary btn-sm"
                                     x-text="searchRunning ? 'Searching...' : 'Search'"></button>
+                            <button class="btn btn-sm"
+                                    @click="bookmarkSearch()"
+                                    :disabled="!searchQuery.trim()"
+                                    title="Save this search">Bookmark</button>
+                            <button class="btn btn-sm"
+                                    @click="clearSearchResults()"
+                                    :disabled="searchResults.length === 0"
+                                    title="Clear results">Clear</button>
+                            <select
+                                style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;"
+                                @change="applySavedSearch($event.target.value); $event.target.value = ''"
+                            >
+                                <option value="">Saved searches…</option>
+                                <template x-for="ss in savedSearches" :key="ss.id">
+                                    <option :value="ss.query" x-text="ss.query"></option>
+                                </template>
+                            </select>
                         </div>
                         <!-- Results -->
                         <div style="flex:1; overflow-y:auto;">
@@ -245,8 +262,8 @@
                                                 <td x-text="r.channel || '—'"></td>
                                                 <td>
                                                     <button class="btn btn-sm btn-primary"
-                                                            @click="requestDownload(r)"
-                                                            :disabled="!r.bot_nick || !r.pack_number">DL</button>
+                                                            @click="downloadPack(r)"
+                                                            :disabled="!r.parsed">Download</button>
                                                 </td>
                                             </tr>
                                         </template>
@@ -310,6 +327,9 @@
                                     x-model="ircInput"
                                     @keydown.enter="sendIrc()"
                                 >
+                                <button class="btn btn-sm" style="flex-shrink:0;"
+                                        @click="clearChannelMessages()"
+                                        title="Clear chat">Clear</button>
                             </div>
                         </div>
 
@@ -339,6 +359,12 @@
                                         :disabled="!searchQuery.trim()"
                                         title="Save this search"
                                     >Bookmark</button>
+                                    <button
+                                        class="btn btn-sm"
+                                        @click="clearSearchResults()"
+                                        :disabled="searchResults.length === 0"
+                                        title="Clear results"
+                                    >Clear</button>
                                     <select
                                         style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;"
                                         @change="applySavedSearch($event.target.value); $event.target.value = ''"
@@ -441,6 +467,9 @@
                                     x-model="ircInput"
                                     @keydown.enter="sendIrcToChannel(activeServer, downloadChannelForCurrent())"
                                 >
+                                <button class="btn btn-sm" style="flex-shrink:0;"
+                                        @click="clearSpecificChannelMessages(activeServer, downloadChannelForCurrent())"
+                                        title="Clear chat">Clear</button>
                             </div>
                         </div>
 
@@ -475,6 +504,12 @@
                                         :disabled="!searchQuery.trim()"
                                         title="Save this search"
                                     >Bookmark</button>
+                                    <button
+                                        class="btn btn-sm"
+                                        @click="clearSearchResults()"
+                                        :disabled="searchResults.length === 0"
+                                        title="Clear results"
+                                    >Clear</button>
                                     <select
                                         style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;"
                                         @change="applySavedSearch($event.target.value); $event.target.value = ''"
@@ -592,6 +627,9 @@
                                     x-model="ircInput"
                                     @keydown.enter="sendIrcToChannel(activeServer, currentChannelHasDownloadChannel() ? downloadChannelForCurrent() : activeChannel)"
                                 >
+                                <button class="btn btn-sm" style="flex-shrink:0;"
+                                        @click="clearChannelMessages()"
+                                        title="Clear chat">Clear</button>
                             </div>
                         </div>
 
@@ -1239,6 +1277,9 @@
                         x-model="ircInput"
                         @keydown.enter="sendToServer(activeServer)"
                     >
+                    <button class="btn btn-sm" style="flex-shrink:0;"
+                            @click="clearServerMessages(activeServer)"
+                            title="Clear server log">Clear</button>
                 </div>
 
                 <!-- Connect/Disconnect buttons (advanced mode) -->

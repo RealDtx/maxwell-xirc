@@ -78,7 +78,10 @@ func (c *RawClient) dial() (net.Conn, error) {
 	if c.useTLS {
 		host, _, _ := net.SplitHostPort(c.addr)
 		dialer := &net.Dialer{Timeout: 30 * time.Second}
-		return tls.DialWithDialer(dialer, "tcp", c.addr, &tls.Config{ServerName: host})
+		return tls.DialWithDialer(dialer, "tcp", c.addr, &tls.Config{
+			ServerName:         host,
+			InsecureSkipVerify: true, //nolint:gosec // IRC servers commonly use self-signed certs
+		})
 	}
 	return net.DialTimeout("tcp", c.addr, 30*time.Second)
 }
