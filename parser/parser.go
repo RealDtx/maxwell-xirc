@@ -145,23 +145,22 @@ func (p *Parser) handleMessage(ev irc.Event) {
 
 	wasDM := false
 	if !hasSession {
-		// DMs: ev.Channel is the sender's nick (not a channel).
-		// Bots often reply to !s commands via PRIVMSG to the user's nick.
-		// Find any active session on this server.
+		// Check if message is a DM (target is not a channel)
 		isDM := len(ev.Channel) == 0 || (ev.Channel[0] != '#' && ev.Channel[0] != '&' && ev.Channel[0] != '!' && ev.Channel[0] != '+')
-		if isDM {
-			prefix := fmt.Sprintf("%d:", ev.ServerID)
-			p.mu.RLock()
-			for k, s := range p.activeSessions {
-				if strings.HasPrefix(k, prefix) {
-					session = s
-					hasSession = true
-					wasDM = true
-					break
-				}
+
+		// Find any active session on this server — covers both DMs from bots AND
+		// bot responses on channels we didn't explicitly start a session for.
+		prefix := fmt.Sprintf("%d:", ev.ServerID)
+		p.mu.RLock()
+		for k, s := range p.activeSessions {
+			if strings.HasPrefix(k, prefix) {
+				session = s
+				hasSession = true
+				wasDM = isDM
+				break
 			}
-			p.mu.RUnlock()
 		}
+		p.mu.RUnlock()
 		if !hasSession {
 			return
 		}
