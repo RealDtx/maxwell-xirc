@@ -1,6 +1,10 @@
 package parser
 
-import "github.com/maxwell-xirc/xirc/db"
+import (
+	"log"
+
+	"github.com/maxwell-xirc/xirc/db"
+)
 
 type BuiltinPattern struct {
 	Name         string
@@ -64,19 +68,30 @@ func BuiltinPatterns() []BuiltinPattern {
 
 // SeedPatterns inserts built-in patterns into the database if they don't already exist.
 // Existing patterns (matched by name) are left untouched so user edits are preserved.
+// Auto-disabled builtin patterns are re-enabled so they remain available after server restarts.
 func SeedPatterns(store db.Store) error {
-	existing, err := store.GetParsePatterns()
+	existing, err := store.GetAllParsePatterns()
 	if err != nil {
 		return err
 	}
 
-	existingNames := make(map[string]bool)
-	for _, p := range existing {
-		existingNames[p.Name] = true
+	existingByName := make(map[string]*db.ParsePattern)
+	for i := range existing {
+		existingByName[existing[i].Name] = &existing[i]
 	}
 
+	reenabled := 0
 	for _, bp := range BuiltinPatterns() {
-		if existingNames[bp.Name] {
+		if p, found := existingByName[bp.Name]; found {
+			// Re-enable auto-disabled builtins so patterns survive server restarts.
+			if p.AutoDisabled {
+				p.AutoDisabled = false
+				p.FailCount = 0
+				if err := store.UpdateParsePattern(p); err != nil {
+					return err
+				}
+				reenabled++
+			}
 			continue
 		}
 		p := &db.ParsePattern{
@@ -90,6 +105,10 @@ func SeedPatterns(store db.Store) error {
 		if err := store.CreateParsePattern(p); err != nil {
 			return err
 		}
+	}
+
+	if reenabled > 0 {
+		log.Printf("SeedPatterns: re-enabled %d auto-disabled builtin parse patterns", reenabled)
 	}
 
 	return nil

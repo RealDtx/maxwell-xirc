@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/maxwell-xirc/xirc/db"
 )
@@ -18,18 +19,27 @@ func (s *Server) handleGetSearchResults(w http.ResponseWriter, r *http.Request) 
 	query := r.URL.Query().Get("query")
 	serverIDStr := r.URL.Query().Get("server_id")
 	channel := r.URL.Query().Get("channel")
+	sinceStr := r.URL.Query().Get("since") // Unix ms timestamp — only return results created after this
 
 	if query == "" {
 		writeError(w, http.StatusBadRequest, "query is required")
 		return
 	}
 
+	var since *time.Time
+	if sinceStr != "" {
+		ms, err := strconv.ParseInt(sinceStr, 10, 64)
+		if err == nil {
+			t := time.UnixMilli(ms)
+			since = &t
+		}
+	}
+
 	var results []db.SearchResult
 	var err error
 
 	if serverIDStr == "" || channel == "" {
-		// Global search — return results across all servers/channels
-		results, err = s.store.GetAllSearchResults(query)
+		results, err = s.store.GetAllSearchResults(query, since)
 	} else {
 		serverID, parseErr := strconv.ParseInt(serverIDStr, 10, 64)
 		if parseErr != nil {
@@ -97,6 +107,28 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "searching"})
+}
+
+func (s *Server) handleStopSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ServerID int64  `json:"server_id"`
+		Channel  string `json:"channel"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if s.parser != nil {
+		s.parser.StopSearch(req.ServerID, req.Channel)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
 // handleSavedSearches handles GET (list) and POST (create) for /api/search/saved

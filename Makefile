@@ -2,23 +2,24 @@
 
 BINARY=xirc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GO ?= $(HOME)/go-install/go/bin/go
 
 build:
-	go build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY) .
+	$(GO) build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY) .
 
 test:
-	go test ./...
+	$(GO) test ./...
 
 test-verbose:
-	go test -v ./...
+	$(GO) test -v ./...
 
 # Cross-compile for Raspberry Pi 4 (ARM64)
 build-pi:
-	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BINARY)-arm64 .
+	GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w" -o $(BINARY)-arm64 .
 
 # Cross-compile for Raspberry Pi 3 (ARM)
 build-pi3:
-	GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o $(BINARY)-arm .
+	GOOS=linux GOARCH=arm GOARM=7 $(GO) build -ldflags="-s -w" -o $(BINARY)-arm .
 
 docker:
 	docker build -f deploy/Dockerfile -t xirc .

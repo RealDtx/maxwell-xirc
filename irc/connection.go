@@ -259,10 +259,11 @@ func (c *Connection) applyHandlers(client IRCClient) {
 			channel = nick
 		}
 		c.bus.Publish(Event{
-			Type:     EventIRCMessage,
-			ServerID: c.server.ID,
-			Channel:  channel,
-			Nick:     nick,
+			Type:      EventIRCMessage,
+			ServerID:  c.server.ID,
+			Channel:   channel,
+			Nick:      nick,
+			Timestamp: time.Now().Format(time.RFC3339Nano),
 			Data: map[string]string{
 				"type":    "privmsg",
 				"message": message,
@@ -276,10 +277,11 @@ func (c *Connection) applyHandlers(client IRCClient) {
 			channel = nick
 		}
 		c.bus.Publish(Event{
-			Type:     EventIRCMessage,
-			ServerID: c.server.ID,
-			Channel:  channel,
-			Nick:     nick,
+			Type:      EventIRCMessage,
+			ServerID:  c.server.ID,
+			Channel:   channel,
+			Nick:      nick,
+			Timestamp: time.Now().Format(time.RFC3339Nano),
 			Data: map[string]string{
 				"type":    "notice",
 				"message": message,
@@ -399,6 +401,20 @@ func (c *Connection) SendMessage(target, message string) {
 
 	if client != nil {
 		client.Privmsg(target, message)
+		// Echo own sent message into the bus so the MessageBuffer captures it.
+		// IRC servers don't echo our own PRIVMSGs back, so without this the
+		// message would disappear from the chat buffer on any reload.
+		c.bus.Publish(Event{
+			Type:      EventIRCMessage,
+			ServerID:  c.server.ID,
+			Channel:   target,
+			Nick:      c.server.Nickname,
+			Timestamp: time.Now().Format(time.RFC3339Nano),
+			Data: map[string]string{
+				"type":    "privmsg",
+				"message": message,
+			},
+		})
 	}
 }
 
@@ -498,20 +514,83 @@ func (c *Connection) handleRawLine(line string) {
 		}
 	}
 
+	ts := time.Now().Format(time.RFC3339Nano)
+
 	// Publish server-level raw lines (numerics, MODE, JOIN, PART, QUIT, etc.)
 	c.bus.Publish(Event{
-		Type:     EventIRCMessage,
-		ServerID: c.server.ID,
-		Channel:  "",
-		Nick:     "",
+		Type:      EventIRCMessage,
+		ServerID:  c.server.ID,
+		Channel:   "",
+		Nick:      "",
+		Timestamp: ts,
 		Data: map[string]string{
 			"type":    "raw",
 			"message": line,
 		},
 	})
 
+	// Also publish a copy to the relevant channel buffer so JOIN/PART/MODE/TOPIC
+	// activity appears in the channel chat view.
+	if ch := extractChannelFromRaw(parts); ch != "" {
+		c.bus.Publish(Event{
+			Type:      EventIRCMessage,
+			ServerID:  c.server.ID,
+			Channel:   ch,
+			Nick:      "",
+			Timestamp: ts,
+			Data: map[string]string{
+				"type":    "raw",
+				"message": line,
+			},
+		})
+	}
+
 	// Handle NAMES (353/366) replies
 	c.handleNamesReply(parts)
+}
+
+// extractChannelFromRaw returns the channel name from a raw IRC line (JOIN, PART, MODE, KICK,
+// TOPIC, 332) so that those events can also be stored in the channel-specific buffer.
+// parts must be from strings.SplitN(line, " ", 5). Returns "" if no channel found.
+func extractChannelFromRaw(parts []string) string {
+	if len(parts) < 3 {
+		return ""
+	}
+	cmd := strings.ToUpper(parts[1])
+	isChannel := func(s string) bool {
+		s = strings.TrimPrefix(s, ":")
+		return len(s) > 0 && (s[0] == '#' || s[0] == '&' || s[0] == '!' || s[0] == '+')
+	}
+	switch cmd {
+	case "JOIN":
+		// :nick!user@host JOIN :#channel  OR  :nick!user@host JOIN #channel
+		if len(parts) >= 3 {
+			return strings.TrimPrefix(strings.TrimPrefix(parts[2], ":"), ":")
+		}
+	case "PART", "MODE", "KICK", "TOPIC":
+		// :nick!user@host PART #channel :reason
+		if len(parts) >= 3 && isChannel(parts[2]) {
+			return strings.TrimPrefix(parts[2], ":")
+		}
+	case "332", "333", "366":
+		// :server 332 nick #channel :topic
+		if len(parts) >= 4 && isChannel(parts[3]) {
+			return strings.TrimPrefix(parts[3], ":")
+		}
+	case "353":
+		// :server 353 nick = #channel :nicks  — parts[4] starts with "= #channel" or "@ #channel"
+		if len(parts) >= 5 {
+			p := strings.TrimPrefix(parts[4], ":")
+			fields := strings.Fields(p)
+			if len(fields) >= 2 && isChannel(fields[1]) {
+				return fields[1]
+			}
+			if len(fields) >= 1 && isChannel(fields[0]) {
+				return fields[0]
+			}
+		}
+	}
+	return ""
 }
 
 // handleNamesReply processes 353 (RPL_NAMREPLY) and 366 (RPL_ENDOFNAMES) numerics.

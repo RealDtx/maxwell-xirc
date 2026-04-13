@@ -3,6 +3,7 @@ package irc
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/maxwell-xirc/xirc/db"
 )
@@ -44,12 +45,15 @@ func (m *mockStore) UpdateDownload(d *db.Download) error        { return nil }
 func (m *mockStore) GetSearchResults(q string, sid int64, r string) ([]db.SearchResult, error) {
 	return nil, nil
 }
-func (m *mockStore) GetAllSearchResults(q string) ([]db.SearchResult, error) { return nil, nil }
+func (m *mockStore) GetAllSearchResults(q string, since *time.Time) ([]db.SearchResult, error) {
+	return nil, nil
+}
 func (m *mockStore) CreateSearchResult(r *db.SearchResult) error             { return nil }
 func (m *mockStore) GetSavedSearches() ([]db.SavedSearch, error)             { return nil, nil }
 func (m *mockStore) CreateSavedSearch(s *db.SavedSearch) error               { return nil }
 func (m *mockStore) DeleteSavedSearch(id int64) error                        { return nil }
 func (m *mockStore) GetParsePatterns() ([]db.ParsePattern, error)            { return nil, nil }
+func (m *mockStore) GetAllParsePatterns() ([]db.ParsePattern, error)         { return nil, nil }
 func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error             { return nil }
 func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error             { return nil }
 func (m *mockStore) GetPostHooks(scope string, scopeID *int64) ([]db.PostHook, error) {

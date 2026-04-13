@@ -215,3 +215,12 @@ func (m *Manager) SendRaw(serverID int64, raw string) error {
 	conn.SendRaw(raw)
 	return nil
 }
+
+func (m *Manager) JoinChannel(serverID int64, channel, key string) error {
+	conn := m.GetConnection(serverID)
+	if conn == nil {
+		return fmt.Errorf("server %d not found", serverID)
+	}
+	conn.JoinChannel(channel, key)
+	return nil
+}

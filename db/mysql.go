@@ -429,11 +429,20 @@ func (s *MySQLStore) GetSearchResults(query string, serverID int64, channel stri
 	return results, rows.Err()
 }
 
-func (s *MySQLStore) GetAllSearchResults(query string) ([]SearchResult, error) {
-	rows, err := s.db.Query(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? ORDER BY created_at DESC",
-		query,
-	)
+func (s *MySQLStore) GetAllSearchResults(query string, since *time.Time) ([]SearchResult, error) {
+	var rows *sql.Rows
+	var err error
+	if since != nil {
+		rows, err = s.db.Query(
+			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND created_at > ? ORDER BY created_at DESC",
+			query, *since,
+		)
+	} else {
+		rows, err = s.db.Query(
+			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? ORDER BY created_at DESC",
+			query,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -512,6 +521,28 @@ func (s *MySQLStore) DeleteSavedSearch(id int64) error {
 func (s *MySQLStore) GetParsePatterns() ([]ParsePattern, error) {
 	rows, err := s.db.Query(
 		"SELECT id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled FROM parse_patterns WHERE enabled=1 AND auto_disabled=0 ORDER BY priority DESC",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	patterns := []ParsePattern{}
+	for rows.Next() {
+		var p ParsePattern
+		if err := rows.Scan(&p.ID, &p.Name, &p.Regex, &p.FieldMapping, &p.Priority,
+			&p.Builtin, &p.Enabled, &p.MatchCount, &p.FailCount, &p.LastMatchedAt,
+			&p.AutoDisabled); err != nil {
+			return nil, err
+		}
+		patterns = append(patterns, p)
+	}
+	return patterns, rows.Err()
+}
+
+func (s *MySQLStore) GetAllParsePatterns() ([]ParsePattern, error) {
+	rows, err := s.db.Query(
+		"SELECT id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled FROM parse_patterns ORDER BY priority DESC",
 	)
 	if err != nil {
 		return nil, err

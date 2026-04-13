@@ -446,21 +446,25 @@ func TestSQLiteStore_GetAllSearchResults(t *testing.T) {
 		t.Fatalf("CreateServer failed: %v", err)
 	}
 
-	sr1 := &SearchResult{ServerID: srv.ID, Channel: "#a", BotNick: "b1", RawLine: "r1", SearchQuery: "linux", Parsed: false}
+	sr1 := &SearchResult{ServerID: srv.ID, Channel: "#a", BotNick: "b1", RawLine: "r1", SearchQuery: "linux", Parsed: true}
 	sr2 := &SearchResult{ServerID: srv.ID, Channel: "#b", BotNick: "b2", RawLine: "r2", SearchQuery: "linux", Parsed: true}
+	sr3 := &SearchResult{ServerID: srv.ID, Channel: "#c", BotNick: "b3", RawLine: "r3", SearchQuery: "linux", Parsed: false}
 	if err := store.CreateSearchResult(sr1); err != nil {
 		t.Fatalf("CreateSearchResult sr1 failed: %v", err)
 	}
 	if err := store.CreateSearchResult(sr2); err != nil {
 		t.Fatalf("CreateSearchResult sr2 failed: %v", err)
 	}
+	if err := store.CreateSearchResult(sr3); err != nil {
+		t.Fatalf("CreateSearchResult sr3 failed: %v", err)
+	}
 
-	results, err := store.GetAllSearchResults("linux")
+	results, err := store.GetAllSearchResults("linux", nil)
 	if err != nil {
 		t.Fatalf("GetAllSearchResults failed: %v", err)
 	}
 	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
+		t.Fatalf("expected 2 parsed results, got %d", len(results))
 	}
 }
 

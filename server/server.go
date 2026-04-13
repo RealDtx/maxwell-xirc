@@ -50,6 +50,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/irc/status", s.handleIRCStatus)
 	s.mux.HandleFunc("/api/irc/connect", s.handleIRCConnect)
 	s.mux.HandleFunc("/api/irc/disconnect", s.handleIRCDisconnect)
+	s.mux.HandleFunc("/api/irc/join", s.handleIRCJoin)
 	s.mux.HandleFunc("/api/irc/message", s.handleIRCSendMessage)
 	s.mux.HandleFunc("/api/irc/raw", s.handleIRCSendRaw)
 	s.mux.HandleFunc("/api/irc/", s.handleIRCDispatch) // must be last — prefix match for parameterised routes
@@ -57,6 +58,7 @@ func (s *Server) routes() {
 	// Search endpoints
 	s.mux.HandleFunc("/api/search/results", s.handleGetSearchResults)
 	s.mux.HandleFunc("/api/search/start", s.handleStartSearch)
+	s.mux.HandleFunc("/api/search/stop", s.handleStopSearch)
 	s.mux.HandleFunc("/api/search/saved", s.handleSavedSearches)
 	s.mux.HandleFunc("/api/search/saved/", s.handleSavedSearchByID)
 	s.mux.HandleFunc("/api/search/patterns", s.handleParsePatterns)

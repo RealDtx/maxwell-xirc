@@ -1,6 +1,8 @@
 package irc
 
-import "sync"
+import (
+	"sync"
+)
 
 type EventType string
 
@@ -23,11 +25,12 @@ type ErrorEvent struct {
 }
 
 type Event struct {
-	Type     EventType   `json:"type"`
-	ServerID int64       `json:"server_id"`
-	Channel  string      `json:"channel,omitempty"`
-	Nick     string      `json:"nick,omitempty"`
-	Data     interface{} `json:"data"`
+	Type      EventType   `json:"type"`
+	ServerID  int64       `json:"server_id"`
+	Channel   string      `json:"channel,omitempty"`
+	Nick      string      `json:"nick,omitempty"`
+	Timestamp string      `json:"timestamp"` // RFC3339Nano
+	Data      interface{} `json:"data"`
 }
 
 type EventBus struct {

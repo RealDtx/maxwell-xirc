@@ -8,6 +8,27 @@ import (
 	"github.com/maxwell-xirc/xirc/db"
 )
 
+type testIRCClient struct {
+	onMessage    func(nick, target, message string)
+	onNotice     func(nick, target, message string)
+	onConnect    func()
+	onDisconnect func()
+	onRaw        func(line string)
+}
+
+func (c *testIRCClient) Connect() error                               { return nil }
+func (c *testIRCClient) Close()                                       {}
+func (c *testIRCClient) Join(channel, key string)                     {}
+func (c *testIRCClient) Part(channel string)                          {}
+func (c *testIRCClient) Privmsg(target, message string)               {}
+func (c *testIRCClient) Nick() string                                 { return "testbot" }
+func (c *testIRCClient) OnMessage(fn func(nick, target, message string)) { c.onMessage = fn }
+func (c *testIRCClient) OnNotice(fn func(nick, target, message string))  { c.onNotice = fn }
+func (c *testIRCClient) OnConnect(fn func())                          { c.onConnect = fn }
+func (c *testIRCClient) OnDisconnect(fn func())                       { c.onDisconnect = fn }
+func (c *testIRCClient) OnRaw(fn func(line string))                   { c.onRaw = fn }
+func (c *testIRCClient) SendLine(line string)                         {}
+
 func TestNewConnection_SetsFields(t *testing.T) {
 	bus := NewEventBus()
 	srv := &db.Server{
@@ -207,6 +228,84 @@ func TestHandleRawLine_DoesNotPublishServerPrefixedPongLine(t *testing.T) {
 		t.Errorf("expected no event for server-prefixed PONG line, got %+v", ev)
 	case <-time.After(100 * time.Millisecond):
 		// correct: nothing published
+	}
+}
+
+func TestHandleRawLine_DoesNotPublishUserPrivmsgRawLine(t *testing.T) {
+	bus := NewEventBus()
+	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
+	conn := NewConnection(srv, []db.Realm{}, bus)
+
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	conn.handleRawLine(":alice!u@h PRIVMSG #room :hello")
+
+	select {
+	case ev := <-ch:
+		t.Errorf("expected no raw publish for user PRIVMSG line, got %+v", ev)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestHandleRawLine_DoesNotPublishUserNoticeRawLine(t *testing.T) {
+	bus := NewEventBus()
+	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
+	conn := NewConnection(srv, []db.Realm{}, bus)
+
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	conn.handleRawLine(":alice!u@h NOTICE #room :notice")
+
+	select {
+	case ev := <-ch:
+		t.Errorf("expected no raw publish for user NOTICE line, got %+v", ev)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestApplyHandlers_OnMessageRoutesDMToSenderNick(t *testing.T) {
+	bus := NewEventBus()
+	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "testbot", Enabled: true}
+	conn := NewConnection(srv, []db.Realm{}, bus)
+	client := &testIRCClient{}
+	conn.applyHandlers(client)
+
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	client.onMessage("alice", "testbot", "hello")
+
+	select {
+	case ev := <-ch:
+		if ev.Channel != "alice" {
+			t.Fatalf("expected DM channel to be sender nick, got %q", ev.Channel)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for OnMessage event")
+	}
+}
+
+func TestApplyHandlers_OnNoticeRoutesDMToSenderNick(t *testing.T) {
+	bus := NewEventBus()
+	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.com", Port: 6667, Nickname: "testbot", Enabled: true}
+	conn := NewConnection(srv, []db.Realm{}, bus)
+	client := &testIRCClient{}
+	conn.applyHandlers(client)
+
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	client.onNotice("alice", "testbot", "hello")
+
+	select {
+	case ev := <-ch:
+		if ev.Channel != "alice" {
+			t.Fatalf("expected DM notice channel to be sender nick, got %q", ev.Channel)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for OnNotice event")
 	}
 }
 

@@ -1,5 +1,7 @@
 package db
 
+import "time"
+
 type Store interface {
 	// Lifecycle
 	Close() error
@@ -32,7 +34,7 @@ type Store interface {
 
 	// Search Results
 	GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error)
-	GetAllSearchResults(query string) ([]SearchResult, error)
+	GetAllSearchResults(query string, since *time.Time) ([]SearchResult, error)
 	CreateSearchResult(r *SearchResult) error
 
 	// Saved Searches
@@ -42,6 +44,7 @@ type Store interface {
 
 	// Parse Patterns
 	GetParsePatterns() ([]ParsePattern, error)
+	GetAllParsePatterns() ([]ParsePattern, error)
 	UpdateParsePattern(p *ParsePattern) error
 	CreateParsePattern(p *ParsePattern) error
 

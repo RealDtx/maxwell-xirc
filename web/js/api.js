@@ -41,6 +41,7 @@ const api = {
     getIRCStatus()                    { return this.get('/irc/status'); },
     connectServer(serverId)           { return this.post('/irc/connect', { server_id: serverId }); },
     disconnectServer(serverId)        { return this.post('/irc/disconnect', { server_id: serverId }); },
+    joinChannel(serverId, channel, key='') { return this.post('/irc/join', { server_id: serverId, channel, key }); },
     sendMessage(serverId, target, msg){ return this.post('/irc/message', { server_id: serverId, target, message: msg }); },
     sendRaw(serverId, cmd)            { return this.post('/irc/raw', { server_id: serverId, command: cmd }); },
     getIRCMessages(serverId, channel, before, limit) {
@@ -57,11 +58,16 @@ const api = {
     startSearch(serverId, channel, query) {
         return this.post('/search/start', { server_id: serverId, channel, query });
     },
+    stopSearch(serverId, channel) {
+        return this.post('/search/stop', { server_id: serverId, channel });
+    },
     getSearchResults(query, serverId, channel) {
         return this.get(`/search/results?query=${encodeURIComponent(query)}&server_id=${serverId}&channel=${encodeURIComponent(channel)}`);
     },
-    getAllSearchResults(query) {
-        return this.get(`/search/results?query=${encodeURIComponent(query)}`);
+    getAllSearchResults(query, since) {
+        let url = `/search/results?query=${encodeURIComponent(query)}`;
+        if (since != null) url += `&since=${since}`;
+        return this.get(url);
     },
     getSavedSearches()        { return this.get('/search/saved'); },
     createSavedSearch(s)      { return this.post('/search/saved', s); },

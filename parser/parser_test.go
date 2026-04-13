@@ -90,7 +90,10 @@ func TestParser_ProcessesSearchResults(t *testing.T) {
 	}
 }
 
-func TestParser_UnparsedResult_StoredAsRaw(t *testing.T) {
+// TestParser_UnparsedResult_NotStored verifies that messages that don't match any
+// parse pattern are NOT stored as search results. This prevents other IRC users'
+// regular chat messages from contaminating search results.
+func TestParser_UnparsedResult_NotStored(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
@@ -110,26 +113,18 @@ func TestParser_UnparsedResult_StoredAsRaw(t *testing.T) {
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
 		Channel:  "#test",
-		Nick:     "weird_bot",
+		Nick:     "someuser",
 		Data: map[string]string{
 			"type":    "privmsg",
-			"message": "~~~ pack 5 ~~~ 1.4G ~~~ Some.Movie.mkv ~~~",
+			"message": "!gets some.file.mkv",
 		},
 	})
 
 	time.Sleep(200 * time.Millisecond)
 
 	results, _ := store.GetSearchResults("stuff", srv.ID, "#test")
-	if len(results) == 0 {
-		t.Fatal("expected at least 1 result")
-	}
-
-	r := results[0]
-	if r.Parsed {
-		t.Error("expected result to be unparsed")
-	}
-	if r.RawLine != "~~~ pack 5 ~~~ 1.4G ~~~ Some.Movie.mkv ~~~" {
-		t.Errorf("expected raw line preserved, got %s", r.RawLine)
+	if len(results) != 0 {
+		t.Fatalf("expected no results for unmatched message, got %d", len(results))
 	}
 }
 

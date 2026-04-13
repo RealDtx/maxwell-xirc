@@ -265,7 +265,7 @@ func (s *SQLiteStore) UpdateDownload(dl *Download) error {
 
 func (s *SQLiteStore) GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error) {
 	rows, err := s.db.Query(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND server_id=? AND channel=? ORDER BY created_at DESC",
+		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND server_id=? AND channel=? AND parsed=1 ORDER BY created_at DESC",
 		query, serverID, channel,
 	)
 	if err != nil {
@@ -286,11 +286,20 @@ func (s *SQLiteStore) GetSearchResults(query string, serverID int64, channel str
 	return results, rows.Err()
 }
 
-func (s *SQLiteStore) GetAllSearchResults(query string) ([]SearchResult, error) {
-	rows, err := s.db.Query(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? ORDER BY created_at DESC",
-		query,
-	)
+func (s *SQLiteStore) GetAllSearchResults(query string, since *time.Time) ([]SearchResult, error) {
+	var rows *sql.Rows
+	var err error
+	if since != nil {
+		rows, err = s.db.Query(
+			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 AND created_at > ? ORDER BY created_at DESC",
+			query, since.UTC().Format(time.RFC3339Nano),
+		)
+	} else {
+		rows, err = s.db.Query(
+			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 ORDER BY created_at DESC",
+			query,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -310,12 +319,13 @@ func (s *SQLiteStore) GetAllSearchResults(query string) ([]SearchResult, error) 
 }
 
 func (s *SQLiteStore) CreateSearchResult(r *SearchResult) error {
-	now := time.Now()
+	now := time.Now().UTC()
+	nowStr := now.Format(time.RFC3339Nano)
 	result, err := s.db.Exec(
 		`INSERT INTO search_results (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ServerID, r.Channel, r.BotNick, r.PackNumber, r.Filename, r.Filesize,
-		r.DownloadsCount, r.RawLine, r.SearchQuery, r.Parsed, now,
+		r.DownloadsCount, r.RawLine, r.SearchQuery, r.Parsed, nowStr,
 	)
 	if err != nil {
 		return err
@@ -369,6 +379,28 @@ func (s *SQLiteStore) DeleteSavedSearch(id int64) error {
 func (s *SQLiteStore) GetParsePatterns() ([]ParsePattern, error) {
 	rows, err := s.db.Query(
 		"SELECT id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled FROM parse_patterns WHERE enabled=1 AND auto_disabled=0 ORDER BY priority DESC",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	patterns := []ParsePattern{}
+	for rows.Next() {
+		var p ParsePattern
+		if err := rows.Scan(&p.ID, &p.Name, &p.Regex, &p.FieldMapping, &p.Priority,
+			&p.Builtin, &p.Enabled, &p.MatchCount, &p.FailCount, &p.LastMatchedAt,
+			&p.AutoDisabled); err != nil {
+			return nil, err
+		}
+		patterns = append(patterns, p)
+	}
+	return patterns, rows.Err()
+}
+
+func (s *SQLiteStore) GetAllParsePatterns() ([]ParsePattern, error) {
+	rows, err := s.db.Query(
+		"SELECT id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled FROM parse_patterns ORDER BY priority DESC",
 	)
 	if err != nil {
 		return nil, err

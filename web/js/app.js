@@ -185,7 +185,9 @@ document.addEventListener('alpine:init', () => {
                 const msgs = await api.getIRCMessages(serverId, channelName, null, 200);
                 if (Array.isArray(msgs)) {
                     this.ircMessages = Object.assign({}, this.ircMessages, {
-                        [key]: msgs.map(m => ({ nick: m.nick, message: m.text || m.message || '', timestamp: m.timestamp }))
+                        [key]: msgs
+                            .map(m => ({ nick: m.nick, message: m.text || m.message || '', timestamp: m.timestamp, msg_type: m.msg_type || 'privmsg' }))
+                            .filter(m => !(m.msg_type === 'raw' && formatRawLine(m.message) === ''))
                     });
                     this._msgVersion++;
                 }
@@ -202,7 +204,9 @@ document.addEventListener('alpine:init', () => {
             try {
                 const msgs = await api.getIRCMessages(serverId, channelName, oldest, 200);
                 if (msgs && msgs.length > 0) {
-                    const normalized = msgs.map(m => ({ nick: m.nick, message: m.text || m.message || '', timestamp: m.timestamp }));
+                    const normalized = msgs
+                        .map(m => ({ nick: m.nick, message: m.text || m.message || '', timestamp: m.timestamp, msg_type: m.msg_type || 'privmsg' }))
+                        .filter(m => !(m.msg_type === 'raw' && formatRawLine(m.message) === ''));
                     this.ircMessages = Object.assign({}, this.ircMessages, {
                         [key]: normalized.concat(existing)
                     });
@@ -364,6 +368,21 @@ document.addEventListener('alpine:init', () => {
 
         selectRealm(serverId, channelName) {
             this.selectChannel(serverId, channelName);
+            const realm = this._realmConfigs[this.channelKey(serverId, channelName)];
+            api.joinChannel(serverId, channelName)
+                .then(() => setTimeout(() => {
+                    this.loadChannelMessages(serverId, channelName);
+                    this.loadUserList(serverId, channelName);
+                }, 1500))
+                .catch(console.error);
+            if (realm && realm.download_channel && realm.download_channel !== channelName) {
+                api.joinChannel(serverId, realm.download_channel)
+                    .then(() => setTimeout(() => {
+                        this.loadChannelMessages(serverId, realm.download_channel);
+                        this.loadUserList(serverId, realm.download_channel);
+                    }, 1500))
+                    .catch(console.error);
+            }
         },
 
         // Send message to a channel with slash command support
@@ -392,6 +411,19 @@ document.addEventListener('alpine:init', () => {
 
         // --- IRC actions ---
 
+        // Add a message to the local channel buffer (client-side echo for sent messages).
+        _localEcho(serverId, channel, nick, text) {
+            const key = this.channelKey(serverId, channel);
+            const existing = this.ircMessages[key] || [];
+            const msg = { nick, message: text, timestamp: new Date().toISOString(), msg_type: 'privmsg' };
+            this.ircMessages = Object.assign({}, this.ircMessages, { [key]: existing.concat([msg]) });
+            this._msgVersion++;
+            setTimeout(() => {
+                const el = document.querySelector('[x-ref="ircLog"]');
+                if (el) el.scrollTop = el.scrollHeight;
+            }, 0);
+        },
+
         async sendIrc() {
             const text = this.ircInput.trim();
             if (!text || !this.activeServer) return;
@@ -400,6 +432,22 @@ document.addEventListener('alpine:init', () => {
                 await api.sendRaw(this.activeServer, text.slice(1));
             } else {
                 if (!this.activeChannel) return;
+                // Intercept search command (e.g. "!s query")
+                const realmCfg = this._realmConfigs[this.channelKey(this.activeServer, this.activeChannel)];
+                const searchCmd = (realmCfg && realmCfg.search_command) ? realmCfg.search_command : null;
+                if (searchCmd && text.startsWith(searchCmd + ' ')) {
+                    const query = text.slice(searchCmd.length + 1).trim();
+                    if (query) {
+                        const srv = this.servers.find(function(s) { return s.id === this.activeServer; }.bind(this));
+                        this._localEcho(this.activeServer, this.activeChannel, (srv && srv.nickname) || 'me', text);
+                        this.searchQuery = query;
+                        this.setActiveTab(this.channelKey(this.activeServer, this.activeChannel), 'search');
+                        this.runGlobalSearch();
+                        return;
+                    }
+                }
+                const srv = this.servers.find(function(s) { return s.id === this.activeServer; }.bind(this));
+                this._localEcho(this.activeServer, this.activeChannel, (srv && srv.nickname) || 'me', text);
                 await api.sendMessage(this.activeServer, this.activeChannel, text);
             }
         },
@@ -465,9 +513,10 @@ document.addEventListener('alpine:init', () => {
             const token = ++this.searchToken;
             this.searchRunning = true;
             this.searchResults = [];
+            const searchStarted = Date.now();
+            const targets = [];
             try {
                 // Fire search on all matching channels
-                const targets = [];
                 for (var i = 0; i < this.servers.length; i++) {
                     var srv = this.servers[i];
                     if (this.globalSearchServerId && srv.id !== parseInt(this.globalSearchServerId)) continue;
@@ -480,11 +529,11 @@ document.addEventListener('alpine:init', () => {
                 for (var k = 0; k < targets.length; k++) {
                     api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).catch(function(){});
                 }
-                // Poll for aggregated results
+                // Poll for aggregated results — only results created after this search started
                 for (var attempt = 0; attempt < 8; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     if (token !== this.searchToken) return;
-                    var res = await api.getAllSearchResults(this.searchQuery);
+                    var res = await api.getAllSearchResults(this.searchQuery, searchStarted);
                     this.searchResults = Array.isArray(res) ? res : [];
                     if (this.searchResults.length > 0) break;
                 }
@@ -492,6 +541,10 @@ document.addEventListener('alpine:init', () => {
                 console.error('global search error', e);
             } finally {
                 if (token === this.searchToken) this.searchRunning = false;
+                // Stop all sessions so stale bot messages don't contaminate future searches
+                for (var t = 0; t < targets.length; t++) {
+                    api.stopSearch(targets[t].server_id, targets[t].channel).catch(function(){});
+                }
             }
         },
 
@@ -649,10 +702,15 @@ document.addEventListener('alpine:init', () => {
                 if (data.channel && data.channel !== '') {
                     const key = this.channelKey(data.server_id, data.channel);
                     const existing = this.ircMessages[key] || [];
+                    const msgText = data.message || (data.data && data.data.message) || '';
+                    const msgType = (data.data && data.data.type) || 'privmsg';
+                    // Skip raw lines that produce no visible output (NAMES list, end of NAMES, topic-setter timestamp)
+                    if (msgType === 'raw' && formatRawLine(msgText) === '') return;
                     const newMsg = {
                         nick: data.nick,
-                        message: data.message || (data.data && data.data.message) || '',
+                        message: msgText,
                         timestamp: data.timestamp,
+                        msg_type: msgType,
                     };
                     let msgs = existing.concat([newMsg]);
                     if (msgs.length > 500) msgs = msgs.slice(msgs.length - 500);
@@ -665,6 +723,16 @@ document.addEventListener('alpine:init', () => {
                             if (el) el.scrollTop = el.scrollHeight;
                         }, 0);
                     }
+                    // Auto-scroll download pane if this is the download channel
+                    if (data.server_id === this.activeServer && this.activeChannel) {
+                        const dlChan = this._channelConfigs[this.channelKey(this.activeServer, this.activeChannel)];
+                        if (dlChan && dlChan !== this.activeChannel && data.channel === dlChan) {
+                            setTimeout(() => {
+                                const el = document.querySelector('[x-ref="ircLogDownload"]');
+                                if (el) el.scrollTop = el.scrollHeight;
+                            }, 0);
+                        }
+                    }
                 } else {
                     // Server-level message (no channel): buffer in serverMessages only
                     const sid = data.server_id;
@@ -673,6 +741,7 @@ document.addEventListener('alpine:init', () => {
                         nick: data.nick,
                         message: data.message || (data.data && data.data.message) || '',
                         timestamp: data.timestamp,
+                        msg_type: (data.data && data.data.type) || 'raw',
                     };
                     let msgs = existing.concat([newMsg]);
                     if (msgs.length > 500) msgs = msgs.slice(msgs.length - 500);

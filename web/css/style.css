@@ -435,6 +435,7 @@ tr:hover { background: rgba(255,255,255,0.02); }
 
 /* IRC message highlight (selected user) */
 .msg-highlight { background: rgba(255, 209, 102, 0.12); }
+.msg-system { color: #888; font-style: italic; }
 
 /* IRC log pane (flex child) */
 .irc-log-pane { background: var(--bg-primary); }

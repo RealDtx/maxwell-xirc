@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +11,14 @@ import (
 	"github.com/maxwell-xirc/xirc/db"
 	"github.com/maxwell-xirc/xirc/irc"
 )
+
+// ircFormattingRe matches IRC color/formatting control codes.
+var ircFormattingRe = regexp.MustCompile(`\x03(?:[0-9]{1,2}(?:,[0-9]{1,2})?)?|[\x02\x0f\x16\x1d\x1e\x1f]`)
+
+// stripIRCFormatting removes IRC color and formatting control codes from a string.
+func stripIRCFormatting(s string) string {
+	return ircFormattingRe.ReplaceAllString(s, "")
+}
 
 type searchSession struct {
 	ServerID int64
@@ -112,7 +121,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	}
 
 	msgType := data["type"]
-	message := stripCTCP(data["message"])
+	message := stripIRCFormatting(stripCTCP(data["message"]))
 
 	// Only process privmsg and notice
 	if msgType != "privmsg" && msgType != "notice" {
@@ -125,8 +134,28 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	session, hasSession := p.activeSessions[key]
 	p.mu.RUnlock()
 
+	wasDM := false
 	if !hasSession {
-		return
+		// DMs: ev.Channel is the sender's nick (not a channel).
+		// Bots often reply to !s commands via PRIVMSG to the user's nick.
+		// Find any active session on this server.
+		isDM := len(ev.Channel) == 0 || (ev.Channel[0] != '#' && ev.Channel[0] != '&' && ev.Channel[0] != '!' && ev.Channel[0] != '+')
+		if isDM {
+			prefix := fmt.Sprintf("%d:", ev.ServerID)
+			p.mu.RLock()
+			for k, s := range p.activeSessions {
+				if strings.HasPrefix(k, prefix) {
+					session = s
+					hasSession = true
+					wasDM = true
+					break
+				}
+			}
+			p.mu.RUnlock()
+		}
+		if !hasSession {
+			return
+		}
 	}
 
 	// Load patterns
@@ -135,7 +164,6 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		log.Printf("failed to load parse patterns: %v", err)
 		return
 	}
-
 	// Check bot-pattern cache first
 	p.mu.RLock()
 	cachedPatternID := p.botPatternCache[ev.Nick]
@@ -167,10 +195,11 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		}
 	}
 
-	// Build search result
+	// Build search result — use session.Channel so DM results are stored under the
+	// searched channel, not the bot's nick.
 	sr := &db.SearchResult{
 		ServerID:    ev.ServerID,
-		Channel:     ev.Channel,
+		Channel:     session.Channel,
 		BotNick:     ev.Nick,
 		RawLine:     message,
 		SearchQuery: session.Query,
@@ -190,11 +219,19 @@ func (p *Parser) handleMessage(ev irc.Event) {
 
 		// Update pattern match count
 		p.updatePatternStats(matchedPatternID, true)
-	} else {
-		// Update fail counts for all patterns
+	} else if wasDM {
+		// Only track failures for DM messages — those are actual (potential) bot responses.
+		// Regular channel messages that don't match are not bot output and must not
+		// degrade pattern stats.
 		for _, pat := range patterns {
 			p.updatePatternStats(pat.ID, false)
 		}
+	}
+
+	// Only store and publish if the line actually matched a parse pattern.
+	// Unmatched lines are regular user chat — not valid search results.
+	if result == nil {
+		return
 	}
 
 	// Store result

@@ -31,3 +31,41 @@ function formatDate(isoString) {
     const d = new Date(isoString);
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
 }
+
+// Format a raw IRC line into a human-readable system message.
+// Strips the :prefix and converts common commands to plain text.
+function formatRawLine(line) {
+    if (!line) return '';
+    // Strip leading :
+    const parts = line.replace(/^\:/, '').split(' ');
+    if (parts.length < 2) return line;
+
+    // Extract nick from prefix (nick!user@host)
+    const prefix = parts[0];
+    const nick = prefix.includes('!') ? prefix.split('!')[0] : prefix;
+    const cmd = parts[1] ? parts[1].toUpperCase() : '';
+
+    // Trailing is the last colon-prefixed parameter
+    const trailingIdx = parts.findIndex((p, i) => i >= 2 && p.startsWith(':'));
+    const trailing = trailingIdx >= 0 ? parts.slice(trailingIdx).join(' ').replace(/^\:/, '') : '';
+
+    switch (cmd) {
+        case 'JOIN':   return `* ${nick} has joined`;
+        case 'PART':   return `* ${nick} has left${trailing ? ' (' + trailing + ')' : ''}`;
+        case 'QUIT':   return `* ${nick} has quit${trailing ? ' (' + trailing + ')' : ''}`;
+        case 'KICK': {
+            const target = parts[3] || '';
+            return `* ${nick} kicked ${target}${trailing ? ' (' + trailing + ')' : ''}`;
+        }
+        case 'MODE': {
+            const modeStr = parts.slice(3).join(' ').replace(/^\:/, '');
+            return `* ${nick} sets mode ${modeStr}`;
+        }
+        case 'TOPIC': return `* ${nick} changed topic: ${trailing}`;
+        case '332':   return `* Topic: ${trailing}`;
+        case '333':   return '';  // topic setter timestamp — skip
+        case '353':   return '';  // NAMES list — skip (too noisy)
+        case '366':   return '';  // End of NAMES — skip
+        default:      return trailing || line;
+    }
+}

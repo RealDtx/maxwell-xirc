@@ -267,18 +267,19 @@
                             <div style="display:flex; flex:1; overflow:hidden;">
                                 <div style="flex:1; overflow-y:auto;" class="irc-messages irc-log-pane" x-ref="ircLog">
                                     <template x-for="(msg, i) in currentChannelMessages()" :key="i">
-                                        <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                        <div class="irc-message"
+                                             :class="msg.msg_type === 'raw' ? 'msg-system' : (selectedUser && msg.nick === selectedUser ? 'msg-highlight' : '')">
                                             <span class="time" x-text="formatTime(msg.timestamp)"></span>
-                                            <span class="nick" x-text="msg.nick + ':'"></span>
-                                            <span x-text="msg.message || msg.text || ''"></span>
+                                            <template x-if="msg.msg_type !== 'raw'">
+                                                <span class="nick" x-text="msg.nick + ':'"></span>
+                                            </template>
+                                            <span x-text="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : (msg.message || msg.text || '')"></span>
                                         </div>
                                     </template>
                                     <template x-if="currentChannelMessages().length === 0">
                                         <div style="padding:16px; color:var(--text-muted); font-size:12px;">
                                             No messages yet — waiting for activity on
                                             <span x-text="activeChannel" style="color:var(--text-primary);"></span>
-                                            <span style="display:block; margin-top:4px; font-size:11px; opacity:0.6;"
-                                                  x-text="'key: ' + channelKey(activeServer, activeChannel) + ' · stored keys: ' + Object.keys(ircMessages).join(', ')"></span>
                                         </div>
                                     </template>
                                 </div>
@@ -403,10 +404,13 @@
                             <div style="display:flex; flex:1; overflow:hidden;">
                                 <div style="flex:1; overflow-y:auto;" class="irc-messages irc-log-pane" x-ref="ircLogDownload">
                                     <template x-for="(msg, i) in currentDownloadChannelMessages()" :key="i">
-                                        <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                        <div class="irc-message"
+                                             :class="msg.msg_type === 'raw' ? 'msg-system' : (selectedUser && msg.nick === selectedUser ? 'msg-highlight' : '')">
                                             <span class="time" x-text="formatTime(msg.timestamp)"></span>
-                                            <span class="nick" x-text="msg.nick + ':'"></span>
-                                            <span x-text="msg.message || msg.text || ''"></span>
+                                            <template x-if="msg.msg_type !== 'raw'">
+                                                <span class="nick" x-text="msg.nick + ':'"></span>
+                                            </template>
+                                            <span x-text="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : (msg.message || msg.text || '')"></span>
                                         </div>
                                     </template>
                                 </div>
@@ -535,10 +539,13 @@
                                     <template x-if="currentChannelHasDownloadChannel()">
                                         <div>
                                             <template x-for="(msg, i) in currentDownloadChannelMessages()" :key="i">
-                                                <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                                <div class="irc-message"
+                                                     :class="msg.msg_type === 'raw' ? 'msg-system' : (selectedUser && msg.nick === selectedUser ? 'msg-highlight' : '')">
                                                     <span class="time" x-text="formatTime(msg.timestamp)"></span>
-                                                    <span class="nick" x-text="msg.nick + ':'"></span>
-                                                    <span x-text="msg.message || msg.text || ''"></span>
+                                                    <template x-if="msg.msg_type !== 'raw'">
+                                                        <span class="nick" x-text="msg.nick + ':'"></span>
+                                                    </template>
+                                                    <span x-text="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : (msg.message || msg.text || '')"></span>
                                                 </div>
                                             </template>
                                         </div>
@@ -546,10 +553,13 @@
                                     <template x-if="!currentChannelHasDownloadChannel()">
                                         <div>
                                             <template x-for="(msg, i) in currentChannelMessages()" :key="i">
-                                                <div class="irc-message" :class="selectedUser && msg.nick === selectedUser ? 'msg-highlight' : ''">
+                                                <div class="irc-message"
+                                                     :class="msg.msg_type === 'raw' ? 'msg-system' : (selectedUser && msg.nick === selectedUser ? 'msg-highlight' : '')">
                                                     <span class="time" x-text="formatTime(msg.timestamp)"></span>
-                                                    <span class="nick" x-text="msg.nick + ':'"></span>
-                                                    <span x-text="msg.message || msg.text || ''"></span>
+                                                    <template x-if="msg.msg_type !== 'raw'">
+                                                        <span class="nick" x-text="msg.nick + ':'"></span>
+                                                    </template>
+                                                    <span x-text="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : (msg.message || msg.text || '')"></span>
                                                 </div>
                                             </template>
                                         </div>

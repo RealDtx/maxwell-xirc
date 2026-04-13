@@ -123,3 +123,28 @@ func (s *Server) handleIRCSendRaw(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
+
+func (s *Server) handleIRCJoin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ServerID int64  `json:"server_id"`
+		Channel  string `json:"channel"`
+		Key      string `json:"key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if s.ircMgr == nil {
+		writeError(w, http.StatusInternalServerError, "IRC manager not initialized")
+		return
+	}
+	if err := s.ircMgr.JoinChannel(req.ServerID, req.Channel, req.Key); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "joining"})
+}
