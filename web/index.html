@@ -36,6 +36,10 @@
         <div class="sidebar-header" @click="setView('home')" style="cursor:pointer;">xirc</div>
 
         <div class="server-tree" x-show="appMode === 'advanced'">
+            <div style="display:flex; justify-content:flex-end; gap:6px; padding:0 8px 4px; font-size:11px; opacity:0.5;">
+                <span style="cursor:pointer;" @click="collapseAllServers()" title="Collapse all">▾ all</span>
+                <span style="cursor:pointer;" @click="expandAllServers()" title="Expand all">▸ all</span>
+            </div>
             <template x-for="server in servers" :key="server.id">
                 <div>
                     <!-- Server row: click name → server view; click chevron → expand -->

@@ -277,6 +277,14 @@ document.addEventListener('alpine:init', () => {
             this.expandedServers[serverId] = !this.expandedServers[serverId];
         },
 
+        expandAllServers() {
+            for (const srv of this.servers) this.expandedServers[srv.id] = true;
+        },
+
+        collapseAllServers() {
+            for (const srv of this.servers) this.expandedServers[srv.id] = false;
+        },
+
         isExpanded(serverId) {
             return !!this.expandedServers[serverId];
         },
