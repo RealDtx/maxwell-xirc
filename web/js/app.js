@@ -1376,7 +1376,7 @@ document.addEventListener('alpine:init', () => {
         openChannelForm(channel) {
             this.channelForm = channel
                 ? Object.assign({}, channel)
-                : { id: null, server_id: this.settingsServerId, name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true };
+                : { id: null, server_id: this.settingsServerId, name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true };
             this.showChannelForm = true;
         },
 
@@ -1420,7 +1420,7 @@ document.addEventListener('alpine:init', () => {
         openRealmForm(realm) {
             this.realmForm = realm
                 ? Object.assign({}, realm)
-                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true };
+                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true };
             this.showRealmForm = true;
         },
 
