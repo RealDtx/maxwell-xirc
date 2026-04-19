@@ -525,10 +525,12 @@ document.addEventListener('alpine:init', () => {
                 } catch(e) {
                     console.error('startSearch failed', e);
                 }
-                // Poll up to 5 times with 1s delay; stop early when results arrive.
+                // Poll until results arrive or the bot timeout elapses (max 60s).
                 var results = [];
-                for (var attempt = 0; attempt < 5; attempt++) {
+                var maxAttempts = Math.max(searchTimeout * 2, 30);
+                for (var attempt = 0; attempt < maxAttempts; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
+                    if (token !== this.searchToken) return;
                     var res = await api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
                     results = res || [];
                     if (searchBot && !this.searchBotWarning && (Date.now() - searchStarted > searchTimeout * 1000) && results.length === 0) {
@@ -602,6 +604,13 @@ document.addEventListener('alpine:init', () => {
                     for (var j = 0; j < channels.length; j++) {
                         targets.push({ server_id: srv.id, channel: channels[j] });
                     }
+                }
+                // Bail early with a helpful message when no channels are targeted.
+                if (targets.length === 0) {
+                    this.searchBotWarning = this.servers.length === 0
+                        ? 'No servers configured.'
+                        : 'No search channels configured — add a Realm with a search bot in Settings.';
+                    return;
                 }
                 // Kick off searches (ignore errors — bot may not be present on all channels)
                 for (var k = 0; k < targets.length; k++) {
@@ -785,6 +794,10 @@ document.addEventListener('alpine:init', () => {
         },
 
         clearSearchResults() {
+            this.searchToken++;
+            this.searchRunning = false;
+            this._searchSince = null;
+            this.searchBotWarning = null;
             this.searchResults = [];
         },
 
