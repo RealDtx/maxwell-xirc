@@ -32,6 +32,59 @@ function formatDate(isoString) {
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
 }
 
+function formatDateCustom(isoString, fmt) {
+    if (!isoString) return '-';
+    var d = new Date(isoString);
+    if (isNaN(d.getTime())) return '-';
+    var DD = String(d.getDate()).padStart(2, '0');
+    var MM = String(d.getMonth() + 1).padStart(2, '0');
+    var YYYY = String(d.getFullYear());
+    var HH = String(d.getHours()).padStart(2, '0');
+    var mm = String(d.getMinutes()).padStart(2, '0');
+    var SS = String(d.getSeconds()).padStart(2, '0');
+    // Replace date tokens first, then time tokens.
+    // Use intermediate placeholders to avoid double-replacement of MM.
+    return fmt
+        .replace('YYYY', YYYY)
+        .replace('DD', DD)
+        .replace(/MM/, MM)       // first MM = month
+        .replace('HH', HH)
+        .replace(/MM/, mm)       // second MM = minutes
+        .replace('SS', SS);
+}
+
+function formatRelativeTime(isoString) {
+    if (!isoString) return '-';
+    var d = new Date(isoString);
+    if (isNaN(d.getTime())) return '-';
+    var diffMs = Date.now() - d.getTime();
+    if (diffMs < 0) return 'just now';
+    var sec = Math.floor(diffMs / 1000);
+    if (sec < 60) return sec + 's ago';
+    var min = Math.floor(sec / 60);
+    if (min < 60) return min + 'm ago';
+    var hr = Math.floor(min / 60);
+    if (hr < 24) return hr + 'h ago';
+    return null; // caller should fall back to full date
+}
+
+function formatDuration(startIso, endIso) {
+    if (!startIso || !endIso) return '-';
+    var ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+    if (ms < 0 || isNaN(ms)) return '-';
+    var sec = Math.floor(ms / 1000);
+    if (sec < 60) return sec + 's';
+    var min = Math.floor(sec / 60);
+    var s = sec % 60;
+    if (min < 60) return min + 'm ' + s + 's';
+    var hr = Math.floor(min / 60);
+    var m = min % 60;
+    if (hr < 24) return hr + 'h ' + m + 'm';
+    var d = Math.floor(hr / 24);
+    var h = hr % 24;
+    return d + 'd ' + h + 'h';
+}
+
 // Format a raw IRC line into a human-readable system message.
 // Strips the :prefix and converts common commands to plain text.
 function formatRawLine(line) {
