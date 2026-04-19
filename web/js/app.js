@@ -145,6 +145,10 @@ document.addEventListener('alpine:init', () => {
 
         // Download button state tracking: "serverID:packNumber" → 'queuing'|'queued'
         _downloadingKeys: {},
+        _dlSelected: {},
+        _dlSelectAll: false,
+        _dlConfirm: null,
+        _dlConfirmTimer: null,
 
         // Setup wizard
         setupRequired: false,
@@ -1000,6 +1004,99 @@ document.addEventListener('alpine:init', () => {
         downloadProgress(dl) {
             if (!dl.total_size) return 0;
             return Math.round((dl.bytes_received / dl.total_size) * 100);
+        },
+
+        dlSpeedInfo(dl) {
+            if (dl.status === 'downloading') return dl.speed ? formatSpeed(dl.speed) : '-';
+            if (dl.status === 'completed') return dl.average_speed ? formatSpeed(dl.average_speed) : '-';
+            if (dl.status === 'failed' || dl.status === 'needs_action') {
+                var msg = dl.error_message || '';
+                return msg.length > 40 ? msg.slice(0, 37) + '...' : (msg || '-');
+            }
+            return '-';
+        },
+
+        dlTimeInfo(dl) {
+            if (dl.status === 'downloading') {
+                return dl.speed ? formatETA(Math.max(0, (dl.filesize || dl.total_size || 0) - (dl.downloaded_bytes || dl.bytes_received || 0)), dl.speed) : '-';
+            }
+            if (dl.status === 'completed') {
+                return formatDuration(dl.started_at, dl.completed_at);
+            }
+            var ts = dl.created_at;
+            var rel = formatRelativeTime(ts);
+            return rel || this.fmtDate(ts);
+        },
+
+        dlTimeTooltip(dl) {
+            var parts = [];
+            if (dl.created_at) parts.push('Added: ' + this.fmtDate(dl.created_at));
+            if (dl.started_at) parts.push('Started: ' + this.fmtDate(dl.started_at));
+            if (dl.completed_at) parts.push('Finished: ' + this.fmtDate(dl.completed_at));
+            return parts.join('\n');
+        },
+
+        dlIsClearable(dl) {
+            return dl.status === 'completed' || dl.status === 'failed' || dl.status === 'cancelled' || dl.status === 'needs_action';
+        },
+
+        toggleDlSelect(id) {
+            var sel = Object.assign({}, this._dlSelected);
+            if (sel[id]) { delete sel[id]; } else { sel[id] = true; }
+            this._dlSelected = sel;
+            this._dlSelectAll = this.filteredDownloads().filter(d => this.dlIsClearable(d)).every(d => sel[d.id]);
+        },
+
+        toggleDlSelectAll() {
+            this._dlSelectAll = !this._dlSelectAll;
+            var sel = {};
+            if (this._dlSelectAll) {
+                this.filteredDownloads().filter(d => this.dlIsClearable(d)).forEach(d => { sel[d.id] = true; });
+            }
+            this._dlSelected = sel;
+        },
+
+        dlSelectedCount() {
+            return Object.keys(this._dlSelected).length;
+        },
+
+        dlCountByStatus(status) {
+            if (status === 'failed') return this.downloads.filter(d => d.status === 'failed' || d.status === 'needs_action').length;
+            return this.downloads.filter(d => d.status === status).length;
+        },
+
+        async dlClearByStatus(status) {
+            if (this._dlConfirm !== 'status:' + status) {
+                this._dlConfirm = 'status:' + status;
+                clearTimeout(this._dlConfirmTimer);
+                this._dlConfirmTimer = setTimeout(() => { this._dlConfirm = null; }, 3000);
+                return;
+            }
+            this._dlConfirm = null;
+            try {
+                await api.clearDownloads(status);
+                if (status === 'failed') await api.clearDownloads('needs_action');
+                this._dlSelected = {};
+                await this.loadDownloads();
+            } catch (e) { console.error('clearDownloads error', e); }
+        },
+
+        async dlClearSelected() {
+            if (this._dlConfirm !== 'selected') {
+                this._dlConfirm = 'selected';
+                clearTimeout(this._dlConfirmTimer);
+                this._dlConfirmTimer = setTimeout(() => { this._dlConfirm = null; }, 3000);
+                return;
+            }
+            this._dlConfirm = null;
+            var ids = Object.keys(this._dlSelected).map(Number);
+            if (ids.length === 0) return;
+            try {
+                await api.deleteDownloads(ids);
+                this._dlSelected = {};
+                this._dlSelectAll = false;
+                await this.loadDownloads();
+            } catch (e) { console.error('deleteDownloads error', e); }
         },
 
         fmtDate(isoString) {

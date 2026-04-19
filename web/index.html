@@ -705,25 +705,52 @@
                         <div class="tab" :class="{ active: downloadFilter === 'completed' }" @click="downloadFilter = 'completed'">Completed</div>
                         <div class="tab" :class="{ active: downloadFilter === 'failed' }" @click="downloadFilter = 'failed'">Failed</div>
                     </div>
+                    <!-- Bulk actions toolbar -->
+                    <div style="display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+                        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);cursor:pointer;">
+                            <input type="checkbox" :checked="_dlSelectAll" @change="toggleDlSelectAll()"> Select All
+                        </label>
+                        <template x-if="dlCountByStatus('completed') > 0">
+                            <button class="btn btn-sm"
+                                    @click="dlClearByStatus('completed')"
+                                    x-text="_dlConfirm === 'status:completed' ? 'Confirm?' : 'Clear Completed (' + dlCountByStatus('completed') + ')'"></button>
+                        </template>
+                        <template x-if="dlCountByStatus('failed') > 0">
+                            <button class="btn btn-sm"
+                                    @click="dlClearByStatus('failed')"
+                                    x-text="_dlConfirm === 'status:failed' ? 'Confirm?' : 'Clear Failed (' + dlCountByStatus('failed') + ')'"></button>
+                        </template>
+                        <template x-if="dlSelectedCount() > 0">
+                            <button class="btn btn-sm btn-danger"
+                                    @click="dlClearSelected()"
+                                    x-text="_dlConfirm === 'selected' ? 'Confirm?' : 'Clear Selected (' + dlSelectedCount() + ')'"></button>
+                        </template>
+                    </div>
                     <!-- Downloads table -->
                     <div style="overflow-y:auto; flex:1;">
                         <template x-if="filteredDownloads().length > 0">
                             <table>
                                 <thead>
                                     <tr>
+                                        <th style="width:28px;"></th>
                                         <th>Status</th>
                                         <th>Filename</th>
                                         <th>Bot</th>
                                         <th>Size</th>
                                         <th>Progress</th>
-                                        <th>Speed</th>
-                                        <th>ETA</th>
+                                        <th>Speed / Info</th>
+                                        <th>Time</th>
                                         <th></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <template x-for="dl in filteredDownloads()" :key="dl.id">
                                         <tr>
+                                            <td>
+                                                <template x-if="dlIsClearable(dl)">
+                                                    <input type="checkbox" :checked="_dlSelected[dl.id]" @change="toggleDlSelect(dl.id)">
+                                                </template>
+                                            </td>
                                             <td>
                                                 <span
                                                     class="badge"
@@ -752,8 +779,8 @@
                                                     <span x-text="dl.status === 'completed' ? '100%' : '-'"></span>
                                                 </template>
                                             </td>
-                                            <td x-text="dl.status === 'downloading' && dl.speed ? formatSpeed(dl.speed) : '-'"></td>
-                                            <td x-text="dl.status==='downloading' ? formatETA(Math.max(0, dl.total_size - dl.bytes_received), dl.speed) : '-'"></td>
+                                            <td x-text="dlSpeedInfo(dl)"></td>
+                                            <td :title="dlTimeTooltip(dl)" x-text="dlTimeInfo(dl)"></td>
                                             <td style="white-space:nowrap;">
                                                 <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
                                                     <span>
