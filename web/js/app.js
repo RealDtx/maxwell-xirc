@@ -90,6 +90,7 @@ document.addEventListener('alpine:init', () => {
 
         // Mode
         appMode: localStorage.getItem('xirc_mode') || 'simple',
+        dateFormat: localStorage.getItem('xirc_date_format') || 'DD-MM-YYYY HH:MM:SS',
 
         // Channel configs map: channelKey -> download_channel
         _channelConfigs: {},
@@ -999,6 +1000,10 @@ document.addEventListener('alpine:init', () => {
         downloadProgress(dl) {
             if (!dl.total_size) return 0;
             return Math.round((dl.bytes_received / dl.total_size) * 100);
+        },
+
+        fmtDate(isoString) {
+            return formatDateCustom(isoString, this.dateFormat);
         },
 
         // --- WebSocket ---

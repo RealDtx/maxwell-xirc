@@ -1106,7 +1106,26 @@
                     <!-- General tab -->
                     <template x-if="settingsTab === 'general'">
                         <div style="padding-top:16px;">
-                            <p style="color:var(--text-muted); font-size:13px;">General settings coming soon.</p>
+                            <div class="settings-card" style="max-width:480px;">
+                                <h3 style="margin-bottom:12px;">Date Format</h3>
+                                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                                    <input type="text"
+                                           x-model="dateFormat"
+                                           @input="localStorage.setItem('xirc_date_format', dateFormat)"
+                                           style="flex:1;padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;font-family:monospace;">
+                                </div>
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                    <button class="btn btn-sm"
+                                            @click="dateFormat='DD-MM-YYYY HH:MM:SS'; localStorage.setItem('xirc_date_format', dateFormat)">DD-MM-YYYY</button>
+                                    <button class="btn btn-sm"
+                                            @click="dateFormat='YYYY-MM-DD HH:MM:SS'; localStorage.setItem('xirc_date_format', dateFormat)">YYYY-MM-DD</button>
+                                    <button class="btn btn-sm"
+                                            @click="dateFormat='MM/DD/YYYY HH:MM:SS'; localStorage.setItem('xirc_date_format', dateFormat)">MM/DD/YYYY</button>
+                                </div>
+                                <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
+                                    Preview: <span x-text="formatDateCustom(new Date().toISOString(), dateFormat)"></span>
+                                </p>
+                            </div>
                         </div>
                     </template>
 
