@@ -59,7 +59,6 @@ document.addEventListener('alpine:init', () => {
         _searchSince: null,
         _searchDisplayLimit: 200,
         searchBotWarning: null,
-        _searchDebug: '',
         downloads: [],
         downloadFilter: 'all',
         ircMessages: {},
@@ -519,7 +518,6 @@ document.addEventListener('alpine:init', () => {
             this.searchResults = [];
             this.selectedUser = null;
             this._searchDisplayLimit = 200;
-            this._searchDebug = 'Starting channel search...';
             const searchStarted = Date.now();
             this._searchSince = searchStarted;
             try {
@@ -529,9 +527,7 @@ document.addEventListener('alpine:init', () => {
                     var startRes = await api.startSearch(this.activeServer, this.activeChannel, this.searchQuery);
                     searchBot = startRes && startRes.search_bot;
                     searchTimeout = (startRes && startRes.search_timeout > 0) ? startRes.search_timeout : 10;
-                    this._searchDebug = 'IRC sent OK, polling for results...';
                 } catch(e) {
-                    this._searchDebug = 'startSearch FAILED: ' + (e.message || e);
                     console.error('startSearch failed', e);
                 }
                 var results = [];
@@ -539,25 +535,20 @@ document.addEventListener('alpine:init', () => {
                 for (var attempt = 0; attempt < maxAttempts; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     if (token !== this.searchToken) {
-                        this._searchDebug = 'Cancelled (token mismatch at poll #' + attempt + ')';
                         return;
                     }
                     var res = await api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
                     results = Array.isArray(res) ? res : [];
-                    this._searchDebug = 'Poll #' + (attempt+1) + '/' + maxAttempts + ': ' + results.length + ' results';
                     if (searchBot && !this.searchBotWarning && (Date.now() - searchStarted > searchTimeout * 1000) && results.length === 0) {
                         this.searchBotWarning = 'No response from ' + searchBot + ' after ' + searchTimeout + 's — check bot name in realm settings';
                     }
                     if (results.length > 0) break;
                 }
                 if (token !== this.searchToken) {
-                    this._searchDebug = 'Cancelled (token mismatch after loop)';
                     return;
                 }
                 this.searchResults = results;
-                this._searchDebug = 'Done: ' + results.length + ' results displayed';
             } catch (e) {
-                this._searchDebug = 'ERROR: ' + (e.message || e);
                 console.error('search error', e);
             } finally {
                 if (token === this.searchToken) this.searchRunning = false;
@@ -603,7 +594,6 @@ document.addEventListener('alpine:init', () => {
             this.searchResults = [];
             this.selectedUser = null;
             this._searchDisplayLimit = 200;
-            this._searchDebug = 'Starting global search...';
             const searchStarted = Date.now();
             this._searchSince = searchStarted;
             const targets = [];
@@ -622,13 +612,11 @@ document.addEventListener('alpine:init', () => {
                     }
                 }
                 if (targets.length === 0) {
-                    this._searchDebug = 'No targets found';
                     this.searchBotWarning = this.servers.length === 0
                         ? 'No servers configured.'
                         : 'No search channels configured — add a Realm with a search bot in Settings.';
                     return;
                 }
-                this._searchDebug = 'Firing ' + targets.length + ' target(s)...';
                 var startOk = 0;
                 var startFail = 0;
                 var startTotal = targets.length;
@@ -649,7 +637,6 @@ document.addEventListener('alpine:init', () => {
                 for (var attempt = 0; attempt < 60; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     if (token !== this.searchToken) {
-                        this._searchDebug = 'Cancelled (token mismatch at poll #' + attempt + ')';
                         return;
                     }
                     if (!this.searchBotWarning && startFail > 0 && startOk + startFail >= startTotal && startOk === 0) {
@@ -657,7 +644,6 @@ document.addEventListener('alpine:init', () => {
                     }
                     var res = await api.getAllSearchResults(this.searchQuery, searchStarted);
                     var count = Array.isArray(res) ? res.length : 0;
-                    this._searchDebug = 'Poll #' + (attempt+1) + '/60: ' + count + ' results (ok=' + startOk + ' fail=' + startFail + ')';
                     if (Array.isArray(res) && res.length > 0) {
                         this.searchResults = res;
                         if (res.length === lastCount) {
@@ -673,19 +659,14 @@ document.addEventListener('alpine:init', () => {
                     }
                 }
                 if (token === this.searchToken && this.searchResults.length === 0) {
-                    this._searchDebug = 'No fresh results, trying cached...';
                     var cached = await api.getAllSearchResults(this.searchQuery, null);
                     if (Array.isArray(cached) && cached.length > 0) {
                         this.searchResults = cached;
-                        this._searchDebug = 'Fallback: ' + cached.length + ' cached results';
                     } else {
-                        this._searchDebug = 'Done: 0 results (fresh + cached)';
                     }
                 } else if (token === this.searchToken) {
-                    this._searchDebug = 'Done: ' + this.searchResults.length + ' results';
                 }
             } catch (e) {
-                this._searchDebug = 'ERROR: ' + (e.message || e);
                 console.error('global search error', e);
             } finally {
                 if (token === this.searchToken) this.searchRunning = false;
@@ -836,7 +817,6 @@ document.addEventListener('alpine:init', () => {
             this.searchResults = [];
             this.searchQuery = '';
             this.selectedUser = null;
-            this._searchDebug = '';
         },
 
         teachParser(rawLine) {
