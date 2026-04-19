@@ -1584,8 +1584,8 @@ document.addEventListener('alpine:init', () => {
             try {
                 const res = await api.getServers();
                 this.servers = Array.isArray(res) ? res : [];
-                if (this.servers.length > 0) {
-                    this.expandedServers[this.servers[0].id] = true;
+                for (const srv of this.servers) {
+                    this.expandedServers[srv.id] = true;
                 }
             } catch (e) {
                 console.error('loadServers error', e);
