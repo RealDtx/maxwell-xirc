@@ -16,6 +16,10 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body x-data="appStore">
+<!-- DEBUG: search progress - REMOVE AFTER DEBUGGING -->
+<div x-show="_searchDebug" x-cloak style="position:fixed;top:0;right:0;z-index:9999;padding:4px 12px;font-size:11px;color:#0f0;background:rgba(0,0,0,0.85);border-bottom-left-radius:6px;font-family:monospace;pointer-events:none;max-width:50vw;">
+    <span x-text="_searchDebug + (selectedUser ? ' [filter:'+selectedUser+']' : '') + ' [sr:'+searchResults.length+']'"></span>
+</div>
 <div class="app">
 
     <!-- Mobile hamburger -->
