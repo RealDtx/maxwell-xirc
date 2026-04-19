@@ -72,6 +72,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/downloads/cancel", s.handleCancelDownload)
 	s.mux.HandleFunc("/api/downloads/retry", s.handleRetryDownload)
 	s.mux.HandleFunc("/api/downloads/move", s.handleMoveDownload)
+	s.mux.HandleFunc("/api/downloads/delete", s.handleDeleteDownloads)
+	s.mux.HandleFunc("/api/downloads/clear", s.handleClearDownloads)
 
 	// Routing rule endpoints
 	s.mux.HandleFunc("/api/routing/rules", s.handleRoutingRules)
