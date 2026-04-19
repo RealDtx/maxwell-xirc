@@ -261,14 +261,14 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <template x-for="(r, idx) in sortedResults()" :key="idx">
+                                        <template x-for="(r, idx) in displaySearchRows()" :key="idx">
                                             <tr>
-                                                <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="r.filename || '—'"></td>
-                                                <td style="white-space:nowrap;" x-text="r.filesize ? formatBytes(r.filesize) : '—'"></td>
-                                                <td x-text="r.bot_nick || '—'"></td>
-                                                <td x-text="r.pack_number || '—'"></td>
+                                                <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="r.filename || r.raw_line || '-'"></td>
+                                                <td style="white-space:nowrap;" x-text="r.size_display || '-'"></td>
+                                                <td x-text="r.bot_nick || '-'"></td>
+                                                <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
                                                 <td x-text="getServerName(r.server_id)"></td>
-                                                <td x-text="r.channel || '—'"></td>
+                                                <td x-text="r.channel || '-'"></td>
                                                 <td>
                                                     <button class="btn btn-sm"
                                                             :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
@@ -280,7 +280,7 @@
                                         </template>
                                     </tbody>
                                 </table>
-                                <template x-if="sortedResults().length >= _searchDisplayLimit">
+                                <template x-if="displaySearchRows().length >= _searchDisplayLimit">
                                     <div class="d-flex justify-content-center mt-2">
                                         <button class="btn btn-outline-secondary btn-sm" @click="loadMoreResults()">
                                             Load More
@@ -414,7 +414,7 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <template x-for="(r, i) in sortedResults()" :key="i">
+                                            <template x-for="(r, i) in displaySearchRows()" :key="i">
                                                 <tr :class="{ unparsed: !r.parsed }">
                                                     <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
                                                     <td>
@@ -427,7 +427,7 @@
                                                             >teach parser</a>
                                                         </template>
                                                     </td>
-                                                    <td x-text="r.filesize || '-'"></td>
+                                                    <td x-text="r.size_display || '-'"></td>
                                                     <td x-text="r.bot_nick || '-'"></td>
                                                     <td x-text="r.downloads_count != null ? r.downloads_count : '-'"></td>
                                                     <td>
@@ -441,7 +441,7 @@
                                             </template>
                                         </tbody>
                                     </table>
-                                    <template x-if="sortedResults().length >= _searchDisplayLimit">
+                                    <template x-if="displaySearchRows().length >= _searchDisplayLimit">
                                         <div class="d-flex justify-content-center mt-2">
                                             <button class="btn btn-outline-secondary btn-sm" @click="loadMoreResults()">
                                                 Load More
@@ -573,7 +573,7 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <template x-for="(r, i) in sortedResults()" :key="i">
+                                            <template x-for="(r, i) in displaySearchRows()" :key="i">
                                                 <tr :class="{ unparsed: !r.parsed }">
                                                     <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
                                                     <td>
@@ -586,7 +586,7 @@
                                                             >teach parser</a>
                                                         </template>
                                                     </td>
-                                                    <td x-text="r.filesize || '-'"></td>
+                                                    <td x-text="r.size_display || '-'"></td>
                                                     <td x-text="r.bot_nick || '-'"></td>
                                                     <td x-text="r.downloads_count != null ? r.downloads_count : '-'"></td>
                                                     <td>
@@ -600,7 +600,7 @@
                                             </template>
                                         </tbody>
                                     </table>
-                                    <template x-if="sortedResults().length >= _searchDisplayLimit">
+                                    <template x-if="displaySearchRows().length >= _searchDisplayLimit">
                                         <div class="d-flex justify-content-center mt-2">
                                             <button class="btn btn-outline-secondary btn-sm" @click="loadMoreResults()">
                                                 Load More

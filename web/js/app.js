@@ -677,7 +677,7 @@ document.addEventListener('alpine:init', () => {
             return this.searchSort.dir === 'asc' ? ' ▲' : ' ▼';
         },
 
-        sortedResults() {
+        displaySearchRows() {
             var col = this.searchSort.col;
             var dir = this.searchSort.dir;
             var arr = this.searchResults.slice();
@@ -701,8 +701,10 @@ document.addEventListener('alpine:init', () => {
                 }
                 return dir === 'asc' ? cmp : -cmp;
             });
-            return arr.slice(0, this._searchDisplayLimit);
+            return arr.slice(0, this._searchDisplayLimit).map(function(r) { return normalizeSearchRow(r); });
         },
+
+        sortedResults() { return this.displaySearchRows(); },
 
         loadMoreResults() {
             this._searchDisplayLimit += 200;
