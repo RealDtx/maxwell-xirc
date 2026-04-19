@@ -124,6 +124,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
