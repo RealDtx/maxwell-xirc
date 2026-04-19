@@ -43,6 +43,10 @@ func (m *mockStore) GetDownloads(status string) ([]db.Download, error) {
 func (m *mockStore) GetDownload(id int64) (*db.Download, error) { return nil, nil }
 func (m *mockStore) CreateDownload(d *db.Download) error        { return nil }
 func (m *mockStore) UpdateDownload(d *db.Download) error        { return nil }
+func (m *mockStore) DeleteDownloads(ids []int64) (int64, error) { return 0, nil }
+func (m *mockStore) DeleteDownloadsByStatus(status string) (int64, error) {
+	return 0, nil
+}
 func (m *mockStore) GetSearchResults(q string, sid int64, r string) ([]db.SearchResult, error) {
 	return nil, nil
 }

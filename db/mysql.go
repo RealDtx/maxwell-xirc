@@ -414,6 +414,40 @@ func (s *MySQLStore) UpdateDownload(dl *Download) error {
 	return err
 }
 
+func (s *MySQLStore) DeleteDownloads(ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	placeholders := ""
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+		args[i] = id
+	}
+	result, err := s.db.Exec(
+		"DELETE FROM downloads WHERE id IN ("+placeholders+") AND status IN ('completed','failed','cancelled')",
+		args...,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *MySQLStore) DeleteDownloadsByStatus(status string) (int64, error) {
+	if !terminalStatuses[status] {
+		return 0, fmt.Errorf("cannot delete downloads with active status %q", status)
+	}
+	result, err := s.db.Exec("DELETE FROM downloads WHERE status=?", status)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 // --- Search Results ---
 
 func (s *MySQLStore) GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error) {

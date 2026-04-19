@@ -20,6 +20,8 @@ import (
 // Fixed-width fractions make the lexicographic comparison numerically correct.
 const rfc3339Fixed = "2006-01-02T15:04:05.000000000Z"
 
+var terminalStatuses = map[string]bool{"completed": true, "failed": true, "cancelled": true}
+
 type SQLiteStore struct {
 	db *sql.DB
 }
@@ -272,6 +274,40 @@ func (s *SQLiteStore) UpdateDownload(dl *Download) error {
 		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, dl.CreatedAt, dl.ID,
 	)
 	return err
+}
+
+func (s *SQLiteStore) DeleteDownloads(ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	placeholders := ""
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+		args[i] = id
+	}
+	result, err := s.db.Exec(
+		"DELETE FROM downloads WHERE id IN ("+placeholders+") AND status IN ('completed','failed','cancelled')",
+		args...,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *SQLiteStore) DeleteDownloadsByStatus(status string) (int64, error) {
+	if !terminalStatuses[status] {
+		return 0, fmt.Errorf("cannot delete downloads with active status %q", status)
+	}
+	result, err := s.db.Exec("DELETE FROM downloads WHERE status=?", status)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // --- Search Results ---

@@ -439,6 +439,83 @@ func TestSQLiteStore_GetSearchResults(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_DeleteDownloads(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	completed := &Download{ServerID: srv.ID, Channel: "#test", BotNick: "bot", PackNumber: 1, Status: "completed"}
+	downloading := &Download{ServerID: srv.ID, Channel: "#test", BotNick: "bot", PackNumber: 2, Status: "downloading"}
+	if err := store.CreateDownload(completed); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateDownload(downloading); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := store.DeleteDownloads([]int64{completed.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 deleted, got %d", n)
+	}
+
+	n, err = store.DeleteDownloads([]int64{downloading.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 deleted (active), got %d", n)
+	}
+}
+
+func TestSQLiteStore_DeleteDownloadsByStatus(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		dl := &Download{ServerID: srv.ID, Channel: "#test", BotNick: "bot", PackNumber: i + 1, Status: "failed", ErrorMessage: "err"}
+		if err := store.CreateDownload(dl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	completed := &Download{ServerID: srv.ID, Channel: "#test", BotNick: "bot", PackNumber: 99, Status: "completed"}
+	if err := store.CreateDownload(completed); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := store.DeleteDownloadsByStatus("failed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 deleted, got %d", n)
+	}
+
+	remaining, err := store.GetDownloads("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 || remaining[0].Status != "completed" {
+		t.Fatalf("expected 1 completed remaining, got %d", len(remaining))
+	}
+
+	_, err = store.DeleteDownloadsByStatus("downloading")
+	if err == nil {
+		t.Fatal("expected error for active status, got nil")
+	}
+}
+
 func TestSQLiteStore_GetAllSearchResults(t *testing.T) {
 	store, cleanup := newTestSQLiteStore(t)
 	defer cleanup()

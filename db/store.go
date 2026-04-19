@@ -32,6 +32,12 @@ type Store interface {
 	// UpdateDownload persists all fields of d, including created_at.
 	// Writing created_at is intentional and required for MoveToFront queue reordering.
 	UpdateDownload(d *Download) error
+	// DeleteDownloads removes downloads by IDs. Only deletes terminal statuses
+	// (completed, failed, cancelled). Returns the number of rows deleted.
+	DeleteDownloads(ids []int64) (int64, error)
+	// DeleteDownloadsByStatus removes all downloads matching the given terminal
+	// status (completed, failed, cancelled). Returns the number of rows deleted.
+	DeleteDownloadsByStatus(status string) (int64, error)
 
 	// Search Results
 	GetSearchResults(query string, serverID int64, channel string) ([]SearchResult, error)
