@@ -13,6 +13,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// rfc3339Fixed formats timestamps with exactly 9 fractional-second digits.
+// Go's time.RFC3339Nano trims trailing zeros, producing variable-length
+// fractions (.5Z vs .567011129Z). SQLite text comparison then breaks:
+// ".567Z" < ".5Z" because 'Z'(90) > '6'(54) at the first differing position.
+// Fixed-width fractions make the lexicographic comparison numerically correct.
+const rfc3339Fixed = "2006-01-02T15:04:05.000000000Z"
+
 type SQLiteStore struct {
 	db *sql.DB
 }
@@ -298,7 +305,7 @@ func (s *SQLiteStore) GetAllSearchResults(query string, since *time.Time) ([]Sea
 	if since != nil {
 		rows, err = s.db.Query(
 			"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at FROM search_results WHERE search_query=? AND parsed=1 AND created_at > ? ORDER BY created_at DESC LIMIT 500",
-			query, since.UTC().Format(time.RFC3339Nano),
+			query, since.UTC().Format(rfc3339Fixed),
 		)
 	} else {
 		rows, err = s.db.Query(
@@ -340,7 +347,7 @@ func (s *SQLiteStore) CreateSearchResult(r *SearchResult) error {
 	}
 
 	now := time.Now().UTC()
-	nowStr := now.Format(time.RFC3339Nano)
+	nowStr := now.Format(rfc3339Fixed)
 	result, err := s.db.Exec(
 		`INSERT INTO search_results (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -373,7 +380,7 @@ func (s *SQLiteStore) GetUnparsedSearchSamples(serverID int64, query string, sin
 		GROUP BY raw_line
 		ORDER BY created_at DESC
 		LIMIT ?`,
-		query, serverID, since.UTC().Format(time.RFC3339Nano), limit,
+		query, serverID, since.UTC().Format(rfc3339Fixed), limit,
 	)
 	if err != nil {
 		return nil, err
@@ -408,7 +415,7 @@ func (s *SQLiteStore) GetAllUnparsedSince(since time.Time) ([]SearchResult, erro
 		WHERE parsed=0
 		  AND substr(created_at,11,1)='T'
 		  AND created_at > ?`,
-		since.UTC().Format(time.RFC3339Nano),
+		since.UTC().Format(rfc3339Fixed),
 	)
 	if err != nil {
 		return nil, err

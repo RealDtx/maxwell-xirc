@@ -612,14 +612,21 @@ document.addEventListener('alpine:init', () => {
                         : 'No search channels configured — add a Realm with a search bot in Settings.';
                     return;
                 }
-                // Kick off searches (ignore errors — bot may not be present on all channels)
+                // Kick off searches — track failures so the user knows if IRC is unreachable
+                var startOk = 0;
+                var startFail = 0;
+                var startTotal = targets.length;
                 for (var k = 0; k < targets.length; k++) {
                     api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).then(function(r) {
+                        startOk++;
                         if (!searchBot && r && r.search_bot) {
                             searchBot = r.search_bot;
                             searchTimeout = (r && r.search_timeout > 0) ? r.search_timeout : 10;
                         }
-                    }).catch(function(){});
+                    }).catch(function(e) {
+                        startFail++;
+                        console.error('startSearch failed for target', e);
+                    });
                 }
                 // Poll for aggregated results — only results created after this search started.
                 // Stop early if results haven't grown for 10 consecutive polls.
@@ -628,6 +635,10 @@ document.addEventListener('alpine:init', () => {
                 for (var attempt = 0; attempt < 60; attempt++) {
                     await new Promise(function(resolve) { setTimeout(resolve, 1000); });
                     if (token !== this.searchToken) return;
+                    // After all startSearch calls resolved, warn if every one failed
+                    if (!this.searchBotWarning && startFail > 0 && startOk + startFail >= startTotal && startOk === 0) {
+                        this.searchBotWarning = 'Search failed — IRC may not be connected. Check server status.';
+                    }
                     var res = await api.getAllSearchResults(this.searchQuery, searchStarted);
                     if (Array.isArray(res) && res.length > 0) {
                         this.searchResults = res;

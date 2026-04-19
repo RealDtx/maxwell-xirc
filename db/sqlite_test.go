@@ -512,6 +512,75 @@ func TestSQLiteStore_GetAllSearchResults_LimitedTo500(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_GetAllSearchResults_SameSecondComparison(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	// Insert results with precise, known timestamps using raw SQL.
+	// These simulate results stored at sub-second offsets within the same second.
+	timestamps := []string{
+		"2026-04-19T16:53:32.567011129Z", // 567ms
+		"2026-04-19T16:53:32.100000000Z", // 100ms
+		"2026-04-19T16:53:32.999999999Z", // 999ms
+	}
+	for i, ts := range timestamps {
+		_, err := store.db.Exec(
+			`INSERT INTO search_results (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, search_query, parsed, created_at)
+			 VALUES (?, '#test', 'bot', ?, 'file.mkv', '1.5G', 0, 'raw', 'test-query', 1, ?)`,
+			srv.ID, i+1, ts,
+		)
+		if err != nil {
+			t.Fatalf("insert result %d: %v", i, err)
+		}
+	}
+
+	// Query with since at the START of the same second (.000).
+	// All 3 results are AFTER .000 and should be returned.
+	since := time.Date(2026, 4, 19, 16, 53, 32, 0, time.UTC) // .000000000
+	results, err := store.GetAllSearchResults("test-query", &since)
+	if err != nil {
+		t.Fatalf("GetAllSearchResults since .000: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("since .000: expected 3 results, got %d", len(results))
+	}
+
+	// Query with since at .5 (500ms) — should return 2 results (.567 and .999).
+	since = time.Date(2026, 4, 19, 16, 53, 32, 500_000_000, time.UTC)
+	results, err = store.GetAllSearchResults("test-query", &since)
+	if err != nil {
+		t.Fatalf("GetAllSearchResults since .5: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("since .5: expected 2 results (.567 and .999), got %d", len(results))
+	}
+
+	// Query with since at .567011129 (exact match) — should return 1 result (.999 only).
+	since = time.Date(2026, 4, 19, 16, 53, 32, 567_011_129, time.UTC)
+	results, err = store.GetAllSearchResults("test-query", &since)
+	if err != nil {
+		t.Fatalf("GetAllSearchResults since .567011129: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("since .567011129: expected 1 result (.999 only), got %d", len(results))
+	}
+
+	// Query with since 1 second BEFORE — should return all 3 results.
+	since = time.Date(2026, 4, 19, 16, 53, 31, 0, time.UTC)
+	results, err = store.GetAllSearchResults("test-query", &since)
+	if err != nil {
+		t.Fatalf("GetAllSearchResults since second-before: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("since second-before: expected 3 results, got %d", len(results))
+	}
+}
+
 func TestSQLiteStore_SavedSearches(t *testing.T) {
 	store, cleanup := newTestSQLiteStore(t)
 	defer cleanup()

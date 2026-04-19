@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -112,8 +113,21 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 	if s.ircMgr != nil {
 		cmd := searchCmd + " " + req.Query
 		if err := s.ircMgr.SendMessage(req.ServerID, req.Channel, cmd); err != nil {
+			// Roll back the session — no IRC message was sent.
+			if s.parser != nil {
+				s.parser.StopSearch(req.ServerID, req.Channel)
+			}
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+	}
+
+	// Only delete old results AFTER the IRC message was successfully sent.
+	// Previously this happened inside StartSearch (before SendMessage), so a
+	// failed send would wipe cached results and leave the user with nothing.
+	if s.store != nil {
+		if err := s.store.DeleteSearchResults(req.ServerID, req.Channel); err != nil {
+			log.Printf("failed to clear old search results: %v", err)
 		}
 	}
 
