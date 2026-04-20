@@ -824,6 +824,39 @@ document.addEventListener('alpine:init', () => {
 
         sortedResults() { return this.displaySearchRows(); },
 
+        realmSearchCount() {
+            var serverID = this.activeServer;
+            var channel = this.activeChannel;
+            return this.searchResults.filter(function(r) {
+                return r.server_id === serverID && r.channel === channel;
+            }).length;
+        },
+
+        realmDisplayRows() {
+            var serverID = this.activeServer;
+            var channel = this.activeChannel;
+            var col = this.searchSort.col;
+            var dir = this.searchSort.dir;
+            var arr = this.searchResults.filter(function(r) {
+                return r.server_id === serverID && r.channel === channel;
+            });
+            if (this.selectedUser) {
+                arr = arr.filter(function(r) { return r.bot_nick === this.selectedUser; }.bind(this));
+            }
+            arr.sort(function(a, b) {
+                var av = a[col], bv = b[col];
+                if (av == null) av = '';
+                if (bv == null) bv = '';
+                if (typeof av === 'number' && typeof bv === 'number') {
+                    return dir === 'asc' ? av - bv : bv - av;
+                }
+                av = String(av).toLowerCase(); bv = String(bv).toLowerCase();
+                var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            return arr.slice(0, this._searchDisplayLimit).map(function(r) { return normalizeSearchRow(r); });
+        },
+
         loadMoreResults() {
             this._searchDisplayLimit += 200;
         },

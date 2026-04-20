@@ -436,7 +436,7 @@
                             x-show="activeTab(channelKey(activeServer, activeChannel)) === 'search'"
                             style="overflow:hidden; flex:1; display:flex; flex-direction:column;"
                         >
-                            <div style="padding:16px; overflow-y:auto; flex:1;">
+                            <div style="padding:16px; overflow-y:auto; flex:1; min-height:0;">
                                 <div class="search-bar">
                                     <input
                                         type="text"
@@ -459,7 +459,7 @@
                                     <button
                                         class="btn btn-sm"
                                         @click="clearSearchResults()"
-                                        :disabled="searchResults.length === 0"
+                                        :disabled="realmSearchCount() === 0"
                                         title="Clear results"
                                     >Clear</button>
                                     <select
@@ -480,7 +480,7 @@
                                         <button @click="searchBotWarning = null">&times;</button>
                                     </div>
                                 </template>
-                                <template x-if="searchResults.length > 0">
+                                <template x-if="realmSearchCount() > 0">
                                     <table>
                                         <thead>
                                             <tr>
@@ -493,7 +493,7 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <template x-for="(r, i) in displaySearchRows()" :key="i">
+                                            <template x-for="(r, i) in realmDisplayRows()" :key="i">
                                                 <tr :class="{ unparsed: !r.parsed }">
                                                     <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
                                                     <td>
@@ -520,7 +520,7 @@
                                             </template>
                                         </tbody>
                                     </table>
-                                    <template x-if="displaySearchRows().length >= _searchDisplayLimit">
+                                    <template x-if="realmDisplayRows().length >= _searchDisplayLimit">
                                         <div class="d-flex justify-content-center mt-2">
                                             <button class="btn btn-outline-secondary btn-sm" @click="loadMoreResults()">
                                                 Load More
@@ -529,7 +529,7 @@
                                     </template>
                                 </template>
 
-                                <template x-if="searchResults.length === 0 && !searchRunning">
+                                <template x-if="realmSearchCount() === 0 && !searchRunning">
                                     <p style="color: var(--text-muted); font-size:13px;">No results. Enter a query and press Search.</p>
                                 </template>
                             </div>
@@ -593,9 +593,9 @@
                     <div style="flex:1; overflow:hidden; display:flex; flex-direction:row; gap:0;">
 
                         <!-- Search pane (left) -->
-                        <div class="channel-pane-side" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; border-right:1px solid var(--border);">
+                        <div class="channel-pane-side" style="flex:1; overflow:hidden; display:flex; flex-direction:column; border-right:1px solid var(--border);">
                             <div class="channel-pane-side-header">Search</div>
-                            <div style="padding:16px; flex:1; overflow-y:auto;">
+                            <div style="padding:16px; flex:1; overflow-y:auto; min-height:0;">
                                 <div class="search-bar">
                                     <input
                                         type="text"
@@ -618,7 +618,7 @@
                                     <button
                                         class="btn btn-sm"
                                         @click="clearSearchResults()"
-                                        :disabled="searchResults.length === 0"
+                                        :disabled="realmSearchCount() === 0"
                                         title="Clear results"
                                     >Clear</button>
                                     <select
@@ -639,7 +639,7 @@
                                         <button @click="searchBotWarning = null">&times;</button>
                                     </div>
                                 </template>
-                                <template x-if="searchResults.length > 0">
+                                <template x-if="realmSearchCount() > 0">
                                     <table>
                                         <thead>
                                             <tr>
@@ -652,7 +652,7 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <template x-for="(r, i) in displaySearchRows()" :key="i">
+                                            <template x-for="(r, i) in realmDisplayRows()" :key="i">
                                                 <tr :class="{ unparsed: !r.parsed }">
                                                     <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
                                                     <td>
@@ -679,7 +679,7 @@
                                             </template>
                                         </tbody>
                                     </table>
-                                    <template x-if="displaySearchRows().length >= _searchDisplayLimit">
+                                    <template x-if="realmDisplayRows().length >= _searchDisplayLimit">
                                         <div class="d-flex justify-content-center mt-2">
                                             <button class="btn btn-outline-secondary btn-sm" @click="loadMoreResults()">
                                                 Load More
@@ -688,7 +688,7 @@
                                     </template>
                                 </template>
 
-                                <template x-if="searchResults.length === 0 && !searchRunning">
+                                <template x-if="realmSearchCount() === 0 && !searchRunning">
                                     <p style="color: var(--text-muted); font-size:13px;">No results. Enter a query and press Search.</p>
                                 </template>
                             </div>
