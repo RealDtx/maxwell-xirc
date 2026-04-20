@@ -188,13 +188,6 @@ notifications:
 CONFIG
 
 # --- xirc.service ---
-# Collect all directories xirc must write to for ProtectSystem=strict
-RW_PATHS="${INSTALL_DIR}/data ${MEDIA_DIR} ${DOWNLOADS_DIR}"
-TEMP_PARENT="$(dirname "$TEMP_DIR")"
-if [[ "$TEMP_PARENT" != "$DOWNLOADS_DIR" && "$TEMP_DIR" != "$DOWNLOADS_DIR" ]]; then
-    RW_PATHS="${RW_PATHS} ${TEMP_DIR}"
-fi
-
 cat > "${PROFILE_DIR}/xirc.service" <<SERVICE
 [Unit]
 Description=xirc - XDCC IRC Web Client
@@ -215,12 +208,10 @@ RestartPreventExitStatus=78
 StandardOutput=journal
 StandardError=journal
 
-# Hardening
+# NoNewPrivileges is universally supported; the namespace-based options
+# (ProtectSystem=strict, ProtectHome, PrivateTmp) are omitted because
+# they require mount namespaces which may not be available on all kernels.
 NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=${RW_PATHS}
-PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target

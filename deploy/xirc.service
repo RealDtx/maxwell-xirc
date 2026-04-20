@@ -17,12 +17,10 @@ RestartPreventExitStatus=78
 StandardOutput=journal
 StandardError=journal
 
-# Hardening
+# NoNewPrivileges is universally supported; namespace-based options
+# (ProtectSystem=strict, ProtectHome, PrivateTmp) are omitted because
+# they require mount namespaces which may not be available on all kernels.
 NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/opt/xirc/data /srv/dlna/media /srv/downloads
-PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target
