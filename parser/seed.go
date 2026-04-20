@@ -70,6 +70,13 @@ func BuiltinPatterns() []BuiltinPattern {
 			FieldMapping: `{"downloads_count":1,"filesize":2,"filename":3,"bot_nick":4,"pack_number":5}`,
 			Priority:     75,
 		},
+		// EliteWarez/EWG format: filename  (Command:  /msg PackBot XDCC SEND #N  ) Gets: N Size: SizeU
+		{
+			Name:         "ewg-command-xdcc",
+			Regex:        `^(.+?)\s{2,}\(Command:\s*/msg\s+(\S+)\s+XDCC\s+SEND\s+#(\d+)\s*\)\s*Gets:\s*(\d+)\s*Size:\s*([0-9][0-9.]*\s*[KMGTP]?B?)`,
+			FieldMapping: `{"filename":1,"bot_nick":2,"pack_number":3,"downloads_count":4,"filesize":5}`,
+			Priority:     88,
+		},
 	}
 }
 
