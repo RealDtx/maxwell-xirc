@@ -183,7 +183,18 @@ func (s *MySQLStore) Migrate() error {
 	for _, stmt := range mysqlMigrationStatements() {
 		if _, err := s.db.Exec(stmt); err != nil {
 			msg := err.Error()
-			if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "Duplicate column") {
+			// Duplicate column — ALTER ADD COLUMN on an already-migrated DB.
+			if strings.Contains(msg, "uplicate column") {
+				continue
+			}
+			// Table doesn't exist — historical rename/alter on a fresh install
+			// where the old table (e.g. channels) was never created.
+			if strings.Contains(msg, "doesn't exist") || strings.Contains(msg, "Does not exist") {
+				continue
+			}
+			// Table already exists — CREATE TABLE without IF NOT EXISTS guard,
+			// or a rename target that already exists.
+			if strings.Contains(msg, "already exists") || strings.Contains(msg, "Already exists") {
 				continue
 			}
 			return fmt.Errorf("migration failed: %w\nSQL: %s", err, stmt)
