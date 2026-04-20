@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/maxwell-xirc/xirc/db"
+	"github.com/maxwell-xirc/xirc/internal/debug"
 	"github.com/maxwell-xirc/xirc/irc"
 )
 
@@ -173,6 +174,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 
 	// Only process privmsg and notice
 	if msgType != "privmsg" && msgType != "notice" {
+		debug.Debugf("parser: dropping type=%s server=%d channel=%s nick=%s", msgType, ev.ServerID, ev.Channel, ev.Nick)
 		return
 	}
 
@@ -201,6 +203,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		}
 		p.mu.RUnlock()
 		if !hasSession {
+			debug.Debugf("parser: no active session for server=%d channel=%s nick=%s msg=%q", ev.ServerID, ev.Channel, ev.Nick, debug.RedactForLog(message))
 			return
 		}
 	}
@@ -208,6 +211,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	// Bot-nick filter: if the session has a configured search bot, only
 	// process messages from that specific nick.
 	if session.SearchBot != "" && ev.Nick != session.SearchBot {
+		debug.Debugf("parser: rejecting nick=%s (expected %s) server=%d channel=%s", ev.Nick, session.SearchBot, ev.ServerID, ev.Channel)
 		return
 	}
 
@@ -284,6 +288,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 				log.Printf("failed to store unmatched search result: %v", err)
 			}
 		}
+		debug.Debugf("parser: no pattern matched server=%d nick=%s line=%q", ev.ServerID, ev.Nick, debug.RedactForLog(message))
 		return
 	}
 
@@ -291,8 +296,11 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	// contains all words of the search query.  This prevents periodic bot
 	// broadcasts (which list ALL packages) from polluting search results.
 	if !messageMatchesQuery(message, session.Query) {
+		debug.Debugf("parser: query filter dropped result query=%q line=%q", debug.RedactForLog(session.Query), debug.RedactForLog(message))
 		return
 	}
+
+	debug.Debugf("parser: matched pattern=%d server=%d nick=%s file=%v", matchedPatternID, ev.ServerID, ev.Nick, result.Filename)
 
 	// Store result
 	if err := p.store.CreateSearchResult(sr); err != nil {

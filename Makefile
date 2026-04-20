@@ -1,4 +1,4 @@
-.PHONY: build test clean docker run
+.PHONY: build test clean docker run deploy
 
 BINARY=xirc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -35,6 +35,21 @@ docker-down:
 
 run: build
 	./$(BINARY) --config config.yaml
+
+PI_HOST ?= 192.168.20.2
+PI_USER ?= pi
+PI_CONFIG ?=
+
+deploy: build-pi
+	rsync -avz --progress $(BINARY)-arm64 "$(PI_USER)@$(PI_HOST)":/opt/xirc/xirc
+	rsync -avz deploy/xirc.service "$(PI_USER)@$(PI_HOST)":/tmp/
+	ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/xirc.service /etc/systemd/system/xirc.service && sudo systemctl daemon-reload"
+	rsync -avz deploy/nginx-xirc.conf "$(PI_USER)@$(PI_HOST)":/tmp/
+	ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-xirc.conf /etc/nginx/sites-available/xirc && sudo nginx -t && sudo systemctl reload nginx"
+ifdef PI_CONFIG
+	rsync -avz $(PI_CONFIG) "$(PI_USER)@$(PI_HOST)":/opt/xirc/config.yaml
+endif
+	ssh "$(PI_USER)@$(PI_HOST)" "sudo systemctl restart xirc"
 
 clean:
 	rm -f $(BINARY) $(BINARY)-arm64 $(BINARY)-arm

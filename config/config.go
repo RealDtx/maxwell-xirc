@@ -45,6 +45,14 @@ type NotificationsConfig struct {
 	QuietHoursEnd   string `yaml:"quiet_hours_end"`
 }
 
+type PatternConfig struct {
+	Name         string         `yaml:"name"`
+	Regex        string         `yaml:"regex"`
+	FieldMapping map[string]int `yaml:"field_mapping"`
+	Priority     int            `yaml:"priority"`
+	Tags         []string       `yaml:"tags"`
+}
+
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	Database      DatabaseConfig      `yaml:"database"`
@@ -52,6 +60,7 @@ type Config struct {
 	DCC           DCCConfig           `yaml:"dcc"`
 	Downloads     DownloadsConfig     `yaml:"downloads"`
 	Notifications NotificationsConfig `yaml:"notifications"`
+	Patterns      []PatternConfig     `yaml:"patterns"`
 }
 
 func defaults() Config {

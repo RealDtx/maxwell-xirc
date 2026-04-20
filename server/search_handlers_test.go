@@ -306,6 +306,151 @@ func TestLearnPatternPreview(t *testing.T) {
 	}
 }
 
+func TestImportPatterns(t *testing.T) {
+	tests := []struct {
+		name           string
+		preCreate      []db.ParsePattern // patterns to insert into DB before the request
+		body           string
+		wantStatus     int
+		wantImported   int
+		wantSkipped    int
+		wantErrContain string
+	}{
+		{
+			name: "happy path: two new patterns",
+			body: `{"patterns":[
+				{"name":"pat-a","regex":"#(\\d+)","field_mapping":{"pack_number":1},"priority":10},
+				{"name":"pat-b","regex":"(\\w+)\\.mkv","field_mapping":{"filename":1},"priority":5}
+			]}`,
+			wantStatus:   http.StatusOK,
+			wantImported: 2,
+			wantSkipped:  0,
+		},
+		{
+			name: "duplicate name is skipped",
+			preCreate: []db.ParsePattern{
+				{Name: "foo", Regex: `#(\d+)`, FieldMapping: "{}", Enabled: true},
+			},
+			body: `{"patterns":[
+				{"name":"foo","regex":"#(\\d+)","field_mapping":{}},
+				{"name":"bar","regex":"(\\w+)","field_mapping":{}}
+			]}`,
+			wantStatus:   http.StatusOK,
+			wantImported: 1,
+			wantSkipped:  1,
+		},
+		{
+			name: "invalid regex returns 400",
+			body: `{"patterns":[{"name":"bad","regex":"(unclosed"}]}`,
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "invalid regex",
+		},
+		{
+			name:           "regex too long returns 400",
+			body:           `{"patterns":[{"name":"toolong","regex":"` + strings.Repeat("a", 2000) + `"}]}`,
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "regex exceeds",
+		},
+		{
+			name:           "invalid JSON in field_mapping returns 400",
+			body:           `{"patterns":[{"name":"badfm","regex":"#(\\d+)","field_mapping":"not-json"}]}`,
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "invalid field_mapping",
+		},
+		{
+			name:           "empty pattern name returns 400",
+			body:           `{"patterns":[{"name":"","regex":"#(\\d+)"}]}`,
+			wantStatus:     http.StatusBadRequest,
+			wantErrContain: "name required",
+		},
+		{
+			name: "missing field_mapping defaults to {}",
+			body: `{"patterns":[{"name":"nomap","regex":"#(\\d+)"}]}`,
+			wantStatus:   http.StatusOK,
+			wantImported: 1,
+			wantSkipped:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, store, cleanup := newTestServerWithStore(t)
+			defer cleanup()
+
+			for i := range tc.preCreate {
+				if err := store.CreateParsePattern(&tc.preCreate[i]); err != nil {
+					t.Fatalf("preCreate pattern: %v", err)
+				}
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/search/patterns/import", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != tc.wantStatus {
+				t.Fatalf("expected status %d, got %d: %s", tc.wantStatus, w.Code, w.Body.String())
+			}
+
+			if tc.wantStatus == http.StatusOK {
+				var resp map[string]int
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
+				if resp["imported"] != tc.wantImported {
+					t.Errorf("expected imported=%d, got %d", tc.wantImported, resp["imported"])
+				}
+				if resp["skipped"] != tc.wantSkipped {
+					t.Errorf("expected skipped=%d, got %d", tc.wantSkipped, resp["skipped"])
+				}
+			}
+
+			if tc.wantErrContain != "" {
+				body := w.Body.String()
+				if !strings.Contains(body, tc.wantErrContain) {
+					t.Errorf("expected response to contain %q, got: %s", tc.wantErrContain, body)
+				}
+			}
+		})
+	}
+}
+
+func TestImportPatterns_MissingFieldMappingStoredAsEmptyObject(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	body := `{"patterns":[{"name":"nomap","regex":"#(\\d+)"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/search/patterns/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	patterns, err := store.GetAllParsePatterns()
+	if err != nil {
+		t.Fatalf("GetAllParsePatterns: %v", err)
+	}
+	if len(patterns) == 0 {
+		t.Fatal("expected at least one pattern")
+	}
+	found := false
+	for _, p := range patterns {
+		if p.Name == "nomap" {
+			found = true
+			if p.FieldMapping != "{}" {
+				t.Errorf("expected field_mapping={}, got %q", p.FieldMapping)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("pattern 'nomap' not found in DB")
+	}
+}
+
 func TestLearnPatternSaveAndReprocess(t *testing.T) {
 	srv, store, cleanup := newTestServerWithStore(t)
 	defer cleanup()

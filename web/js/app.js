@@ -59,6 +59,8 @@ document.addEventListener('alpine:init', () => {
         _searchSince: null,
         _searchDisplayLimit: 200,
         searchBotWarning: null,
+        searchTargets: [],
+        searchViewMode: localStorage.getItem('xirc_searchViewMode') || 'merged',
         downloads: [],
         downloadFilter: 'all',
         ircMessages: {},
@@ -153,6 +155,14 @@ document.addEventListener('alpine:init', () => {
         setupRequired: false,
         setupMappings: [],  // [{old_dir, new_dir, suggestion}]
         setupBanner: false,
+
+        // Pattern settings
+        patternSettingsList: [],
+        patternTagEdit: { id: null, value: '' },
+        patternImportMsg: '',
+        patternImportError: false,
+        patternTesterLine: '',
+        patternTesterResult: null,
 
         // Global search filter (advanced mode)
         globalSearchServerId: '',
@@ -600,11 +610,11 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this.searchTargets = [];
             this.selectedUser = null;
             this._searchDisplayLimit = 200;
             const searchStarted = Date.now();
             this._searchSince = searchStarted;
-            const targets = [];
             var searchBot = null;
             var searchTimeout = 10;
             try {
@@ -616,10 +626,18 @@ document.addEventListener('alpine:init', () => {
                         .map(function(realm) { return realm.name; });
                     var channels = searchChannels.length > 0 ? searchChannels : (srv.channels || []);
                     for (var j = 0; j < channels.length; j++) {
-                        targets.push({ server_id: srv.id, channel: channels[j] });
+                        this.searchTargets.push({
+                            server_id: srv.id,
+                            server_name: srv.name,
+                            channel: channels[j],
+                            status: 'pending',
+                            resultCount: 0,
+                            unparsedCount: 0,
+                            error: null
+                        });
                     }
                 }
-                if (targets.length === 0) {
+                if (this.searchTargets.length === 0) {
                     this.searchBotWarning = this.servers.length === 0
                         ? 'No servers configured.'
                         : 'No search channels configured — add a Realm with a search bot in Settings.';
@@ -627,18 +645,24 @@ document.addEventListener('alpine:init', () => {
                 }
                 var startOk = 0;
                 var startFail = 0;
-                var startTotal = targets.length;
-                for (var k = 0; k < targets.length; k++) {
-                    api.startSearch(targets[k].server_id, targets[k].channel, this.searchQuery).then(function(r) {
-                        startOk++;
-                        if (!searchBot && r && r.search_bot) {
-                            searchBot = r.search_bot;
-                            searchTimeout = (r && r.search_timeout > 0) ? r.search_timeout : 10;
-                        }
-                    }).catch(function(e) {
-                        startFail++;
-                        console.error('startSearch failed for target', e);
-                    });
+                var startTotal = this.searchTargets.length;
+                for (let k = 0; k < this.searchTargets.length; k++) {
+                    this.searchTargets[k].status = 'searching';
+                    api.startSearch(this.searchTargets[k].server_id, this.searchTargets[k].channel, this.searchQuery)
+                        .then((r) => {
+                            startOk++;
+                            this.searchTargets[k].status = 'searching'; // confirmed started
+                            if (!searchBot && r && r.search_bot) {
+                                searchBot = r.search_bot;
+                                searchTimeout = (r && r.search_timeout > 0) ? r.search_timeout : 10;
+                            }
+                        })
+                        .catch((e) => {
+                            startFail++;
+                            this.searchTargets[k].status = 'error';
+                            this.searchTargets[k].error = e.message || 'Failed to start search';
+                            console.error('startSearch failed for target', e);
+                        });
                 }
                 var stableCount = 0;
                 var lastCount = 0;
@@ -654,6 +678,16 @@ document.addEventListener('alpine:init', () => {
                     var count = Array.isArray(res) ? res.length : 0;
                     if (Array.isArray(res) && res.length > 0) {
                         this.searchResults = res;
+                        // Update per-target counts
+                        for (let t = 0; t < this.searchTargets.length; t++) {
+                            var target = this.searchTargets[t];
+                            var targetResults = res.filter(function(r) { return r.server_id === target.server_id && r.channel === target.channel; });
+                            target.resultCount = targetResults.length;
+                            target.unparsedCount = targetResults.filter(function(r) { return !r.parsed; }).length;
+                            if (target.status === 'searching' && targetResults.length > 0) {
+                                target.status = 'done';
+                            }
+                        }
                         if (res.length === lastCount) {
                             stableCount++;
                             if (stableCount >= 10) break;
@@ -670,14 +704,20 @@ document.addEventListener('alpine:init', () => {
                     var cached = await api.getAllSearchResults(this.searchQuery, null);
                     if (Array.isArray(cached) && cached.length > 0) {
                         this.searchResults = cached;
-                    } else {
                     }
-                } else if (token === this.searchToken) {
                 }
             } catch (e) {
                 console.error('global search error', e);
             } finally {
-                if (token === this.searchToken) this.searchRunning = false;
+                if (token === this.searchToken) {
+                    this.searchRunning = false;
+                    // Mark any still-searching targets as done
+                    for (var t = 0; t < this.searchTargets.length; t++) {
+                        if (this.searchTargets[t].status === 'searching') {
+                            this.searchTargets[t].status = 'done';
+                        }
+                    }
+                }
             }
         },
 
@@ -686,6 +726,31 @@ document.addEventListener('alpine:init', () => {
                 if (this.servers[i].id === serverId) return this.servers[i].name;
             }
             return 'Server ' + serverId;
+        },
+
+        toggleSearchViewMode() {
+            this.searchViewMode = this.searchViewMode === 'merged' ? 'grouped' : 'merged';
+            localStorage.setItem('xirc_searchViewMode', this.searchViewMode);
+        },
+
+        groupedSearchResults() {
+            var groups = {};
+            var rows = this.displaySearchRows();
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var key = (r.server_id || 0) + ':' + (r.channel || '');
+                if (!groups[key]) {
+                    groups[key] = {
+                        server_id: r.server_id,
+                        server_name: this.getServerName(r.server_id),
+                        channel: r.channel || '-',
+                        results: []
+                    };
+                }
+                groups[key].results.push(r);
+            }
+            // Sort by result count descending
+            return Object.values(groups).sort(function(a, b) { return b.results.length - a.results.length; });
         },
 
         async loadDiskStats() {
@@ -1526,6 +1591,307 @@ document.addEventListener('alpine:init', () => {
                 await api.updateRoutingRule(item.id, Object.assign({}, item.rule, { destination_dir: newDir }));
             }
             await this.loadSettingsData();
+        },
+
+        // --- Pattern settings ---
+
+        async loadPatternSettings() {
+            try {
+                const res = await api.getParsePatterns();
+                this.patternSettingsList = Array.isArray(res) ? res : [];
+            } catch (e) {
+                console.error('loadPatternSettings error', e);
+            }
+        },
+
+        parseTags(tagsStr) {
+            if (!tagsStr) return [];
+            try {
+                const arr = JSON.parse(tagsStr);
+                return Array.isArray(arr) ? arr : [];
+            } catch (e) {
+                return [];
+            }
+        },
+
+        openTagEdit(pattern) {
+            const tags = this.parseTags(pattern.tags);
+            this.patternTagEdit = { id: pattern.id, value: tags.join(', ') };
+        },
+
+        async removeTag(pattern, tag) {
+            const tags = this.parseTags(pattern.tags).filter(t => t !== tag);
+            await this._savePatternTagsArr(pattern, tags);
+        },
+
+        async savePatternTags(pattern) {
+            if (this.patternTagEdit.id !== pattern.id) return;
+            const raw = this.patternTagEdit.value;
+            const tags = raw.split(',').map(t => t.trim()).filter(t => t.length > 0);
+            this.patternTagEdit = { id: null, value: '' };
+            await this._savePatternTagsArr(pattern, tags);
+        },
+
+        async _savePatternTagsArr(pattern, tags) {
+            try {
+                const updated = Object.assign({}, pattern, { tags: JSON.stringify(tags) });
+                await api.updateParsePattern(pattern.id, updated);
+                // Update local list
+                const idx = this.patternSettingsList.findIndex(p => p.id === pattern.id);
+                if (idx !== -1) {
+                    this.patternSettingsList[idx] = Object.assign({}, this.patternSettingsList[idx], { tags: JSON.stringify(tags) });
+                    this.patternSettingsList = this.patternSettingsList.slice();
+                }
+            } catch (e) {
+                console.error('savePatternTags error', e);
+            }
+        },
+
+        _patternsToYaml(patterns) {
+            const lines = ['# xirc pattern export - v1', 'patterns:'];
+            for (const p of patterns) {
+                lines.push('  - name: ' + JSON.stringify(p.name));
+                lines.push('    regex: \'' + (p.regex || '').replace(/'/g, "''") + '\'');
+                // field_mapping
+                let fm = p.field_mapping;
+                if (typeof fm === 'string') {
+                    try { fm = JSON.parse(fm); } catch (e) { fm = {}; }
+                }
+                if (fm && typeof fm === 'object' && Object.keys(fm).length > 0) {
+                    lines.push('    field_mapping:');
+                    for (const [k, v] of Object.entries(fm)) {
+                        lines.push('      ' + k + ': ' + v);
+                    }
+                } else {
+                    lines.push('    field_mapping: {}');
+                }
+                lines.push('    priority: ' + (p.priority || 0));
+                const tags = this.parseTags(p.tags);
+                if (tags.length === 0) {
+                    lines.push('    tags: []');
+                } else {
+                    lines.push('    tags:');
+                    for (const t of tags) {
+                        lines.push('      - ' + JSON.stringify(t));
+                    }
+                }
+            }
+            return lines.join('\n') + '\n';
+        },
+
+        _downloadText(filename, content, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        },
+
+        _exportDateStr() {
+            const d = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+        },
+
+        exportPatternsYAML() {
+            if (!this.patternSettingsList.length) {
+                alert('No patterns to export. Open the Patterns tab first.');
+                return;
+            }
+            const yaml = this._patternsToYaml(this.patternSettingsList);
+            this._downloadText('xirc-patterns-' + this._exportDateStr() + '.yaml', yaml, 'text/yaml');
+        },
+
+        exportPatternsJSON() {
+            if (!this.patternSettingsList.length) {
+                alert('No patterns to export. Open the Patterns tab first.');
+                return;
+            }
+            const data = this.patternSettingsList.map(p => {
+                let fm = p.field_mapping;
+                if (typeof fm === 'string') { try { fm = JSON.parse(fm); } catch (e) { fm = {}; } }
+                return {
+                    name: p.name,
+                    regex: p.regex,
+                    field_mapping: fm || {},
+                    priority: p.priority || 0,
+                    tags: this.parseTags(p.tags),
+                };
+            });
+            const json = JSON.stringify({ patterns: data }, null, 2);
+            this._downloadText('xirc-patterns-' + this._exportDateStr() + '.json', json, 'application/json');
+        },
+
+        async importPatternsFile(event) {
+            this.patternImportMsg = '';
+            this.patternImportError = false;
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            // Reset input so same file can be re-selected
+            event.target.value = '';
+            const text = await file.text();
+            let patterns = [];
+            const lower = file.name.toLowerCase();
+            try {
+                if (lower.endsWith('.json')) {
+                    const parsed = JSON.parse(text);
+                    patterns = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.patterns) ? parsed.patterns : []);
+                } else {
+                    // Minimal YAML parser for the specific export format
+                    patterns = this._parseExportYaml(text);
+                }
+            } catch (e) {
+                this.patternImportMsg = 'Parse error: ' + e.message;
+                this.patternImportError = true;
+                return;
+            }
+            if (!patterns.length) {
+                this.patternImportMsg = 'No patterns found in file.';
+                this.patternImportError = true;
+                return;
+            }
+            try {
+                const res = await api.importParsePatterns(patterns);
+                this.patternImportMsg = 'Imported ' + (res.imported || 0) + ', skipped ' + (res.skipped || 0) + '.';
+                this.patternImportError = false;
+                await this.loadPatternSettings();
+            } catch (e) {
+                this.patternImportMsg = 'Import failed: ' + e.message;
+                this.patternImportError = true;
+            }
+            // Auto-clear message after 5 seconds
+            setTimeout(() => { this.patternImportMsg = ''; }, 5000);
+        },
+
+        // Minimal line-based YAML parser — handles only the xirc export format.
+        _parseExportYaml(text) {
+            const lines = text.split('\n');
+            const patterns = [];
+            let cur = null;
+            let inFieldMapping = false;
+            let inTags = false;
+
+            for (let i = 0; i < lines.length; i++) {
+                const raw = lines[i];
+                const stripped = raw.trimEnd();
+
+                // Skip comment and top-level "patterns:" key
+                if (stripped.startsWith('#') || stripped.trim() === 'patterns:') continue;
+
+                // New pattern entry: "  - name: ..."
+                const newEntry = stripped.match(/^\s+-\s+name:\s*(.*)/);
+                if (newEntry) {
+                    if (cur) patterns.push(cur);
+                    cur = { name: _yamlUnquote(newEntry[1].trim()), regex: '', field_mapping: {}, priority: 0, tags: [] };
+                    inFieldMapping = false;
+                    inTags = false;
+                    continue;
+                }
+
+                if (!cur) continue;
+
+                // Detect block keys at pattern level (indent ~4)
+                const keyVal = stripped.match(/^(\s+)(\w+):\s*(.*)/);
+                if (!keyVal) continue;
+                const keyIndent = keyVal[1].length;
+                const key = keyVal[2];
+                const val = keyVal[3].trim();
+
+                if (keyIndent <= 4 && key === 'field_mapping') {
+                    inFieldMapping = true;
+                    inTags = false;
+                    if (val && val !== '{}') {
+                        // inline: unlikely in our format but handle anyway
+                    }
+                    continue;
+                }
+                if (keyIndent <= 4 && key === 'tags') {
+                    inFieldMapping = false;
+                    inTags = true;
+                    if (val === '[]') { cur.tags = []; inTags = false; }
+                    continue;
+                }
+                if (keyIndent <= 4 && key === 'regex') {
+                    inFieldMapping = false;
+                    inTags = false;
+                    cur.regex = _yamlUnquote(val);
+                    continue;
+                }
+                if (keyIndent <= 4 && key === 'priority') {
+                    inFieldMapping = false;
+                    inTags = false;
+                    cur.priority = parseInt(val, 10) || 0;
+                    continue;
+                }
+
+                // field_mapping sub-key (indent 6+)
+                if (inFieldMapping && keyIndent >= 6) {
+                    cur.field_mapping[key] = parseInt(val, 10) || val;
+                    continue;
+                }
+
+                // tag list item: "      - value"
+                if (inTags) {
+                    const tagItem = stripped.match(/^\s+-\s+(.*)/);
+                    if (tagItem) {
+                        cur.tags.push(_yamlUnquote(tagItem[1].trim()));
+                    }
+                    continue;
+                }
+
+                // If we hit any other key at pattern indent, reset sub-mode
+                if (keyIndent <= 4) {
+                    inFieldMapping = false;
+                    inTags = false;
+                }
+            }
+            if (cur) patterns.push(cur);
+            return patterns;
+
+            function _yamlUnquote(s) {
+                if (!s) return '';
+                if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+                    const inner = s.slice(1, -1);
+                    // Unescape single-quote doubling ('') for single-quoted strings
+                    if (s.startsWith("'")) return inner.replace(/''/g, "'");
+                    return inner.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                }
+                return s;
+            }
+        },
+
+        testPattern() {
+            this.patternTesterResult = null;
+            const line = this.patternTesterLine.trim();
+            if (!line) return;
+            const sorted = this.patternSettingsList.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
+            for (const p of sorted) {
+                if (!p.enabled) continue;
+                let re;
+                try { re = new RegExp(p.regex); } catch (e) { continue; }
+                const m = re.exec(line);
+                if (!m) continue;
+                // Parse field mapping
+                let fm = p.field_mapping;
+                if (typeof fm === 'string') { try { fm = JSON.parse(fm); } catch (e) { fm = {}; } }
+                const knownFields = ['pack_number', 'filename', 'filesize', 'downloads_count', 'bot_nick'];
+                const fields = [];
+                for (const field of knownFields) {
+                    if (fm && fm[field] != null) {
+                        const idx = parseInt(fm[field], 10);
+                        if (!isNaN(idx)) {
+                            fields.push({ name: field, value: m[idx] != null ? m[idx] : '' });
+                        }
+                    }
+                }
+                this.patternTesterResult = { matched: true, name: p.name, priority: p.priority, fields };
+                return;
+            }
+            this.patternTesterResult = { matched: false };
         },
 
         // --- Setup wizard ---

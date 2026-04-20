@@ -83,9 +83,10 @@ const api = {
     getSavedSearches()        { return this.get('/search/saved'); },
     createSavedSearch(s)      { return this.post('/search/saved', s); },
     deleteSavedSearch(id)     { return this.del('/search/saved/' + id); },
-    getParsePatterns()        { return this.get('/search/patterns'); },
-    createParsePattern(p)     { return this.post('/search/patterns', p); },
-    updateParsePattern(id, p) { return this.put('/search/patterns/' + id, p); },
+    getParsePatterns()           { return this.get('/search/patterns'); },
+    createParsePattern(p)        { return this.post('/search/patterns', p); },
+    updateParsePattern(id, p)    { return this.put('/search/patterns/' + id, p); },
+    importParsePatterns(patterns){ return this.post('/search/patterns/import', { patterns }); },
 
     // Downloads
     getDownloads(status)  { return this.get('/downloads' + (status ? '?status=' + status : '')); },

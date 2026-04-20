@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/maxwell-xirc/xirc/db"
+	"github.com/maxwell-xirc/xirc/internal/debug"
 )
 
 type ConnectionStatus string
@@ -403,28 +404,32 @@ func (c *Connection) PartChannel(name string) {
 	}
 }
 
-func (c *Connection) SendMessage(target, message string) {
+func (c *Connection) SendMessage(target, message string) error {
 	c.mu.RLock()
 	client := c.client
 	c.mu.RUnlock()
 
-	if client != nil {
-		client.Privmsg(target, message)
-		// Echo own sent message into the bus so the MessageBuffer captures it.
-		// IRC servers don't echo our own PRIVMSGs back, so without this the
-		// message would disappear from the chat buffer on any reload.
-		c.bus.Publish(Event{
-			Type:      EventIRCMessage,
-			ServerID:  c.server.ID,
-			Channel:   target,
-			Nick:      c.server.Nickname,
-			Timestamp: time.Now().Format(time.RFC3339Nano),
-			Data: map[string]string{
-				"type":    "privmsg",
-				"message": message,
-			},
-		})
+	if client == nil {
+		log.Printf("WARNING: SendMessage called but client is nil for server %d target=%s", c.server.ID, target)
+		return fmt.Errorf("not connected to server %d", c.server.ID)
 	}
+	debug.Debugf("irc: SendMessage target=%s msg=%.50q", target, message)
+	client.Privmsg(target, message)
+	// Echo own sent message into the bus so the MessageBuffer captures it.
+	// IRC servers don't echo our own PRIVMSGs back, so without this the
+	// message would disappear from the chat buffer on any reload.
+	c.bus.Publish(Event{
+		Type:      EventIRCMessage,
+		ServerID:  c.server.ID,
+		Channel:   target,
+		Nick:      c.server.Nickname,
+		Timestamp: time.Now().Format(time.RFC3339Nano),
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": message,
+		},
+	})
+	return nil
 }
 
 func (c *Connection) SendRaw(raw string) {

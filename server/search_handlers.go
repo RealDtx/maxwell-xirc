@@ -3,13 +3,17 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/maxwell-xirc/xirc/db"
+	"github.com/maxwell-xirc/xirc/internal/debug"
+	ircpkg "github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/parser"
 )
 
@@ -105,8 +109,23 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	debug.Debugf("search: dispatching server=%d channel=%s cmd=%q bot=%q timeout=%d realm=%d", req.ServerID, req.Channel, searchCmd, searchBot, searchTimeout, realmID)
+
 	if s.parser != nil {
 		s.parser.StartSearch(req.ServerID, req.Channel, req.Query, searchBot, realmID)
+	}
+
+	// Check connection status before attempting to send
+	if s.ircMgr != nil {
+		conn := s.ircMgr.GetConnection(req.ServerID)
+		if conn == nil {
+			writeError(w, http.StatusBadRequest, "server not found")
+			return
+		}
+		if conn.Status() != ircpkg.StatusConnected {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("server %d not connected (status: %s)", req.ServerID, conn.Status()))
+			return
+		}
 	}
 
 	// Send the search command via IRC
@@ -348,6 +367,147 @@ func (s *Server) handleGetUnmatchedSamples(w http.ResponseWriter, r *http.Reques
 		results = []db.SearchResult{}
 	}
 	writeJSON(w, http.StatusOK, results)
+}
+
+// maxPatternRegexLen caps regex source length to mitigate accidentally huge
+// patterns. Go's regexp uses RE2 (linear time) so ReDoS is not a real risk,
+// but oversized patterns still waste memory and slow every parse cycle.
+const maxPatternRegexLen = 1024
+
+// maxImportBodyBytes caps the request body to prevent memory exhaustion from
+// thousands of patterns in a single import.
+const maxImportBodyBytes = 1 << 20 // 1 MiB
+
+func (s *Server) handleImportPatterns(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportBodyBytes)
+
+	var req struct {
+		Patterns []struct {
+			Name         string      `json:"name"`
+			Regex        string      `json:"regex"`
+			FieldMapping interface{} `json:"field_mapping"`
+			Priority     int         `json:"priority"`
+			Tags         interface{} `json:"tags"`
+		} `json:"patterns"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	existing, err := s.store.GetAllParsePatterns()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	existingNames := make(map[string]bool, len(existing))
+	for _, p := range existing {
+		existingNames[p.Name] = true
+	}
+
+	// Pre-validate all patterns before any DB writes so partial failures don't
+	// leave the DB in a half-imported state.
+	type validatedPattern struct {
+		Name         string
+		Regex        string
+		FieldMapping string
+		Priority     int
+		Tags         string
+	}
+	validated := make([]validatedPattern, 0, len(req.Patterns))
+	for i, rp := range req.Patterns {
+		if rp.Name == "" {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("pattern %d: name required", i))
+			return
+		}
+		if existingNames[rp.Name] {
+			continue // will be counted as skipped below
+		}
+		if len(rp.Regex) > maxPatternRegexLen {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("pattern %q: regex exceeds %d chars", rp.Name, maxPatternRegexLen))
+			return
+		}
+		if _, err := regexp.Compile(rp.Regex); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("pattern %q: invalid regex: %v", rp.Name, err))
+			return
+		}
+
+		fmStr, err := normalizeJSONField(rp.FieldMapping, "{}")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("pattern %q: invalid field_mapping: %v", rp.Name, err))
+			return
+		}
+		tagsStr, err := normalizeJSONField(rp.Tags, "[]")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("pattern %q: invalid tags: %v", rp.Name, err))
+			return
+		}
+
+		validated = append(validated, validatedPattern{
+			Name:         rp.Name,
+			Regex:        rp.Regex,
+			FieldMapping: fmStr,
+			Priority:     rp.Priority,
+			Tags:         tagsStr,
+		})
+	}
+
+	imported := 0
+	skipped := len(req.Patterns) - len(validated)
+	for _, vp := range validated {
+		p := db.ParsePattern{
+			Name:         vp.Name,
+			Regex:        vp.Regex,
+			FieldMapping: vp.FieldMapping,
+			Priority:     vp.Priority,
+			Builtin:      false,
+			Enabled:      true,
+			Tags:         vp.Tags,
+		}
+		if err := s.store.CreateParsePattern(&p); err != nil {
+			// Partial-failure: report what was imported so far in the error.
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("create %q failed after %d imports: %v", vp.Name, imported, err))
+			return
+		}
+		imported++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]int{"imported": imported, "skipped": skipped})
+}
+
+// normalizeJSONField accepts either a JSON string or an object/array and
+// returns it as a JSON string, with the given default for empty/null inputs.
+// Returns an error if a string input is not valid JSON.
+func normalizeJSONField(v interface{}, defaultVal string) (string, error) {
+	switch x := v.(type) {
+	case nil:
+		return defaultVal, nil
+	case string:
+		if x == "" {
+			return defaultVal, nil
+		}
+		// Validate that the string is parseable JSON.
+		var probe interface{}
+		if err := json.Unmarshal([]byte(x), &probe); err != nil {
+			return "", err
+		}
+		return x, nil
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		s := string(b)
+		if s == "" || s == "null" {
+			return defaultVal, nil
+		}
+		return s, nil
+	}
 }
 
 func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {

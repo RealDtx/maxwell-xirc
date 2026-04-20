@@ -64,6 +64,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/search/patterns", s.handleParsePatterns)
 	s.mux.HandleFunc("/api/search/unmatched", s.handleGetUnmatchedSamples)
 	s.mux.HandleFunc("/api/search/patterns/learn", s.handleLearnPattern)
+	s.mux.HandleFunc("/api/search/patterns/import", s.handleImportPatterns)
 	s.mux.HandleFunc("/api/search/patterns/", s.handleParsePatternByID)
 
 	// Download endpoints

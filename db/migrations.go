@@ -141,6 +141,8 @@ func migrationStatements() []string {
 
 		`ALTER TABLE realms ADD COLUMN search_bot TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE realms ADD COLUMN search_timeout INTEGER NOT NULL DEFAULT 10`,
+
+		`ALTER TABLE parse_patterns ADD COLUMN tags TEXT NOT NULL DEFAULT ''`,
 	}
 }
 

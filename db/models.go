@@ -109,6 +109,7 @@ type ParsePattern struct {
 	FailCount     int        `json:"fail_count"`
 	LastMatchedAt *time.Time `json:"last_matched_at"`
 	AutoDisabled  bool       `json:"auto_disabled"`
+	Tags          string     `db:"tags" json:"tags"`
 }
 
 type PostHook struct {

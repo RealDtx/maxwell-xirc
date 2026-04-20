@@ -1,6 +1,6 @@
 module github.com/maxwell-xirc/xirc
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
@@ -21,7 +21,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/text v0.3.8 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
 	modernc.org/libc v1.72.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

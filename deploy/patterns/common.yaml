@@ -1,0 +1,89 @@
+# xirc pattern export - v1
+# Common XDCC bot response patterns
+patterns:
+  - name: "hash-x-bracket"
+    regex: '#(\d+)\s+(\d+)x\s+\[([^\]]+)\]\s+(.+)'
+    field_mapping:
+      pack_number: 1
+      downloads_count: 2
+      filesize: 3
+      filename: 4
+    priority: 100
+    tags: []
+
+  - name: "bracket-hash-dash"
+    regex: '\[#0*(\d+)\]\s*-\s*(\d+)x\s*-\s*\[([^\]]+)\]\s*-\s*(.+)'
+    field_mapping:
+      pack_number: 1
+      downloads_count: 2
+      filesize: 3
+      filename: 4
+    priority: 95
+    tags: []
+
+  - name: "pipe-separated"
+    regex: 'Pack\s+#(\d+)\s*\|\s*(\d+)\s+downloads?\s*\|\s*([^\|]+?)\s*\|\s*(.+)'
+    field_mapping:
+      pack_number: 1
+      downloads_count: 2
+      filesize: 3
+      filename: 4
+    priority: 90
+    tags: []
+
+  - name: "hash-file-bracket-trailing"
+    regex: '#(\d+)\s+(.+?)\s+\[([^\]]+)\]\s+\((\d+)\s+downloads?\)'
+    field_mapping:
+      pack_number: 1
+      filename: 2
+      filesize: 3
+      downloads_count: 4
+    priority: 85
+    tags: []
+
+  - name: "triple-colon"
+    regex: '#(\d+)\s+:::\s+(\d+)x\s+:::\s+\[([^\]]+)\]\s+:::\s+(.+)'
+    field_mapping:
+      pack_number: 1
+      downloads_count: 2
+      filesize: 3
+      filename: 4
+    priority: 80
+    tags: []
+
+  - name: "botreign-pipe-xdcc"
+    regex: '^\d+\)\s+(\d+)x\s*\|\s*([0-9][0-9.]*[KMGTP]?)\s*\|\s*(.+?)\s*\|\s*/msg\s+(\S+)\s+XDCC\s+SEND\s+(\d+)'
+    field_mapping:
+      downloads_count: 1
+      filesize: 2
+      filename: 3
+      bot_nick: 4
+      pack_number: 5
+    priority: 75
+    tags: []
+
+  - name: "hash-bracket-file"
+    regex: '#(\d+)\s+\[([^\]]+)\]\s+(.+)'
+    field_mapping:
+      pack_number: 1
+      filesize: 2
+      filename: 3
+    priority: 50
+    tags: []
+
+  - name: "hash-file-bracket"
+    regex: '#(\d+)\s+(.+?)\s+\[([^\]]+)\]\s*$'
+    field_mapping:
+      pack_number: 1
+      filename: 2
+      filesize: 3
+    priority: 45
+    tags: []
+
+  - name: "minimal-hash-file"
+    regex: '#(\d+)\s+(.+\.\w{2,4})\s*$'
+    field_mapping:
+      pack_number: 1
+      filename: 2
+    priority: 10
+    tags: []

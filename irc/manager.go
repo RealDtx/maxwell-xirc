@@ -195,8 +195,7 @@ func (m *Manager) SendMessage(serverID int64, target, message string) error {
 	if conn == nil {
 		return fmt.Errorf("server %d not found", serverID)
 	}
-	conn.SendMessage(target, message)
-	return nil
+	return conn.SendMessage(target, message)
 }
 
 func (m *Manager) Names(serverID int64, channel string) ([]string, error) {

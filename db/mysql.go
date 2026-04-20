@@ -148,6 +148,8 @@ func mysqlMigrationStatements() []string {
 
 		`ALTER TABLE realms ADD COLUMN search_bot VARCHAR(255) NOT NULL DEFAULT ''`,
 		`ALTER TABLE realms ADD COLUMN search_timeout INT NOT NULL DEFAULT 10`,
+
+		`ALTER TABLE parse_patterns ADD COLUMN tags TEXT NOT NULL DEFAULT ''`,
 	}
 }
 
@@ -648,7 +650,7 @@ func (s *MySQLStore) DeleteSavedSearch(id int64) error {
 
 func (s *MySQLStore) GetParsePatterns() ([]ParsePattern, error) {
 	rows, err := s.db.Query(
-		"SELECT id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled FROM parse_patterns WHERE enabled=1 AND auto_disabled=0 ORDER BY priority DESC",
+		"SELECT id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled, tags FROM parse_patterns WHERE enabled=1 AND auto_disabled=0 ORDER BY priority DESC",
 	)
 	if err != nil {
 		return nil, err
@@ -660,7 +662,7 @@ func (s *MySQLStore) GetParsePatterns() ([]ParsePattern, error) {
 		var p ParsePattern
 		if err := rows.Scan(&p.ID, &p.Name, &p.Regex, &p.FieldMapping, &p.Priority,
 			&p.Builtin, &p.Enabled, &p.MatchCount, &p.FailCount, &p.LastMatchedAt,
-			&p.AutoDisabled); err != nil {
+			&p.AutoDisabled, &p.Tags); err != nil {
 			return nil, err
 		}
 		patterns = append(patterns, p)
@@ -670,7 +672,7 @@ func (s *MySQLStore) GetParsePatterns() ([]ParsePattern, error) {
 
 func (s *MySQLStore) GetAllParsePatterns() ([]ParsePattern, error) {
 	rows, err := s.db.Query(
-		"SELECT id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled FROM parse_patterns ORDER BY priority DESC",
+		"SELECT id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled, tags FROM parse_patterns ORDER BY priority DESC",
 	)
 	if err != nil {
 		return nil, err
@@ -682,7 +684,7 @@ func (s *MySQLStore) GetAllParsePatterns() ([]ParsePattern, error) {
 		var p ParsePattern
 		if err := rows.Scan(&p.ID, &p.Name, &p.Regex, &p.FieldMapping, &p.Priority,
 			&p.Builtin, &p.Enabled, &p.MatchCount, &p.FailCount, &p.LastMatchedAt,
-			&p.AutoDisabled); err != nil {
+			&p.AutoDisabled, &p.Tags); err != nil {
 			return nil, err
 		}
 		patterns = append(patterns, p)
@@ -692,10 +694,10 @@ func (s *MySQLStore) GetAllParsePatterns() ([]ParsePattern, error) {
 
 func (s *MySQLStore) CreateParsePattern(p *ParsePattern) error {
 	result, err := s.db.Exec(
-		`INSERT INTO parse_patterns (name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, auto_disabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO parse_patterns (name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, auto_disabled, tags)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.Name, p.Regex, p.FieldMapping, p.Priority, p.Builtin, p.Enabled,
-		p.MatchCount, p.FailCount, p.AutoDisabled,
+		p.MatchCount, p.FailCount, p.AutoDisabled, p.Tags,
 	)
 	if err != nil {
 		return err
@@ -706,9 +708,9 @@ func (s *MySQLStore) CreateParsePattern(p *ParsePattern) error {
 
 func (s *MySQLStore) UpdateParsePattern(p *ParsePattern) error {
 	_, err := s.db.Exec(
-		`UPDATE parse_patterns SET name=?, regex=?, field_mapping=?, priority=?, enabled=?, match_count=?, fail_count=?, last_matched_at=?, auto_disabled=? WHERE id=?`,
+		`UPDATE parse_patterns SET name=?, regex=?, field_mapping=?, priority=?, enabled=?, match_count=?, fail_count=?, last_matched_at=?, auto_disabled=?, tags=? WHERE id=?`,
 		p.Name, p.Regex, p.FieldMapping, p.Priority, p.Enabled,
-		p.MatchCount, p.FailCount, p.LastMatchedAt, p.AutoDisabled, p.ID,
+		p.MatchCount, p.FailCount, p.LastMatchedAt, p.AutoDisabled, p.Tags, p.ID,
 	)
 	return err
 }

@@ -227,6 +227,9 @@
                                     @click="clearSearchResults()"
                                     :disabled="searchResults.length === 0"
                                     title="Clear results">Clear</button>
+                            <button class="btn btn-sm" @click="toggleSearchViewMode()" :title="searchViewMode === 'merged' ? 'Switch to grouped view' : 'Switch to merged view'">
+                                <span x-text="searchViewMode === 'merged' ? 'Group' : 'Merge'"></span>
+                            </button>
                             <select
                                 style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;"
                                 @change="applySavedSearch($event.target.value); $event.target.value = ''"
@@ -251,7 +254,38 @@
                                     <button @click="searchBotWarning = null">&times;</button>
                                 </div>
                             </template>
-                            <template x-if="searchResults.length > 0">
+                            <template x-if="searchTargets.length > 0">
+                                <div style="padding:4px 8px; margin-bottom:8px; font-size:12px; color:var(--text-muted); display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                                    <template x-if="searchTargets.length <= 3">
+                                        <template x-for="t in searchTargets" :key="t.server_id + ':' + t.channel">
+                                            <span style="display:inline-flex; align-items:center; gap:3px;">
+                                                <span :style="'width:6px; height:6px; border-radius:50%; display:inline-block; background:' + (t.status === 'searching' ? 'var(--warning)' : t.status === 'error' ? 'var(--danger, #e74c3c)' : t.status === 'done' ? 'var(--success, #2ecc71)' : 'var(--text-muted)')"></span>
+                                                <span x-text="t.server_name"></span>
+                                                <span x-text="'(' + t.resultCount + (t.unparsedCount > 0 ? ', ' + t.unparsedCount + ' unparsed' : '') + ')'"></span>
+                                                <template x-if="t.error">
+                                                    <span style="color:var(--danger, #e74c3c);" x-text="t.error"></span>
+                                                </template>
+                                            </span>
+                                        </template>
+                                    </template>
+                                    <template x-if="searchTargets.length > 3">
+                                        <details style="width:100%;">
+                                            <summary style="cursor:pointer;">
+                                                <span x-text="'Searching ' + searchTargets.length + ' servers (' + searchTargets.reduce((a,t) => a + t.resultCount, 0) + ' results)'"></span>
+                                            </summary>
+                                            <div style="padding:4px 0; display:flex; flex-wrap:wrap; gap:6px;">
+                                                <template x-for="t in searchTargets" :key="t.server_id + ':' + t.channel">
+                                                    <span style="display:inline-flex; align-items:center; gap:3px;">
+                                                        <span :style="'width:6px; height:6px; border-radius:50%; display:inline-block; background:' + (t.status === 'searching' ? 'var(--warning)' : t.status === 'error' ? 'var(--danger, #e74c3c)' : t.status === 'done' ? 'var(--success, #2ecc71)' : 'var(--text-muted)')"></span>
+                                                        <span x-text="t.server_name + ' (' + t.resultCount + ')'"></span>
+                                                    </span>
+                                                </template>
+                                            </div>
+                                        </details>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="searchResults.length > 0 && searchViewMode === 'merged'">
                                 <table class="table">
                                     <thead>
                                         <tr>
@@ -291,6 +325,47 @@
                                         </button>
                                     </div>
                                 </template>
+                            </template>
+                            <template x-if="searchResults.length > 0 && searchViewMode === 'grouped'">
+                                <div>
+                                    <template x-for="group in groupedSearchResults()" :key="group.server_id + ':' + group.channel">
+                                        <details open style="margin-bottom:8px;">
+                                            <summary style="cursor:pointer; padding:6px 8px; background:var(--bg-secondary); border-radius:4px; font-size:13px; display:flex; align-items:center; gap:8px;">
+                                                <strong x-text="group.server_name"></strong>
+                                                <span style="color:var(--text-muted);" x-text="group.channel"></span>
+                                                <span style="color:var(--text-muted); font-size:11px;" x-text="'(' + group.results.length + ' results)'"></span>
+                                            </summary>
+                                            <table class="table" style="margin-top:4px;">
+                                                <thead>
+                                                    <tr>
+                                                        <th>File</th>
+                                                        <th>Size</th>
+                                                        <th>Bot</th>
+                                                        <th>Pack</th>
+                                                        <th></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <template x-for="(r, idx) in group.results" :key="idx">
+                                                        <tr>
+                                                            <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="r.filename || r.raw_line || '-'"></td>
+                                                            <td style="white-space:nowrap;" x-text="r.size_display || '-'"></td>
+                                                            <td x-text="r.bot_nick || '-'"></td>
+                                                            <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
+                                                            <td>
+                                                                <button class="btn btn-sm"
+                                                                        :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
+                                                                        @click="downloadPack(r)"
+                                                                        :disabled="!r.parsed || isDownloadPending(r)"
+                                                                        x-text="downloadPackLabel(r)"></button>
+                                                            </td>
+                                                        </tr>
+                                                    </template>
+                                                </tbody>
+                                            </table>
+                                        </details>
+                                    </template>
+                                </div>
                             </template>
                         </div>
                     </div>
@@ -821,6 +896,7 @@
                         <div class="tab" :class="{ active: settingsTab === 'realms' }" @click="settingsTab = 'realms'">Realms</div>
                         <div class="tab" :class="{ active: settingsTab === 'routing' }" @click="settingsTab = 'routing'">File Routing</div>
                         <div class="tab" :class="{ active: settingsTab === 'hooks' }" @click="settingsTab = 'hooks'">Post-Hooks</div>
+                        <div class="tab" :class="{ active: settingsTab === 'patterns' }" @click="settingsTab = 'patterns'; loadPatternSettings()">Patterns</div>
                         <div class="tab" :class="{ active: settingsTab === 'general' }" @click="settingsTab = 'general'">General</div>
                     </div>
 
@@ -1153,6 +1229,115 @@
                                     Preview: <span x-text="formatDateCustom(new Date().toISOString(), dateFormat)"></span>
                                 </p>
                             </div>
+                        </div>
+                    </template>
+
+                    <!-- Patterns tab -->
+                    <template x-if="settingsTab === 'patterns'">
+                        <div style="padding-top:16px;">
+
+                            <!-- Toolbar: import / export -->
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+                                <span style="font-size:14px;font-weight:600;flex:1;">Parse Patterns</span>
+                                <button class="btn btn-sm" @click="exportPatternsYAML()">Export YAML</button>
+                                <button class="btn btn-sm" @click="exportPatternsJSON()">Export JSON</button>
+                                <label class="btn btn-sm" style="cursor:pointer;margin:0;">
+                                    Import
+                                    <input type="file" accept=".yaml,.yml,.json" style="display:none;"
+                                           @change="importPatternsFile($event)">
+                                </label>
+                                <span x-show="patternImportMsg" x-text="patternImportMsg"
+                                      :style="patternImportError ? 'color:#ef4444;font-size:12px;' : 'color:#10b981;font-size:12px;'"></span>
+                            </div>
+
+                            <!-- Pattern list -->
+                            <template x-if="patternSettingsList.length > 0">
+                                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                                    <thead>
+                                        <tr>
+                                            <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Name</th>
+                                            <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Regex</th>
+                                            <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Priority</th>
+                                            <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Tags</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="p in patternSettingsList" :key="p.id">
+                                            <tr style="border-bottom:1px solid var(--border);">
+                                                <td style="padding:6px 8px;white-space:nowrap;" x-text="p.name"></td>
+                                                <td style="padding:6px 8px;font-family:monospace;font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="p.regex"></td>
+                                                <td style="padding:6px 8px;white-space:nowrap;" x-text="p.priority"></td>
+                                                <td style="padding:6px 8px;">
+                                                    <!-- Tag chips -->
+                                                    <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-height:24px;">
+                                                        <template x-for="tag in parseTags(p.tags)" :key="tag">
+                                                            <span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:11px;border:1px solid var(--border);">
+                                                                <span x-text="tag"></span>
+                                                                <button @click="removeTag(p, tag)" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;line-height:1;padding:0 1px;">×</button>
+                                                            </span>
+                                                        </template>
+                                                        <!-- Inline tag input -->
+                                                        <template x-if="patternTagEdit.id === p.id">
+                                                            <input
+                                                                x-init="$el.focus()"
+                                                                x-model="patternTagEdit.value"
+                                                                placeholder="tag1, tag2"
+                                                                style="padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:11px;width:110px;"
+                                                                @keydown.enter.prevent="savePatternTags(p)"
+                                                                @keydown.escape="patternTagEdit = {id:null,value:''}"
+                                                                @blur="savePatternTags(p)">
+                                                        </template>
+                                                        <button x-show="patternTagEdit.id !== p.id"
+                                                                @click="openTagEdit(p)"
+                                                                style="padding:1px 6px;border:1px dashed var(--border);border-radius:10px;background:transparent;color:var(--text-muted);font-size:11px;cursor:pointer;">+ tag</button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </template>
+                            <template x-if="patternSettingsList.length === 0">
+                                <p style="color:var(--text-muted);font-size:13px;margin-top:8px;">No parse patterns configured.</p>
+                            </template>
+
+                            <!-- Regex tester -->
+                            <div class="settings-card" style="margin-top:24px;">
+                                <h3 style="margin:0 0 12px;font-size:14px;">Test Pattern</h3>
+                                <div class="form-group">
+                                    <label>Paste a raw IRC line</label>
+                                    <textarea
+                                        x-model="patternTesterLine"
+                                        rows="2"
+                                        style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;font-family:monospace;resize:vertical;"
+                                        placeholder="#42  15x  [1.45 GiB]  Movie.Name.2023.mkv"></textarea>
+                                </div>
+                                <button class="btn btn-primary btn-sm" @click="testPattern()">Test</button>
+                                <!-- Result -->
+                                <template x-if="patternTesterResult !== null">
+                                    <div style="margin-top:12px;">
+                                        <template x-if="patternTesterResult.matched">
+                                            <div>
+                                                <p style="font-size:12px;color:#10b981;margin:0 0 8px;">Matched: <strong x-text="patternTesterResult.name"></strong> (priority <span x-text="patternTesterResult.priority"></span>)</p>
+                                                <table style="font-size:12px;border-collapse:collapse;">
+                                                    <tbody>
+                                                        <template x-for="field in patternTesterResult.fields" :key="field.name">
+                                                            <tr>
+                                                                <td style="padding:2px 12px 2px 0;color:var(--text-muted);" x-text="field.name"></td>
+                                                                <td style="padding:2px 0;font-family:monospace;" x-text="field.value"></td>
+                                                            </tr>
+                                                        </template>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </template>
+                                        <template x-if="!patternTesterResult.matched">
+                                            <p style="font-size:12px;color:#ef4444;margin:0;">No pattern matched.</p>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+
                         </div>
                     </template>
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/maxwell-xirc/xirc/config"
 	"github.com/maxwell-xirc/xirc/db"
+	"github.com/maxwell-xirc/xirc/internal/debug"
 	"github.com/maxwell-xirc/xirc/internal/exitcodes"
 	ircpkg "github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/notify"
@@ -126,7 +127,15 @@ func runCLIWizard(badDirs []string, store db.Store, state *server.SetupState) {
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
+	debugFlag := flag.Bool("debug", false, "enable verbose debug logging")
 	flag.Parse()
+
+	if *debugFlag {
+		debug.Enabled = true
+	}
+	if debug.Enabled {
+		log.Println("[DEBUG] debug logging enabled")
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -187,6 +196,23 @@ func main() {
 	// Seed default parse patterns
 	if err := parser.SeedPatterns(store); err != nil {
 		log.Printf("warning: failed to seed patterns: %v", err)
+	}
+
+	// Sync config-defined patterns to DB (skip if name already exists)
+	if len(cfg.Patterns) > 0 {
+		cfgPatterns := make([]parser.ConfigPattern, len(cfg.Patterns))
+		for i, cp := range cfg.Patterns {
+			cfgPatterns[i] = parser.ConfigPattern{
+				Name:         cp.Name,
+				Regex:        cp.Regex,
+				FieldMapping: cp.FieldMapping,
+				Priority:     cp.Priority,
+				Tags:         cp.Tags,
+			}
+		}
+		if _, err := parser.SyncPatterns(store, cfgPatterns); err != nil {
+			log.Printf("warning: failed to sync config patterns: %v", err)
+		}
 	}
 
 	if err := routing.SeedRoutingRules(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {

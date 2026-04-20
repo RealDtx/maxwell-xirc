@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -306,6 +307,35 @@ func TestApplyHandlers_OnNoticeRoutesDMToSenderNick(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for OnNotice event")
+	}
+}
+
+// TestSendMessage_NilClient verifies that SendMessage returns an error (and does
+// not panic) when the underlying IRC client has not been set.
+func TestSendMessage_NilClient(t *testing.T) {
+	bus := NewEventBus()
+	srv := &db.Server{
+		ID:       7,
+		Name:     "no-client-server",
+		Host:     "irc.example.com",
+		Port:     6667,
+		Nickname: "testbot",
+		Enabled:  true,
+	}
+	conn := NewConnection(srv, []db.Realm{}, bus)
+	// client is nil by default (NewConnection does not set it)
+
+	err := conn.SendMessage("#channel", "hello")
+	if err == nil {
+		t.Fatal("expected error when client is nil, got nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "not connected") {
+		t.Errorf("expected error to contain %q, got %q", "not connected", errMsg)
+	}
+	// Verify the server ID is included in the error message for debuggability.
+	if !strings.Contains(errMsg, "7") {
+		t.Errorf("expected error to contain server ID 7, got %q", errMsg)
 	}
 }
 
