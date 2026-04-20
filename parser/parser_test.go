@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -557,24 +558,28 @@ func TestParser_AutoDetect_SavesFirstBot(t *testing.T) {
 	// Subscribe to events to check for search_bot_detected
 	evCh := bus.Subscribe()
 
-	// First bot responds
-	bus.Publish(irc.Event{
-		Type:     irc.EventIRCMessage,
-		ServerID: srv.ID,
-		Channel:  "#test",
-		Nick:     "BotReign",
-		Data: map[string]string{
-			"type":    "privmsg",
-			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
-		},
-	})
+	// Bot must send >= autoDetectThreshold query-matching listing lines
+	// before auto-detect locks it in — prevents a single stray broadcast
+	// from a pack bot capturing the realm.
+	for i := 0; i < autoDetectThreshold; i++ {
+		bus.Publish(irc.Event{
+			Type:     irc.EventIRCMessage,
+			ServerID: srv.ID,
+			Channel:  "#test",
+			Nick:     "BotReign",
+			Data: map[string]string{
+				"type":    "privmsg",
+				"message": fmt.Sprintf("#%d    34x [1.4G] Some.Movie.2024.1080p.mkv", i+5),
+			},
+		})
+	}
 
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 
-	// Verify result was stored
+	// Verify results were stored
 	results, _ := store.GetSearchResults("movie", srv.ID, "#test")
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	if len(results) < autoDetectThreshold {
+		t.Fatalf("expected >= %d results, got %d", autoDetectThreshold, len(results))
 	}
 
 	// Verify realm was updated with detected bot
@@ -586,10 +591,10 @@ func TestParser_AutoDetect_SavesFirstBot(t *testing.T) {
 		t.Errorf("expected realm search_bot 'BotReign', got '%s'", got.SearchBot)
 	}
 
-	// Verify search_bot_detected event was published
 	bus.Unsubscribe(evCh)
 
 	// Now a second bot responds — should be ignored because SearchBot is now locked
+	baseline := len(results)
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
@@ -604,8 +609,8 @@ func TestParser_AutoDetect_SavesFirstBot(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	results2, _ := store.GetSearchResults("movie", srv.ID, "#test")
-	if len(results2) != 1 {
-		t.Fatalf("expected still 1 result after second bot, got %d", len(results2))
+	if len(results2) != baseline {
+		t.Fatalf("expected still %d results after second bot, got %d", baseline, len(results2))
 	}
 }
 

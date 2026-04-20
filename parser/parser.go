@@ -36,7 +36,17 @@ type searchSession struct {
 	RealmID       int64     // realm ID for auto-detect persistence (0 = no realm)
 	CreatedAt     int64     // monotonic counter for ordering
 	CreatedAtTime time.Time // wall-clock time for fallback window
+
+	// autoDetectHits tracks, per nick, how many query-matching listing lines
+	// we've seen since the session started. Used to distinguish a real search
+	// bot (which bursts multiple results) from a download/pack bot whose
+	// periodic broadcast happens to contain the query word once.
+	autoDetectHits map[string]int
 }
+
+// autoDetectThreshold is the number of query-matching listing lines required
+// from a single nick before that nick is locked in as the search bot.
+const autoDetectThreshold = 2
 
 type Parser struct {
 	store                db.Store
@@ -80,13 +90,14 @@ func (p *Parser) StartSearch(serverID int64, channel, query, searchBot string, r
 	p.mu.Lock()
 	p.sessionCounter++
 	p.activeSessions[key] = &searchSession{
-		ServerID:      serverID,
-		Channel:       channel,
-		Query:         query,
-		SearchBot:     searchBot,
-		RealmID:       realmID,
-		CreatedAt:     p.sessionCounter,
-		CreatedAtTime: time.Now(),
+		ServerID:       serverID,
+		Channel:        channel,
+		Query:          query,
+		SearchBot:      searchBot,
+		RealmID:        realmID,
+		CreatedAt:      p.sessionCounter,
+		CreatedAtTime:  time.Now(),
+		autoDetectHits: map[string]int{},
 	}
 	p.mu.Unlock()
 }
@@ -215,6 +226,46 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		return
 	}
 
+	// Auto-detect gate: when the realm has no configured search bot, count
+	// how many query-matching listing lines each nick has sent since the
+	// session started. Only once a nick crosses the threshold do we lock it
+	// in — this avoids grabbing a download/pack bot whose periodic broadcast
+	// happened to contain the query word once. A real search bot bursts
+	// multiple matches in response to our command.
+	if session.SearchBot == "" && session.RealmID > 0 &&
+		looksLikeListing(message) && messageMatchesQuery(message, session.Query) {
+		p.mu.Lock()
+		if session.autoDetectHits == nil {
+			session.autoDetectHits = map[string]int{}
+		}
+		session.autoDetectHits[ev.Nick]++
+		hits := session.autoDetectHits[ev.Nick]
+		locked := false
+		if hits >= autoDetectThreshold {
+			session.SearchBot = ev.Nick
+			locked = true
+		}
+		p.mu.Unlock()
+
+		if locked {
+			if err := p.store.UpdateRealmSearchBot(session.RealmID, ev.Nick); err != nil {
+				log.Printf("failed to persist auto-detected search bot %q for realm %d: %v", ev.Nick, session.RealmID, err)
+			} else {
+				log.Printf("auto-detected search bot %q for realm %d after %d matches", ev.Nick, session.RealmID, hits)
+			}
+			p.bus.Publish(irc.Event{
+				Type:     irc.EventSearchBotDetected,
+				ServerID: ev.ServerID,
+				Channel:  session.Channel,
+				Nick:     ev.Nick,
+				Data: map[string]string{
+					"realm_id": fmt.Sprintf("%d", session.RealmID),
+					"bot_nick": ev.Nick,
+				},
+			})
+		}
+	}
+
 	// Load patterns
 	patterns, err := p.store.GetParsePatterns()
 	if err != nil {
@@ -305,33 +356,6 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	// Store result
 	if err := p.store.CreateSearchResult(sr); err != nil {
 		log.Printf("failed to store search result: %v", err)
-	}
-
-	// Auto-detect: if no search bot was configured and this is the first
-	// parseable result, lock in this bot nick for the session and persist
-	// it to the realm.
-	if session.SearchBot == "" && session.RealmID > 0 {
-		p.mu.Lock()
-		session.SearchBot = ev.Nick
-		p.mu.Unlock()
-
-		if err := p.store.UpdateRealmSearchBot(session.RealmID, ev.Nick); err != nil {
-			log.Printf("failed to persist auto-detected search bot %q for realm %d: %v", ev.Nick, session.RealmID, err)
-		} else {
-			log.Printf("auto-detected search bot %q for realm %d", ev.Nick, session.RealmID)
-		}
-
-		// Notify frontend
-		p.bus.Publish(irc.Event{
-			Type:     irc.EventSearchBotDetected,
-			ServerID: ev.ServerID,
-			Channel:  session.Channel,
-			Nick:     ev.Nick,
-			Data: map[string]string{
-				"realm_id": fmt.Sprintf("%d", session.RealmID),
-				"bot_nick": ev.Nick,
-			},
-		})
 	}
 
 	// Publish parsed result event for WebSocket
