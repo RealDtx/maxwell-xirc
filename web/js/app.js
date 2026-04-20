@@ -615,7 +615,6 @@ document.addEventListener('alpine:init', () => {
             this._searchDisplayLimit = 200;
             const searchStarted = Date.now();
             this._searchSince = searchStarted;
-            var searchBot = null;
             var searchTimeout = 10;
             try {
                 for (var i = 0; i < this.servers.length; i++) {
@@ -633,7 +632,9 @@ document.addEventListener('alpine:init', () => {
                             status: 'pending',
                             resultCount: 0,
                             unparsedCount: 0,
-                            error: null
+                            error: null,
+                            search_bot: null,
+                            search_timeout: 10
                         });
                     }
                 }
@@ -652,9 +653,12 @@ document.addEventListener('alpine:init', () => {
                         .then((r) => {
                             startOk++;
                             this.searchTargets[k].status = 'searching'; // confirmed started
-                            if (!searchBot && r && r.search_bot) {
-                                searchBot = r.search_bot;
-                                searchTimeout = (r && r.search_timeout > 0) ? r.search_timeout : 10;
+                            if (r && r.search_bot) {
+                                this.searchTargets[k].search_bot = r.search_bot;
+                            }
+                            if (r && r.search_timeout > 0) {
+                                this.searchTargets[k].search_timeout = r.search_timeout;
+                                if (r.search_timeout > searchTimeout) searchTimeout = r.search_timeout;
                             }
                         })
                         .catch((e) => {
@@ -696,8 +700,24 @@ document.addEventListener('alpine:init', () => {
                             lastCount = res.length;
                         }
                     }
-                    if (searchBot && !this.searchBotWarning && (Date.now() - searchStarted > searchTimeout * 1000) && this.searchResults.length === 0) {
-                        this.searchBotWarning = 'No response from ' + searchBot + ' after ' + searchTimeout + 's — check bot name in realm settings';
+                    // Per-target timeout: mark each target's status and, only when
+                    // EVERY target has timed out or failed AND there are still no
+                    // results anywhere, surface a warning listing each silent bot.
+                    if (!this.searchBotWarning && (Date.now() - searchStarted > searchTimeout * 1000)) {
+                        var silent = [];
+                        var active = 0;
+                        for (var t = 0; t < this.searchTargets.length; t++) {
+                            var tgt = this.searchTargets[t];
+                            if (tgt.status === 'error') continue;
+                            active++;
+                            if (tgt.resultCount === 0 && tgt.search_bot) {
+                                if (tgt.status === 'searching') tgt.status = 'timeout';
+                                silent.push(tgt.server_name + ':' + tgt.search_bot);
+                            }
+                        }
+                        if (active > 0 && silent.length === active && this.searchResults.length === 0) {
+                            this.searchBotWarning = 'No response from ' + silent.join(', ') + ' — check bot names in realm settings';
+                        }
                     }
                 }
                 if (token === this.searchToken && this.searchResults.length === 0) {

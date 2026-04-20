@@ -13,7 +13,6 @@ import (
 
 	"github.com/maxwell-xirc/xirc/db"
 	"github.com/maxwell-xirc/xirc/internal/debug"
-	ircpkg "github.com/maxwell-xirc/xirc/irc"
 	"github.com/maxwell-xirc/xirc/parser"
 )
 
@@ -115,20 +114,10 @@ func (s *Server) handleStartSearch(w http.ResponseWriter, r *http.Request) {
 		s.parser.StartSearch(req.ServerID, req.Channel, req.Query, searchBot, realmID)
 	}
 
-	// Check connection status before attempting to send
-	if s.ircMgr != nil {
-		conn := s.ircMgr.GetConnection(req.ServerID)
-		if conn == nil {
-			writeError(w, http.StatusBadRequest, "server not found")
-			return
-		}
-		if conn.Status() != ircpkg.StatusConnected {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("server %d not connected (status: %s)", req.ServerID, conn.Status()))
-			return
-		}
-	}
-
-	// Send the search command via IRC
+	// Send the search command via IRC. SendMessage already returns an error
+	// for missing/disconnected connections — no need for a separate pre-check,
+	// which was too strict (a briefly-reconnecting server would abort even
+	// though the underlying client could send).
 	if s.ircMgr != nil {
 		cmd := searchCmd + " " + req.Query
 		if err := s.ircMgr.SendMessage(req.ServerID, req.Channel, cmd); err != nil {
