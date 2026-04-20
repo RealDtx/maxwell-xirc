@@ -21,7 +21,7 @@ func mysqlMigrationStatements() []string {
 			name VARCHAR(255) NOT NULL,
 			host VARCHAR(255) NOT NULL,
 			port INT NOT NULL DEFAULT 6667,
-			ssl BOOLEAN NOT NULL DEFAULT FALSE,
+			` + "`ssl`" + ` BOOLEAN NOT NULL DEFAULT FALSE,
 			nickname VARCHAR(255) NOT NULL DEFAULT 'xirc_user',
 			alt_nicknames TEXT NOT NULL,
 			auth_method VARCHAR(50) NOT NULL DEFAULT 'none',
@@ -195,7 +195,7 @@ func (s *MySQLStore) Migrate() error {
 // --- Servers ---
 
 func (s *MySQLStore) GetServers() ([]Server, error) {
-	rows, err := s.db.Query("SELECT id, name, host, port, ssl, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at FROM servers ORDER BY name")
+	rows, err := s.db.Query("SELECT id, name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at FROM servers ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func (s *MySQLStore) GetServer(id int64) (*Server, error) {
 	var srv Server
 	var altJSON string
 	err := s.db.QueryRow(
-		"SELECT id, name, host, port, ssl, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at FROM servers WHERE id=?", id,
+		"SELECT id, name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at FROM servers WHERE id=?", id,
 	).Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &srv.SSL, &srv.Nickname,
 		&altJSON, &srv.AuthMethod, &srv.AuthPassword, &srv.AutoConnect, &srv.Enabled,
 		&srv.CreatedAt, &srv.UpdatedAt)
@@ -245,8 +245,7 @@ func (s *MySQLStore) CreateServer(srv *Server) error {
 	}
 	now := time.Now()
 	result, err := s.db.Exec(
-		`INSERT INTO servers (name, host, port, ssl, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"INSERT INTO servers (name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		srv.Name, srv.Host, srv.Port, srv.SSL, srv.Nickname, string(altJSON),
 		srv.AuthMethod, srv.AuthPassword, srv.AutoConnect, srv.Enabled, now, now,
 	)
@@ -263,7 +262,7 @@ func (s *MySQLStore) UpdateServer(srv *Server) error {
 	altJSON, _ := json.Marshal(srv.AltNicknames)
 	now := time.Now()
 	_, err := s.db.Exec(
-		`UPDATE servers SET name=?, host=?, port=?, ssl=?, nickname=?, alt_nicknames=?, auth_method=?, auth_password=?, auto_connect=?, enabled=?, updated_at=? WHERE id=?`,
+		"UPDATE servers SET name=?, host=?, port=?, `ssl`=?, nickname=?, alt_nicknames=?, auth_method=?, auth_password=?, auto_connect=?, enabled=?, updated_at=? WHERE id=?",
 		srv.Name, srv.Host, srv.Port, srv.SSL, srv.Nickname, string(altJSON),
 		srv.AuthMethod, srv.AuthPassword, srv.AutoConnect, srv.Enabled, now, srv.ID,
 	)
