@@ -60,10 +60,11 @@ func (m *mockStore) DeleteSearchResults(serverID int64, channel string) error {
 func (m *mockStore) GetSavedSearches() ([]db.SavedSearch, error)             { return nil, nil }
 func (m *mockStore) CreateSavedSearch(s *db.SavedSearch) error               { return nil }
 func (m *mockStore) DeleteSavedSearch(id int64) error                        { return nil }
-func (m *mockStore) GetParsePatterns() ([]db.ParsePattern, error)            { return nil, nil }
-func (m *mockStore) GetAllParsePatterns() ([]db.ParsePattern, error)         { return nil, nil }
-func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error             { return nil }
-func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error             { return nil }
+func (m *mockStore) GetParsePatterns() ([]db.ParsePattern, error)                                         { return nil, nil }
+func (m *mockStore) GetAllParsePatterns() ([]db.ParsePattern, error)                                      { return nil, nil }
+func (m *mockStore) GetParsePatternsForChannel(_ int64, _ string) ([]db.ParsePattern, error)              { return nil, nil }
+func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error                                          { return nil }
+func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error                                          { return nil }
 func (m *mockStore) GetPostHooks(scope string, scopeID *int64) ([]db.PostHook, error) {
 	return nil, nil
 }

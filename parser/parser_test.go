@@ -220,7 +220,7 @@ func TestParser_BotPatternCache(t *testing.T) {
 	}
 
 	// Check cache has the bot
-	cached := p.GetCachedPatternID("consistent_bot")
+	cached := p.GetCachedPatternID(srv.ID, "#test", "consistent_bot")
 	if cached == 0 {
 		t.Error("expected bot to be cached")
 	}
@@ -628,8 +628,8 @@ defer p.Stop()
 srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 store.CreateServer(srv)
 
-// Search for "movie" with a known bot
-p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+// No configured bot — relevance filter is active in this state
+p.StartSearch(srv.ID, "#test", "movie", "", 0)
 
 // Bot sends a parseable line that does NOT match "movie" (broadcast)
 bus.Publish(irc.Event{

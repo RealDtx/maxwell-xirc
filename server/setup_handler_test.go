@@ -50,7 +50,7 @@ func newTestServerWithSetup(t *testing.T, setup *SetupState) (*Server, db.Store,
 	bus := irc.NewEventBus()
 	ircMgr := irc.NewManager(store, bus)
 	p := parser.New(store, bus)
-	srv := New(store, ircMgr, p, nil, nil, nil, nil, setup)
+	srv := New(store, ircMgr, p, nil, nil, nil, nil, setup, "", nil)
 	return srv, store, cleanup
 }
 
@@ -151,7 +151,7 @@ func TestSetupComplete_UpdatesRoutingRules(t *testing.T) {
 	bus := irc.NewEventBus()
 	ircMgr := irc.NewManager(store, bus)
 	p := parser.New(store, bus)
-	srv := New(store, ircMgr, p, nil, nil, nil, nil, setup)
+	srv := New(store, ircMgr, p, nil, nil, nil, nil, setup, "", nil)
 
 	body, _ := json.Marshal(map[string]interface{}{
 		"mappings": []map[string]string{

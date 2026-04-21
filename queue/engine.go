@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -23,27 +24,44 @@ type PendingRequest struct {
 }
 
 type Engine struct {
-	mu           sync.RWMutex
-	wg           sync.WaitGroup
-	queue        *Queue
-	store        db.Store
-	bus          *irc.EventBus
-	ircMgr       *irc.Manager
-	storageCfg   *config.StorageConfig
-	eventCh      <-chan irc.Event
-	stopCh       chan struct{}
-	pendingByBot map[string]*PendingRequest // key: "serverID:botNick"
+	mu                 sync.RWMutex
+	wg                 sync.WaitGroup
+	queue              *Queue
+	store              db.Store
+	bus                *irc.EventBus
+	ircMgr             *irc.Manager
+	storageCfg         *config.StorageConfig
+	eventCh            <-chan irc.Event
+	stopCh             chan struct{}
+	pendingByBot       map[string]*PendingRequest // key: "serverID:botNick"
+	transferMu         sync.Mutex
+	activeTransfers    map[int64]*dcc.Transfer
+	cancelledTransfers map[int64]bool
 }
 
 func NewEngine(store db.Store, bus *irc.EventBus, ircMgr *irc.Manager, storageCfg *config.StorageConfig, maxConcurrent int) *Engine {
 	return &Engine{
-		queue:        New(store, maxConcurrent),
-		store:        store,
-		bus:          bus,
-		ircMgr:       ircMgr,
-		storageCfg:   storageCfg,
-		stopCh:       make(chan struct{}),
-		pendingByBot: make(map[string]*PendingRequest),
+		queue:              New(store, maxConcurrent),
+		store:              store,
+		bus:                bus,
+		ircMgr:             ircMgr,
+		storageCfg:         storageCfg,
+		stopCh:             make(chan struct{}),
+		pendingByBot:       make(map[string]*PendingRequest),
+		activeTransfers:    make(map[int64]*dcc.Transfer),
+		cancelledTransfers: make(map[int64]bool),
+	}
+}
+
+// CancelTransfer interrupts an active TCP transfer for the given download ID, if one
+// is running. It is a no-op when no transfer is active (e.g. download is still queued).
+func (e *Engine) CancelTransfer(downloadID int64) {
+	e.transferMu.Lock()
+	e.cancelledTransfers[downloadID] = true
+	tr := e.activeTransfers[downloadID]
+	e.transferMu.Unlock()
+	if tr != nil {
+		tr.Cancel()
 	}
 }
 
@@ -231,6 +249,17 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		tr.SetResumeOffset(resumeOffset)
 	}
 
+	// Register the active transfer so CancelTransfer can reach it.
+	e.transferMu.Lock()
+	e.activeTransfers[downloadID] = tr
+	e.transferMu.Unlock()
+	defer func() {
+		e.transferMu.Lock()
+		delete(e.activeTransfers, downloadID)
+		delete(e.cancelledTransfers, downloadID)
+		e.transferMu.Unlock()
+	}()
+
 	// Progress reporting goroutine
 	var progressDone sync.WaitGroup
 	progressDone.Add(1)
@@ -263,6 +292,12 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	err := tr.Start()
 	progressDone.Wait() // drain progress before marking terminal state
 	if err != nil {
+		// If the transfer was cancelled, the DB is already marked "cancelled" by
+		// CancelTransfer/Queue.Cancel — don't overwrite with "failed".
+		if errors.Is(err, dcc.ErrCancelled) {
+			log.Printf("transfer cancelled for download %d", downloadID)
+			return
+		}
 		log.Printf("transfer failed for download %d: %v", downloadID, err)
 		e.queue.MarkFailed(downloadID, err.Error())
 		if dl, dlErr := e.store.GetDownload(downloadID); dlErr == nil && dl != nil {

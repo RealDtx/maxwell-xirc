@@ -100,6 +100,7 @@ func (s *Server) handleCancelDownload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "download engine not initialized")
 		return
 	}
+	s.engine.CancelTransfer(req.DownloadID) // interrupts active TCP transfer if running
 	if err := s.engine.Queue().Cancel(req.DownloadID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

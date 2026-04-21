@@ -55,6 +55,11 @@
                         <span style="flex:1; cursor:pointer; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
                               x-text="server.name"
                               @click="selectServer(server); sidebarOpen = false"></span>
+                        <template x-if="serverStatus(server.id) !== 'connected'">
+                            <span style="cursor:pointer; padding:0 3px; font-size:10px; opacity:0.6; flex-shrink:0; color:var(--warning);"
+                                  title="Reconnect"
+                                  @click.stop="reconnectServer(server.id)">↺</span>
+                        </template>
                         <span style="cursor:pointer; padding:0 4px; font-size:10px; opacity:0.6; flex-shrink:0;"
                               x-text="isExpanded(server.id) ? '▾' : '▸'"
                               @click.stop="toggleServer(server.id)"></span>
@@ -69,9 +74,17 @@
                                         <div
                                             class="channel-item"
                                             :class="{ active: activeServer === server.id && activeChannel === realm.name && activeView === 'channel' }"
+                                            style="display:flex; align-items:center; gap:2px;"
                                             @click="selectRealm(server.id, realm.name); sidebarOpen = false"
-                                            x-text="realm.display_name || realm.name"
-                                        ></div>
+                                        >
+                                            <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                                                  x-text="realm.display_name || realm.name"></span>
+                                            <template x-if="serverStatus(server.id) === 'connected'">
+                                                <span style="cursor:pointer; font-size:10px; opacity:0.5; flex-shrink:0; padding:0 2px;"
+                                                      title="Rejoin channel"
+                                                      @click.stop="rejoinChannel(server.id, realm.name)">↵</span>
+                                            </template>
+                                        </div>
                                     </template>
                                 </div>
                             </template>
@@ -81,9 +94,17 @@
                                         <div
                                             class="channel-item"
                                             :class="{ active: activeServer === server.id && activeChannel === ch && activeView === 'channel' }"
+                                            style="display:flex; align-items:center; gap:2px;"
                                             @click="selectChannel(server.id, ch); sidebarOpen = false"
-                                            x-text="ch"
-                                        ></div>
+                                        >
+                                            <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                                                  x-text="ch"></span>
+                                            <template x-if="serverStatus(server.id) === 'connected'">
+                                                <span style="cursor:pointer; font-size:10px; opacity:0.5; flex-shrink:0; padding:0 2px;"
+                                                      title="Rejoin channel"
+                                                      @click.stop="rejoinChannel(server.id, ch)">↵</span>
+                                            </template>
+                                        </div>
                                     </template>
                                 </div>
                             </template>
@@ -260,7 +281,7 @@
                                         <template x-for="t in searchTargets" :key="t.server_id + ':' + t.channel">
                                             <span style="display:inline-flex; align-items:center; gap:3px;">
                                                 <span :style="'width:6px; height:6px; border-radius:50%; display:inline-block; background:' + (t.status === 'searching' ? 'var(--warning)' : t.status === 'error' ? 'var(--danger, #e74c3c)' : t.status === 'done' ? 'var(--success, #2ecc71)' : 'var(--text-muted)')"></span>
-                                                <span x-text="t.server_name"></span>
+                                                <span x-text="t.display_label || t.server_name"></span>
                                                 <span x-text="'(' + t.resultCount + (t.unparsedCount > 0 ? ', ' + t.unparsedCount + ' unparsed' : '') + ')'"></span>
                                                 <template x-if="t.error">
                                                     <span style="color:var(--danger, #e74c3c);" x-text="t.error"></span>
@@ -277,7 +298,7 @@
                                                 <template x-for="t in searchTargets" :key="t.server_id + ':' + t.channel">
                                                     <span style="display:inline-flex; align-items:center; gap:3px;">
                                                         <span :style="'width:6px; height:6px; border-radius:50%; display:inline-block; background:' + (t.status === 'searching' ? 'var(--warning)' : t.status === 'error' ? 'var(--danger, #e74c3c)' : t.status === 'done' ? 'var(--success, #2ecc71)' : 'var(--text-muted)')"></span>
-                                                        <span x-text="t.server_name + ' (' + t.resultCount + ')'"></span>
+                                                        <span x-text="(t.display_label || t.server_name) + ' (' + t.resultCount + ')'"></span>
                                                     </span>
                                                 </template>
                                             </div>
@@ -441,7 +462,8 @@
                                     <input
                                         type="text"
                                         placeholder="Search for files..."
-                                        x-model="searchQuery"
+                                        x-model="realmSearchQuery"
+                                        @focus="realmSearchQuery = ''"
                                         @keydown.enter="runSearch()"
                                     >
                                     <button
@@ -453,7 +475,7 @@
                                     <button
                                         class="btn btn-sm"
                                         @click="bookmarkSearch()"
-                                        :disabled="!searchQuery.trim()"
+                                        :disabled="!realmSearchQuery.trim()"
                                         title="Save this search"
                                     >Bookmark</button>
                                     <button
@@ -600,7 +622,8 @@
                                     <input
                                         type="text"
                                         placeholder="Search for files..."
-                                        x-model="searchQuery"
+                                        x-model="realmSearchQuery"
+                                        @focus="realmSearchQuery = ''"
                                         @keydown.enter="runSearch()"
                                     >
                                     <button
@@ -612,7 +635,7 @@
                                     <button
                                         class="btn btn-sm"
                                         @click="bookmarkSearch()"
-                                        :disabled="!searchQuery.trim()"
+                                        :disabled="!realmSearchQuery.trim()"
                                         title="Save this search"
                                     >Bookmark</button>
                                     <button

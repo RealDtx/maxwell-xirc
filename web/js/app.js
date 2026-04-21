@@ -26,6 +26,7 @@ document.addEventListener('alpine:init', () => {
         activeChannel: null,
         expandedServers: {},
         searchQuery: '',
+        realmSearchQuery: '',
         searchResults: [],
         patternTrainer: {
             open: false,
@@ -460,6 +461,14 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        reconnectServer(serverId) {
+            api.connectServer(serverId).catch(e => console.warn('reconnect failed', e));
+        },
+
+        rejoinChannel(serverId, channel) {
+            api.joinChannel(serverId, channel).catch(e => console.warn('rejoin failed', e));
+        },
+
         // Send message to a channel with slash command support
         sendToChannel(serverId, channel) {
             const text = this.ircInput.trim();
@@ -530,7 +539,7 @@ document.addEventListener('alpine:init', () => {
         // --- Search ---
 
         async runSearch() {
-            if (!this.activeServer || !this.activeChannel || !this.searchQuery.trim()) return;
+            if (!this.activeServer || !this.activeChannel || !this.realmSearchQuery.trim()) return;
             const token = ++this.searchToken;
             this.searchRunning = true;
             this.searchBotWarning = null;
@@ -543,9 +552,22 @@ document.addEventListener('alpine:init', () => {
                 var searchBot = null;
                 var searchTimeout = 10;
                 try {
-                    var startRes = await api.startSearch(this.activeServer, this.activeChannel, this.searchQuery);
+                    var startRes = await api.startSearch(this.activeServer, this.activeChannel, this.realmSearchQuery);
                     searchBot = startRes && startRes.search_bot;
                     searchTimeout = (startRes && startRes.search_timeout > 0) ? startRes.search_timeout : 10;
+                    // Local echo: inject the sent command as an outgoing message in the channel
+                    const realmCfgEcho = this._realmConfigs[this.channelKey(this.activeServer, this.activeChannel)];
+                    const echoCmd = ((realmCfgEcho && realmCfgEcho.search_command) || '!s') + ' ' + this.realmSearchQuery;
+                    const echoKey = this.channelKey(this.activeServer, this.activeChannel);
+                    const echoMsgs = (this.ircMessages[echoKey] || []).concat([{
+                        nick: 'you',
+                        message: echoCmd,
+                        timestamp: new Date().toISOString(),
+                        msg_type: 'privmsg',
+                        local: true,
+                    }]);
+                    this.ircMessages = Object.assign({}, this.ircMessages, { [echoKey]: echoMsgs });
+                    this._msgVersion++;
                 } catch(e) {
                     console.error('startSearch failed', e);
                 }
@@ -556,7 +578,7 @@ document.addEventListener('alpine:init', () => {
                     if (token !== this.searchToken) {
                         return;
                     }
-                    var res = await api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
+                    var res = await api.getSearchResults(this.realmSearchQuery, this.activeServer, this.activeChannel);
                     results = Array.isArray(res) ? res : [];
                     if (searchBot && !this.searchBotWarning && (Date.now() - searchStarted > searchTimeout * 1000) && results.length === 0) {
                         this.searchBotWarning = 'No response from ' + searchBot + ' after ' + searchTimeout + 's — check bot name in realm settings';
@@ -584,11 +606,13 @@ document.addEventListener('alpine:init', () => {
         },
 
         async bookmarkSearch() {
-            if (!this.searchQuery.trim()) return;
+            // In realm context use realmSearchQuery; otherwise use global searchQuery
+            const query = (this.activeChannel && this.realmSearchQuery.trim()) ? this.realmSearchQuery.trim() : this.searchQuery.trim();
+            if (!query) return;
             try {
                 await api.createSavedSearch({
-                    name: this.searchQuery.trim(),
-                    query: this.searchQuery.trim(),
+                    name: query,
+                    query: query,
                     server_id: this.activeServer || 0,
                     channel: this.activeChannel || '',
                 });
@@ -621,14 +645,18 @@ document.addEventListener('alpine:init', () => {
                 for (var i = 0; i < this.servers.length; i++) {
                     var srv = this.servers[i];
                     if (this.globalSearchServerId && srv.id !== parseInt(this.globalSearchServerId)) continue;
-                    var searchChannels = this.realms
-                        .filter(function(realm) { return realm.server_id === srv.id && realm.enabled; })
-                        .map(function(realm) { return realm.name; });
+                    var searchRealms = this.realms
+                        .filter(function(realm) { return realm.server_id === srv.id && realm.enabled; });
+                    var searchChannels = searchRealms.map(function(realm) { return realm.name; });
                     var channels = searchChannels.length > 0 ? searchChannels : (srv.channels || []);
                     for (var j = 0; j < channels.length; j++) {
+                        // Look up realm display name for this channel
+                        var realmCfg = this._realmConfigs[this.channelKey(srv.id, channels[j])];
+                        var displayLabel = (realmCfg && (realmCfg.display_name || realmCfg.name)) || srv.name;
                         this.searchTargets.push({
                             server_id: srv.id,
                             server_name: srv.name,
+                            display_label: displayLabel,
                             channel: channels[j],
                             status: 'pending',
                             resultCount: 0,
@@ -661,6 +689,20 @@ document.addEventListener('alpine:init', () => {
                                 this.searchTargets[k].search_timeout = r.search_timeout;
                                 if (r.search_timeout > searchTimeout) searchTimeout = r.search_timeout;
                             }
+                            // Local echo: inject sent command into the channel's message list
+                            const tgt = this.searchTargets[k];
+                            const echoCfg = this._realmConfigs[this.channelKey(tgt.server_id, tgt.channel)];
+                            const echoCmd = ((echoCfg && echoCfg.search_command) || '!s') + ' ' + this.searchQuery;
+                            const echoKey = this.channelKey(tgt.server_id, tgt.channel);
+                            const echoMsgs = (this.ircMessages[echoKey] || []).concat([{
+                                nick: 'you',
+                                message: echoCmd,
+                                timestamp: new Date().toISOString(),
+                                msg_type: 'privmsg',
+                                local: true,
+                            }]);
+                            this.ircMessages = Object.assign({}, this.ircMessages, { [echoKey]: echoMsgs });
+                            this._msgVersion++;
                         })
                         .catch((e) => {
                             startFail++;
@@ -1319,10 +1361,11 @@ document.addEventListener('alpine:init', () => {
                     dl.total_size = p.total_size;
                     dl.speed = p.speed;
                 }
-            } else if (type === 'download_complete') {
-                this.loadDownloads();
-            } else if (type === 'download_failed') {
-                this.loadDownloads();
+            } else if (type === 'download_status') {
+                const dlStatus = data.data && data.data.status;
+                if (dlStatus === 'completed' || dlStatus === 'failed' || dlStatus === 'cancelled') {
+                    this.loadDownloads();
+                }
             } else if (type === 'connection_status') {
                 const d = data.data;
                 const status = typeof d === 'string' ? d : d.status;
@@ -1339,11 +1382,11 @@ document.addEventListener('alpine:init', () => {
             } else if (type === 'search_result') {
                 // Real-time push from parser — immediately refresh results if search is running
                 const d = data.data;
-                if (d && d.parsed && d.search_query === this.searchQuery && this.searchRunning && this._searchSince) {
+                if (d && d.parsed && (d.search_query === this.searchQuery || d.search_query === this.realmSearchQuery) && this.searchRunning && this._searchSince) {
                     // Use channel-scoped fetch for channel search, global for global search
                     var refreshPromise;
                     if (this.activeServer && this.activeChannel) {
-                        refreshPromise = api.getSearchResults(this.searchQuery, this.activeServer, this.activeChannel);
+                        refreshPromise = api.getSearchResults(this.realmSearchQuery, this.activeServer, this.activeChannel);
                     } else {
                         refreshPromise = api.getAllSearchResults(this.searchQuery, this._searchSince);
                     }

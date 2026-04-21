@@ -12,7 +12,7 @@ import (
 
 func TestGetIRCStatus(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil, "", nil)
 
 	req := httptest.NewRequest("GET", "/api/irc/status", nil)
 	w := httptest.NewRecorder()
@@ -30,7 +30,7 @@ func TestGetIRCStatus(t *testing.T) {
 
 func TestPostIRCConnect_NoServer(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil, "", nil)
 
 	req := httptest.NewRequest("POST", "/api/irc/connect", strings.NewReader(`{"server_id": 999}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -45,7 +45,7 @@ func TestPostIRCConnect_NoServer(t *testing.T) {
 
 func TestPostIRCSendMessage_NoServer(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil, "", nil)
 
 	body := `{"server_id": 999, "target": "#test", "message": "hello"}`
 	req := httptest.NewRequest("POST", "/api/irc/message", strings.NewReader(body))
@@ -60,7 +60,7 @@ func TestPostIRCSendMessage_NoServer(t *testing.T) {
 
 func TestPostIRCDisconnect_NoServer(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil, "", nil)
 
 	req := httptest.NewRequest("POST", "/api/irc/disconnect", strings.NewReader(`{"server_id": 999}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -75,7 +75,7 @@ func TestPostIRCDisconnect_NoServer(t *testing.T) {
 
 func TestPostIRCDisconnect_MethodNotAllowed(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil, "", nil)
 
 	req := httptest.NewRequest("GET", "/api/irc/disconnect", nil)
 	w := httptest.NewRecorder()
@@ -88,7 +88,7 @@ func TestPostIRCDisconnect_MethodNotAllowed(t *testing.T) {
 
 func TestPostIRCSendRaw_NoServer(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil, "", nil)
 
 	body := `{"server_id": 999, "command": "PING :test"}`
 	req := httptest.NewRequest("POST", "/api/irc/raw", strings.NewReader(body))
@@ -103,7 +103,7 @@ func TestPostIRCSendRaw_NoServer(t *testing.T) {
 
 func TestPostIRCSendRaw_MethodNotAllowed(t *testing.T) {
 	bus := irc.NewEventBus()
-	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil)
+	srv := New(nil, irc.NewManager(nil, bus), nil, nil, nil, nil, nil, nil, "", nil)
 
 	req := httptest.NewRequest("GET", "/api/irc/raw", nil)
 	w := httptest.NewRecorder()

@@ -1,6 +1,7 @@
 package dcc
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -8,6 +9,9 @@ import (
 	"sync"
 	"time"
 )
+
+// ErrCancelled is returned by Transfer.Start when the transfer was cancelled via Cancel().
+var ErrCancelled = errors.New("transfer cancelled")
 
 type TransferProgress struct {
 	BytesReceived int64   `json:"bytes_received"`
@@ -28,6 +32,19 @@ type Transfer struct {
 	peakSpeed     int64
 	startTime     time.Time
 	resumeOffset  int64
+	conn          net.Conn
+	cancelled     bool
+}
+
+// Cancel interrupts an in-progress transfer by closing the underlying TCP connection.
+func (t *Transfer) Cancel() {
+	t.mu.Lock()
+	t.cancelled = true
+	conn := t.conn
+	t.mu.Unlock()
+	if conn != nil {
+		conn.Close()
+	}
 }
 
 func NewTransfer(offer *DCCOffer, destPath string, progressCh chan TransferProgress) *Transfer {
@@ -74,6 +91,9 @@ func (t *Transfer) Start() error {
 	if err != nil {
 		return fmt.Errorf("connecting to %s: %w", addr, err)
 	}
+	t.mu.Lock()
+	t.conn = conn
+	t.mu.Unlock()
 	defer conn.Close()
 
 	// Open or create the .part file
@@ -163,6 +183,15 @@ func (t *Transfer) Start() error {
 				break
 			}
 			file.Close()
+			// If the error came from us closing the connection via Cancel(), treat it
+			// as a cancellation rather than a failure.
+			t.mu.RLock()
+			wasCancelled := t.cancelled
+			t.mu.RUnlock()
+			if wasCancelled {
+				os.Remove(t.partPath)
+				return ErrCancelled
+			}
 			return fmt.Errorf("reading from connection: %w", readErr)
 		}
 	}
