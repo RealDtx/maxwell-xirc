@@ -122,9 +122,32 @@ fi
 echo
 ask_yn "Generate nginx reverse proxy config" "y" USE_NGINX
 
+NGINX_MODE=""
 NGINX_SERVER_NAME=""
+NGINX_LISTEN_PORT=""
+NGINX_PREFIX=""
+
 if [[ "$USE_NGINX" == "y" ]]; then
-    ask "Nginx server_name (hostname or IP for the nginx vhost)" "xirc.local" NGINX_SERVER_NAME
+    echo
+    echo "  Nginx mode:"
+    echo "    s) Standalone  — new server block with its own server_name"
+    echo "    i) Subpath     — location blocks to include in an existing server"
+    echo
+    ask "Mode" "i" NGINX_MODE
+    case "${NGINX_MODE,,}" in
+        s|standalone)
+            NGINX_MODE="standalone"
+            ask "Nginx server_name (hostname for the vhost)" "xirc.local" NGINX_SERVER_NAME
+            ask "Nginx listen port" "80" NGINX_LISTEN_PORT
+            NGINX_PREFIX=""
+            ;;
+        *)
+            NGINX_MODE="subpath"
+            ask "URL prefix (no trailing slash)" "/xirc" NGINX_PREFIX
+            NGINX_LISTEN_PORT=""
+            NGINX_SERVER_NAME=""
+            ;;
+    esac
 else
     echo
     echo "  *** IMPORTANT SECURITY WARNING ***"
@@ -160,10 +183,14 @@ else
   dsn: \"${DB_DSN}\""
 fi
 
+PREFIX_LINE=""
+[[ -n "$NGINX_PREFIX" ]] && PREFIX_LINE="  prefix: ${NGINX_PREFIX}"
+
 cat > "${PROFILE_DIR}/config.yaml" <<CONFIG
 server:
   host: 127.0.0.1
   port: ${XIRC_PORT}
+${PREFIX_LINE}
 
 ${DB_BLOCK}
 
@@ -218,10 +245,10 @@ WantedBy=multi-user.target
 SERVICE
 
 # --- nginx-xirc.conf (or sentinel) ---
-if [[ "$USE_NGINX" == "y" ]]; then
+if [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "standalone" ]]; then
     cat > "${PROFILE_DIR}/nginx-xirc.conf" <<NGINX
 server {
-    listen 80;
+    listen ${NGINX_LISTEN_PORT};
     server_name ${NGINX_SERVER_NAME};
 
     # Restrict to internal networks only
@@ -250,9 +277,55 @@ server {
 }
 NGINX
     rm -f "${PROFILE_DIR}/.no-nginx"
+    rm -f "${PROFILE_DIR}/nginx-xirc-location.conf"
+
+elif [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "subpath" ]]; then
+    cat > "${PROFILE_DIR}/nginx-xirc-location.conf" <<NGINX
+# xirc location blocks — include this inside your existing nginx server block:
+#   include /etc/nginx/snippets/xirc.conf;
+
+# Redirect bare prefix to trailing slash
+location = ${NGINX_PREFIX} {
+    return 301 ${NGINX_PREFIX}/;
+}
+
+# Main proxy (nginx strips the prefix before forwarding)
+location ${NGINX_PREFIX}/ {
+    allow 192.168.0.0/16;
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    deny all;
+
+    proxy_pass http://127.0.0.1:${XIRC_PORT}/;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+}
+
+# WebSocket (must be separate — needs upgrade headers)
+location ${NGINX_PREFIX}/ws {
+    allow 192.168.0.0/16;
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    deny all;
+
+    proxy_pass http://127.0.0.1:${XIRC_PORT}/ws;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_read_timeout 86400;
+}
+NGINX
+    rm -f "${PROFILE_DIR}/.no-nginx"
+    rm -f "${PROFILE_DIR}/nginx-xirc.conf"
+
 else
     touch "${PROFILE_DIR}/.no-nginx"
     rm -f "${PROFILE_DIR}/nginx-xirc.conf"
+    rm -f "${PROFILE_DIR}/nginx-xirc-location.conf"
 fi
 
 # --- .gitignore ---
@@ -270,8 +343,10 @@ hr
 echo "  Generated: ${PROFILE_DIR}/"
 echo "    config.yaml       application config"
 echo "    xirc.service      systemd unit"
-if [[ "$USE_NGINX" == "y" ]]; then
-    echo "    nginx-xirc.conf   nginx site config"
+if [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "standalone" ]]; then
+    echo "    nginx-xirc.conf          nginx vhost config"
+elif [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "subpath" ]]; then
+    echo "    nginx-xirc-location.conf nginx location snippet (include in your server block)"
 fi
 echo "    settings.mk       Makefile deploy variables"
 hr

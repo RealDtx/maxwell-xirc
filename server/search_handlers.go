@@ -242,7 +242,7 @@ func (s *Server) handleParsePatterns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetParsePatterns(w http.ResponseWriter, r *http.Request) {
-	patterns, err := s.store.GetParsePatterns()
+	patterns, err := s.store.GetAllParsePatterns()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -510,7 +510,9 @@ func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {
 		Annotations []parser.Annotation `json:"annotations"`
 		Name        string              `json:"name"`
 		Preview     bool                `json:"preview"`
-		Since       *int64              `json:"since"` // Unix ms timestamp; defaults to 1 hour ago
+		Since       *int64              `json:"since"`    // Unix ms timestamp; defaults to 1 hour ago
+		ServerID    *int64              `json:"server_id"` // nil = global pattern
+		Channel     string              `json:"channel"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -537,6 +539,8 @@ func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {
 		FieldMapping: result.FieldMapping,
 		Enabled:      true,
 		Priority:     50,
+		ServerID:     req.ServerID,
+		Channel:      req.Channel,
 	}
 	if err := s.store.CreateParsePattern(&p); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

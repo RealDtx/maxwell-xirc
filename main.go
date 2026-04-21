@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"embed"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -26,6 +28,9 @@ import (
 	"github.com/maxwell-xirc/xirc/server"
 	wsPkg "github.com/maxwell-xirc/xirc/ws"
 )
+
+//go:embed all:web
+var embeddedWeb embed.FS
 
 var version = "dev"
 
@@ -249,7 +254,11 @@ func main() {
 
 	ircMgr.ConnectAutoConnect()
 
-	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState)
+	webFS, err := fs.Sub(embeddedWeb, "web")
+	if err != nil {
+		log.Fatalf("embedded web FS: %v", err)
+	}
+	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState, cfg.Server.Prefix, webFS)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{

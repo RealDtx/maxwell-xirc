@@ -58,11 +58,19 @@ deploy: build-pi
 	@test -d "$(PROFILE_DIR)" || \
 	  { echo "Error: profile '$(PROFILE)' not found. Run 'make preconfig PROFILE=$(PROFILE)' first."; exit 1; }
 	rsync -avz --progress $(BINARY)-arm64 "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/xirc
+	rsync -avz --delete web/ "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/web/
 	rsync -avz $(PROFILE_DIR)/xirc.service "$(PI_USER)@$(PI_HOST)":/tmp/
 	ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/xirc.service /etc/systemd/system/xirc.service && sudo systemctl daemon-reload"
 	@if [ -f "$(PROFILE_DIR)/nginx-xirc.conf" ]; then \
 	  rsync -avz $(PROFILE_DIR)/nginx-xirc.conf "$(PI_USER)@$(PI_HOST)":/tmp/; \
-	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-xirc.conf /etc/nginx/sites-available/xirc && sudo nginx -t && sudo systemctl reload nginx"; \
+	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-xirc.conf /etc/nginx/sites-available/xirc \
+	    && sudo ln -sf /etc/nginx/sites-available/xirc /etc/nginx/sites-enabled/xirc \
+	    && sudo nginx -t && sudo systemctl reload nginx"; \
+	fi
+	@if [ -f "$(PROFILE_DIR)/nginx-xirc-location.conf" ]; then \
+	  rsync -avz $(PROFILE_DIR)/nginx-xirc-location.conf "$(PI_USER)@$(PI_HOST)":/tmp/; \
+	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-xirc-location.conf /etc/nginx/snippets/xirc.conf \
+	    && sudo nginx -t && sudo systemctl reload nginx"; \
 	fi
 	@if [ -n "$(PI_CONFIG)" ]; then \
 	  rsync -avz --progress "$(PI_CONFIG)" "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/config.yaml; \

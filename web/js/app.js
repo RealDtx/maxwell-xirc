@@ -158,6 +158,7 @@ document.addEventListener('alpine:init', () => {
 
         // Pattern settings
         patternSettingsList: [],
+        patternScopeOptions: [],   // [{label, server_id, channel}] built from all servers+realms
         patternTagEdit: { id: null, value: '' },
         patternImportMsg: '',
         patternImportError: false,
@@ -945,10 +946,13 @@ document.addEventListener('alpine:init', () => {
             this.selectedUser = null;
         },
 
-        teachParser(rawLine) {
+        teachParser(result) {
+            var rawLine = typeof result === 'string' ? result : result.raw_line;
             this.patternTrainer = {
                 open: true,
                 rawLine: rawLine,
+                serverID: typeof result === 'object' ? result.server_id : null,
+                channel: typeof result === 'object' ? result.channel : '',
                 annotations: [],
                 fieldPickerVisible: false,
                 fieldPickerX: 0,
@@ -1062,6 +1066,8 @@ document.addEventListener('alpine:init', () => {
                     annotations: t.annotations.map(a => ({ start: a.start, end: a.end, field: a.field })),
                     name: t.patternName.trim(),
                     preview: false,
+                    server_id: t.serverID || null,
+                    channel: t.channel || '',
                 });
                 if (res.error) { t.error = res.error; return; }
                 t.savedCount    = res.newly_parsed ?? 0;
@@ -1217,7 +1223,7 @@ document.addEventListener('alpine:init', () => {
                 this.ws = null;
             }
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const url = proto + '//' + location.host + '/ws';
+            const url = proto + '//' + location.host + (window.XIRC_PREFIX || '') + '/ws';
             let sock;
             try {
                 sock = new WebSocket(url);
@@ -1548,6 +1554,9 @@ document.addEventListener('alpine:init', () => {
                 ? Object.assign({}, realm)
                 : { id: null, server_id: this.settingsServerId, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true };
             this.showRealmForm = true;
+            if (!this.patternSettingsList.length) {
+                api.getParsePatterns().then(r => { this.patternSettingsList = Array.isArray(r) ? r : []; }).catch(() => {});
+            }
         },
 
         formatIrcMessage(text) {
@@ -1650,10 +1659,36 @@ document.addEventListener('alpine:init', () => {
 
         async loadPatternSettings() {
             try {
-                const res = await api.getParsePatterns();
-                this.patternSettingsList = Array.isArray(res) ? res : [];
+                const [patterns, servers] = await Promise.all([api.getParsePatterns(), api.getServers()]);
+                this.patternSettingsList = Array.isArray(patterns) ? patterns : [];
+                const opts = [];
+                for (const srv of (Array.isArray(servers) ? servers : [])) {
+                    const realms = await api.getRealms(srv.id).catch(() => []);
+                    for (const r of (Array.isArray(realms) ? realms : [])) {
+                        const label = (srv.name || srv.host) + ' / ' + r.name;
+                        opts.push({ label, server_id: srv.id, channel: r.name });
+                    }
+                }
+                this.patternScopeOptions = opts;
             } catch (e) {
                 console.error('loadPatternSettings error', e);
+            }
+        },
+
+        async setPatternScope(pattern, serverID, channel) {
+            const updated = Object.assign({}, pattern, {
+                server_id: serverID || null,
+                channel: channel || '',
+            });
+            try {
+                await api.updateParsePattern(pattern.id, updated);
+                const idx = this.patternSettingsList.findIndex(p => p.id === pattern.id);
+                if (idx !== -1) {
+                    this.patternSettingsList[idx] = Object.assign({}, this.patternSettingsList[idx], { server_id: serverID || null, channel: channel || '' });
+                    this.patternSettingsList = this.patternSettingsList.slice();
+                }
+            } catch (e) {
+                console.error('setPatternScope error', e);
             }
         },
 

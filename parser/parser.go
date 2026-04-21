@@ -56,7 +56,7 @@ type Parser struct {
 	mu                   sync.RWMutex
 	activeSessions       map[string]*searchSession // key: "serverID:channel"
 	sessionCounter       int64                     // monotonic counter for session ordering
-	botPatternCache      map[string]int64          // key: botNick, value: patternID
+	botPatternCache      map[string]int64          // key: "serverID:channel:botNick", value: patternID
 	degradationThreshold int
 }
 
@@ -109,10 +109,14 @@ func (p *Parser) StopSearch(serverID int64, channel string) {
 	p.mu.Unlock()
 }
 
-func (p *Parser) GetCachedPatternID(botNick string) int64 {
+func (p *Parser) GetCachedPatternID(serverID int64, channel, botNick string) int64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.botPatternCache[botNick]
+	return p.botPatternCache[fmt.Sprintf("%d:%s:%s", serverID, channel, botNick)]
+}
+
+func botCacheKey(serverID int64, channel, botNick string) string {
+	return fmt.Sprintf("%d:%s:%s", serverID, channel, botNick)
 }
 
 func sessionKey(serverID int64, channel string) string {
@@ -204,13 +208,32 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		now := time.Now()
 		prefix := fmt.Sprintf("%d:", ev.ServerID)
 		p.mu.RLock()
-		var bestCreatedAt int64
+		// Two-pass fallback: prefer a session whose configured bot matches the
+		// sender (strong signal), but accept any recent session as a last resort
+		// so single-server setups with misconfigured or absent search_bot still
+		// receive messages.
+		var bestMatchAt, bestAnyAt int64
+		var anySession *searchSession
 		for k, s := range p.activeSessions {
-			if strings.HasPrefix(k, prefix) && s.CreatedAt > bestCreatedAt && now.Sub(s.CreatedAtTime) <= fallbackWindow {
-				session = s
-				hasSession = true
-				bestCreatedAt = s.CreatedAt
+			if !strings.HasPrefix(k, prefix) || now.Sub(s.CreatedAtTime) > fallbackWindow {
+				continue
 			}
+			if s.SearchBot == "" || s.SearchBot == ev.Nick {
+				if s.CreatedAt > bestMatchAt {
+					session = s
+					hasSession = true
+					bestMatchAt = s.CreatedAt
+				}
+			} else {
+				if s.CreatedAt > bestAnyAt {
+					anySession = s
+					bestAnyAt = s.CreatedAt
+				}
+			}
+		}
+		if !hasSession && anySession != nil {
+			session = anySession
+			hasSession = true
 		}
 		p.mu.RUnlock()
 		if !hasSession {
@@ -266,15 +289,17 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		}
 	}
 
-	// Load patterns
-	patterns, err := p.store.GetParsePatterns()
+	// Load patterns scoped to this channel (globals + channel-specific)
+	patterns, err := p.store.GetParsePatternsForChannel(session.ServerID, session.Channel)
 	if err != nil {
 		log.Printf("failed to load parse patterns: %v", err)
 		return
 	}
+	debug.Debugf("parser: loaded %d patterns for server=%d channel=%s", len(patterns), session.ServerID, session.Channel)
 	// Check bot-pattern cache first
+	cacheKey := botCacheKey(session.ServerID, session.Channel, ev.Nick)
 	p.mu.RLock()
-	cachedPatternID := p.botPatternCache[ev.Nick]
+	cachedPatternID := p.botPatternCache[cacheKey]
 	p.mu.RUnlock()
 
 	var result *ParsedResult
@@ -325,7 +350,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 
 		// Update bot-pattern cache
 		p.mu.Lock()
-		p.botPatternCache[ev.Nick] = matchedPatternID
+		p.botPatternCache[botCacheKey(session.ServerID, session.Channel, ev.Nick)] = matchedPatternID
 		p.mu.Unlock()
 
 		// Update pattern match count (success only — no auto-disable on failure)
@@ -343,10 +368,14 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		return
 	}
 
-	// Query relevance filter: only accept parsed results whose raw line
-	// contains all words of the search query.  This prevents periodic bot
-	// broadcasts (which list ALL packages) from polluting search results.
-	if !messageMatchesQuery(message, session.Query) {
+	// Query relevance filter: when no search bot is locked in yet, reject
+	// parsed results whose raw line doesn't contain the search terms.  This
+	// prevents periodic pack-bot broadcasts from polluting results during the
+	// auto-detect window.  Once a specific bot is identified (explicit config
+	// or auto-detect lock-in) we trust its responses unconditionally — the
+	// bot was sent the query and its replies are inherently relevant even if
+	// the codec alias differs ("HEVC" vs "x265", "H.264" vs "x264", etc.).
+	if session.SearchBot == "" && !messageMatchesQuery(message, session.Query) {
 		debug.Debugf("parser: query filter dropped result query=%q line=%q", debug.RedactForLog(session.Query), debug.RedactForLog(message))
 		return
 	}

@@ -77,6 +77,13 @@ func BuiltinPatterns() []BuiltinPattern {
 			FieldMapping: `{"filename":1,"bot_nick":2,"pack_number":3,"downloads_count":4,"filesize":5}`,
 			Priority:     88,
 		},
+		// Beast/paren format: (SizeU) filename (Nx) /msg BotNick xdcc send #N
+		{
+			Name:         "paren-file-msg-xdcc",
+			Regex:        `^\(([0-9]+(?:\.[0-9]+)?[KMGTP]B?)\)\s+(.+?)\s+\((\d+)x\)\s+/msg\s+(\S+)\s+xdcc\s+send\s+#(\d+)`,
+			FieldMapping: `{"filesize":1,"filename":2,"downloads_count":3,"bot_nick":4,"pack_number":5}`,
+			Priority:     82,
+		},
 	}
 }
 
@@ -97,14 +104,31 @@ func SeedPatterns(store db.Store) error {
 	reenabled := 0
 	for _, bp := range BuiltinPatterns() {
 		if p, found := existingByName[bp.Name]; found {
-			// Re-enable auto-disabled builtins so patterns survive server restarts.
-			if p.AutoDisabled {
+			// Ensure builtin patterns are always globally scoped and enabled.
+			// A user may have accidentally scoped a pattern to a specific channel
+			// via the realm form, which would prevent it from working on other channels.
+			needsUpdate := false
+			if p.AutoDisabled || !p.Enabled {
 				p.AutoDisabled = false
+				p.Enabled = true
 				p.FailCount = 0
+				needsUpdate = true
+				reenabled++
+			}
+			if p.ServerID != nil || p.Channel != "" {
+				p.ServerID = nil
+				p.Channel = ""
+				needsUpdate = true
+				log.Printf("SeedPatterns: reset scope of builtin pattern %q to global", p.Name)
+			}
+			if !p.Builtin {
+				p.Builtin = true
+				needsUpdate = true
+			}
+			if needsUpdate {
 				if err := store.UpdateParsePattern(p); err != nil {
 					return err
 				}
-				reenabled++
 			}
 			continue
 		}

@@ -143,6 +143,8 @@ func migrationStatements() []string {
 		`ALTER TABLE realms ADD COLUMN search_timeout INTEGER NOT NULL DEFAULT 10`,
 
 		`ALTER TABLE parse_patterns ADD COLUMN tags TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE parse_patterns ADD COLUMN server_id INTEGER`,
+		`ALTER TABLE parse_patterns ADD COLUMN channel TEXT NOT NULL DEFAULT ''`,
 	}
 }
 

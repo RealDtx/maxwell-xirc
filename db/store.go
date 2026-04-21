@@ -62,6 +62,8 @@ type Store interface {
 	// Parse Patterns
 	GetParsePatterns() ([]ParsePattern, error)
 	GetAllParsePatterns() ([]ParsePattern, error)
+	// GetParsePatternsForChannel returns global patterns plus any scoped to the given server+channel.
+	GetParsePatternsForChannel(serverID int64, channel string) ([]ParsePattern, error)
 	UpdateParsePattern(p *ParsePattern) error
 	CreateParsePattern(p *ParsePattern) error
 

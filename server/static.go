@@ -1,26 +1,49 @@
 package server
 
 import (
+	"bytes"
+	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
+	"strings"
 )
 
 func (s *Server) setupStaticFiles() {
-	fs := http.FileServer(http.Dir("web/"))
+	if s.webFS == nil {
+		return
+	}
+	fileServer := http.FileServer(http.FS(s.webFS))
+
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Only serve for non-API paths
-		path := filepath.Join("web", filepath.Clean("/"+r.URL.Path))
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			// SPA fallback: serve index.html
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		if name == "" {
+			name = "."
+		}
+
+		fi, err := fs.Stat(s.webFS, name)
+		if err != nil || fi.IsDir() {
+			// SPA fallback: any unknown path or directory serves index.html
 			w.Header().Set("Cache-Control", "no-cache")
-			http.ServeFile(w, r, "web/index.html")
+			s.serveIndex(w, r)
 			return
 		}
-		// Prevent stale JS/CSS after server upgrades
-		if filepath.Ext(path) == ".js" || filepath.Ext(path) == ".css" {
+
+		if strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".css") {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
-		fs.ServeHTTP(w, r)
+		fileServer.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
+	data, err := fs.ReadFile(s.webFS, "index.html")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if s.prefix != "" {
+		inject := []byte(`<script>window.XIRC_PREFIX='` + s.prefix + `';</script>`)
+		data = bytes.Replace(data, []byte("</head>"), append(inject, []byte("</head>")...), 1)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(data)
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 
 	"github.com/maxwell-xirc/xirc/db"
@@ -21,9 +22,11 @@ type Server struct {
 	errBuf *ircpkg.ErrorBuffer
 	setup  *SetupState
 	mux    *http.ServeMux
+	prefix string
+	webFS  fs.FS
 }
 
-func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer, setup *SetupState) *Server {
+func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer, setup *SetupState, prefix string, webFS fs.FS) *Server {
 	s := &Server{
 		store:  store,
 		ircMgr: ircMgr,
@@ -34,6 +37,8 @@ func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.En
 		errBuf: errBuf,
 		setup:  setup,
 		mux:    http.NewServeMux(),
+		prefix: prefix,
+		webFS:  webFS,
 	}
 	s.routes()
 	return s

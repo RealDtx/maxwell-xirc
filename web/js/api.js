@@ -1,11 +1,13 @@
+const _apiBase = (window.XIRC_PREFIX || '') + '/api';
+
 const api = {
     async get(path) {
-        const res = await fetch('/api' + path);
+        const res = await fetch(_apiBase + path);
         return res.json();
     },
 
     async post(path, body) {
-        const res = await fetch('/api' + path, {
+        const res = await fetch(_apiBase + path, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -18,7 +20,7 @@ const api = {
     },
 
     async put(path, body) {
-        const res = await fetch('/api' + path, {
+        const res = await fetch(_apiBase + path, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -27,7 +29,7 @@ const api = {
     },
 
     async del(path) {
-        const res = await fetch('/api' + path, { method: 'DELETE' });
+        const res = await fetch(_apiBase + path, { method: 'DELETE' });
         return res.json();
     },
 

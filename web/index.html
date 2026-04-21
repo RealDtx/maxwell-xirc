@@ -502,7 +502,7 @@
                                                             <a
                                                                 href="#"
                                                                 style="margin-left:8px; font-size:11px; color:var(--warning);"
-                                                                @click.prevent="teachParser(r.raw_line)"
+                                                                @click.prevent="teachParser(r)"
                                                             >teach parser</a>
                                                         </template>
                                                     </td>
@@ -661,7 +661,7 @@
                                                             <a
                                                                 href="#"
                                                                 style="margin-left:8px; font-size:11px; color:var(--warning);"
-                                                                @click.prevent="teachParser(r.raw_line)"
+                                                                @click.prevent="teachParser(r)"
                                                             >teach parser</a>
                                                         </template>
                                                     </td>
@@ -1072,6 +1072,32 @@
                                             <span class="toggle-slider"></span>
                                         </label>
                                     </div>
+                                    <!-- Pattern binding -->
+                                    <div class="form-group" x-show="patternSettingsList.length > 0" style="margin-top:16px;">
+                                        <label style="margin-bottom:6px;display:block;">Parse Patterns</label>
+                                        <small style="color:var(--text-muted);font-size:11px;display:block;margin-bottom:8px;">
+                                            Patterns scoped to this realm only apply to searches in <span style="font-family:monospace;" x-text="realmForm.name || 'this channel'"></span>.
+                                            Global patterns apply everywhere.
+                                        </small>
+                                        <div style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;">
+                                            <template x-for="p in patternSettingsList" :key="p.id">
+                                                <div style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:3px;" :style="(p.server_id===realmForm.server_id&&p.channel===realmForm.name)?'background:var(--bg-tertiary);':''">
+                                                    <input
+                                                        type="checkbox"
+                                                        :checked="p.server_id===realmForm.server_id && p.channel===realmForm.name"
+                                                        :disabled="(p.server_id!==null && p.server_id!==realmForm.server_id) || (p.channel && p.channel!==realmForm.name)"
+                                                        :title="(p.channel && p.channel!==realmForm.name) ? 'Scoped to '+p.channel+' — set to Global first to reassign' : ''"
+                                                        @change="$event.target.checked ? setPatternScope(p, realmForm.server_id, realmForm.name) : setPatternScope(p, null, '')"
+                                                    >
+                                                    <span style="font-size:12px;flex:1;" :style="(p.channel && p.channel!==realmForm.name)?'color:var(--text-muted);':''" x-text="p.name"></span>
+                                                    <template x-if="p.channel && !(p.server_id===realmForm.server_id && p.channel===realmForm.name)">
+                                                        <span style="font-size:10px;color:var(--text-muted);font-family:monospace;" x-text="p.channel"></span>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+
                                     <div style="margin-top:12px; display:flex; gap:8px;">
                                         <button class="btn btn-primary btn-sm" @click="saveRealm()">Save</button>
                                         <button class="btn btn-sm" @click="showRealmForm = false">Cancel</button>
@@ -1256,6 +1282,7 @@
                                     <thead>
                                         <tr>
                                             <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Name</th>
+                                            <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Scope</th>
                                             <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Regex</th>
                                             <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Priority</th>
                                             <th style="text-align:left;padding:4px 8px;color:var(--text-muted);font-weight:400;border-bottom:1px solid var(--border);">Tags</th>
@@ -1265,7 +1292,22 @@
                                         <template x-for="p in patternSettingsList" :key="p.id">
                                             <tr style="border-bottom:1px solid var(--border);">
                                                 <td style="padding:6px 8px;white-space:nowrap;" x-text="p.name"></td>
-                                                <td style="padding:6px 8px;font-family:monospace;font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="p.regex"></td>
+                                                <td style="padding:6px 8px;white-space:nowrap;">
+                                                    <select
+                                                        style="padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:11px;max-width:180px;"
+                                                        @change="setPatternScope(p, $event.target.value ? JSON.parse($event.target.value).server_id : null, $event.target.value ? JSON.parse($event.target.value).channel : '')"
+                                                    >
+                                                        <option value="" :selected="!p.channel">global</option>
+                                                        <template x-for="opt in patternScopeOptions" :key="opt.label">
+                                                            <option
+                                                                :value="JSON.stringify({server_id: opt.server_id, channel: opt.channel})"
+                                                                :selected="p.server_id === opt.server_id && p.channel === opt.channel"
+                                                                x-text="opt.label"
+                                                            ></option>
+                                                        </template>
+                                                    </select>
+                                                </td>
+                                                <td style="padding:6px 8px;font-family:monospace;font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="p.regex"></td>
                                                 <td style="padding:6px 8px;white-space:nowrap;" x-text="p.priority"></td>
                                                 <td style="padding:6px 8px;">
                                                     <!-- Tag chips -->
@@ -1684,7 +1726,13 @@
 >
     <div style="background:var(--bg-secondary,#1e2029);border-radius:8px;padding:24px;width:min(700px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.5);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-            <h3 style="margin:0;font-size:16px;">Teach the Parser</h3>
+            <div>
+                <h3 style="margin:0;font-size:16px;">Teach the Parser</h3>
+                <div x-show="patternTrainer.channel" style="font-size:11px;color:var(--text-muted);margin-top:3px;">
+                    Scoped to <span style="color:var(--accent);font-family:monospace;" x-text="patternTrainer.channel"></span>
+                    &mdash; will only apply to searches in this channel
+                </div>
+            </div>
             <button @click="closeTrainer()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">✕</button>
         </div>
 

@@ -51,12 +51,23 @@ The script prompts for the following (press Enter to accept the default):
 | SQLite path | `<install_dir>/data/xirc.db` | SQLite only |
 | MySQL DSN | `xirc:…@tcp(…)/xirc` | MySQL/MariaDB only |
 | Passive DCC | `n` | Enable if the Pi is behind NAT |
-| Use nginx | `y` | Generates a ready-to-use nginx vhost config |
-| Nginx server_name | `xirc.local` | Hostname for the nginx vhost |
+| Use nginx | `y` | Generates an nginx proxy config |
+| Nginx mode | `i` (subpath) | `s` = standalone vhost, `i` = location blocks for existing server |
+| URL prefix *(subpath mode)* | `/xirc` | Path prefix, e.g. `http://local/xirc` |
+| Nginx server_name *(standalone)* | `xirc.local` | Hostname for standalone vhost |
+| Nginx listen port *(standalone)* | `80` | Port for standalone vhost |
 
 **Database tables:** xirc uses `CREATE TABLE IF NOT EXISTS` and runs all migrations automatically on startup. No manual schema setup is needed for either SQLite or MySQL — just provide a reachable database.
 
-**No nginx:** If you opt out, the script prints a security warning. Do not expose the raw HTTP port to the internet — you must place xirc behind a TLS-terminating reverse proxy before any public access.
+**No nginx:** If you opt out, xirc binds to `127.0.0.1` (localhost only) — it is unreachable from the network until you add a reverse proxy. Never expose the raw port directly.
+
+**Subpath mode (recommended when you already have nginx running):** The script generates `nginx-xirc-location.conf`, a snippet with `location /xirc/` and `location /xirc/ws` blocks. After deploy copies it to `/etc/nginx/snippets/xirc.conf`, add one line to your existing nginx `server` block:
+```nginx
+include /etc/nginx/snippets/xirc.conf;
+```
+Then reload nginx: `sudo nginx -t && sudo systemctl reload nginx`.
+
+**Standalone mode:** A full `nginx-xirc.conf` server block is generated and deployed to `sites-available/`. The `sites-enabled/` symlink is created automatically by `make deploy`.
 
 Generated files are written to `.<profile>/` (e.g. `.maxwell/`) and that directory is added to `.gitignore` automatically.
 
@@ -99,15 +110,19 @@ sudo chmod g+w /opt/xirc/data
 
 Log out and back in (or run `newgrp xirc`) for the group change to take effect.
 
-### 2d — Enable the nginx site (if you chose nginx)
+### 2d — Set up nginx
 
-```bash
-sudo ln -s /etc/nginx/sites-available/xirc /etc/nginx/sites-enabled/xirc
-# Reload after deploy installs the config:
-# sudo nginx -t && sudo systemctl reload nginx
+**Standalone mode:** `make deploy` copies the config to `sites-available/` and creates the `sites-enabled/` symlink automatically. Nothing to do manually.
+
+**Subpath mode:** `make deploy` copies the snippet to `/etc/nginx/snippets/xirc.conf`. Add one line inside your existing nginx `server` block and reload:
+
+```nginx
+include /etc/nginx/snippets/xirc.conf;
 ```
 
-`make deploy` installs the nginx config and reloads nginx automatically.
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
 
 ---
 
@@ -121,7 +136,8 @@ This will:
 1. Cross-compile for ARM64
 2. Push `xirc-arm64` to `<install_dir>/xirc`
 3. Install `.maxwell/xirc.service` to `/etc/systemd/system/` and reload systemd
-4. Install `.maxwell/nginx-xirc.conf` to `/etc/nginx/sites-available/xirc` and reload nginx (if generated)
+4. For standalone nginx: install config to `sites-available/`, create `sites-enabled/` symlink, reload nginx
+   For subpath nginx: copy snippet to `/etc/nginx/snippets/xirc.conf`, reload nginx
 5. Push `.maxwell/config.yaml` to `<install_dir>/config.yaml`
 6. `sudo systemctl restart xirc`
 
