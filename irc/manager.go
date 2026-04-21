@@ -3,6 +3,7 @@ package irc
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,6 +60,7 @@ func (m *Manager) LoadFromStore() error {
 
 		srvCopy := srv
 		conn := NewConnection(&srvCopy, realms, m.bus)
+		conn.onDownloadChannelDetected = m.makeDownloadChannelCallback(srv.ID)
 		m.connections[srv.ID] = conn
 	}
 
@@ -153,6 +155,7 @@ func (m *Manager) ReloadServer(serverID int64) error {
 		return nil
 	}
 	conn := NewConnection(srv, realms, m.bus)
+	conn.onDownloadChannelDetected = m.makeDownloadChannelCallback(serverID)
 	m.connections[serverID] = conn
 	m.mu.Unlock()
 
@@ -196,6 +199,45 @@ func (m *Manager) SendMessage(serverID int64, target, message string) error {
 		return fmt.Errorf("server %d not found", serverID)
 	}
 	return conn.SendMessage(target, message)
+}
+
+// makeDownloadChannelCallback returns the auto-detection callback for a server.
+// When the IRC topic for a realm channel contains a #xxx-chat channel name and
+// the realm has no download_channel configured, the detected channel is saved.
+func (m *Manager) makeDownloadChannelCallback(serverID int64) func(channel, detected string) {
+	return func(channel, detected string) {
+		realms, err := m.store.GetRealms(serverID)
+		if err != nil {
+			return
+		}
+		for _, r := range realms {
+			if !strings.EqualFold(r.Name, channel) {
+				continue
+			}
+			if r.DownloadChannel != "" {
+				return // already set — respect existing config
+			}
+			r.DownloadChannel = detected
+			if err := m.store.UpdateRealm(&r); err != nil {
+				log.Printf("irc: auto-detect download channel: failed to save realm %q: %v", channel, err)
+				return
+			}
+			log.Printf("irc: auto-detected download channel %q for realm %q (server %d)", detected, channel, serverID)
+			if err := m.ReloadRealms(serverID); err != nil {
+				log.Printf("irc: auto-detect download channel: reload failed: %v", err)
+			}
+			m.bus.Publish(Event{
+				Type:     EventRealmUpdated,
+				ServerID: serverID,
+				Channel:  channel,
+				Data: map[string]string{
+					"field": "download_channel",
+					"value": detected,
+				},
+			})
+			return
+		}
+	}
 }
 
 func (m *Manager) Names(serverID int64, channel string) ([]string, error) {

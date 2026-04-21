@@ -3,6 +3,7 @@ package irc
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +11,9 @@ import (
 	"github.com/maxwell-xirc/xirc/db"
 	"github.com/maxwell-xirc/xirc/internal/debug"
 )
+
+// detectDownloadChanRe matches IRC channel names ending in "-chat" (e.g. #mg-chat).
+var detectDownloadChanRe = regexp.MustCompile(`(?i)(#[\w-]+-chat)\b`)
 
 type ConnectionStatus string
 
@@ -27,20 +31,21 @@ type ChannelPair struct {
 }
 
 type Connection struct {
-	mu             sync.RWMutex
-	server         *db.Server
-	realms         []db.Realm
-	bus            *EventBus
-	client         IRCClient
-	status         ConnectionStatus
-	stopCh         chan struct{}
-	stopOnce       sync.Once
-	connectedAt    *time.Time
-	reconnectCount int
-	lagMs          int64
-	namesMu        sync.Mutex
-	namesPending   map[string]chan []string // channel name -> result chan
-	pingDone       chan struct{}
+	mu                          sync.RWMutex
+	server                      *db.Server
+	realms                      []db.Realm
+	bus                         *EventBus
+	client                      IRCClient
+	status                      ConnectionStatus
+	stopCh                      chan struct{}
+	stopOnce                    sync.Once
+	connectedAt                 *time.Time
+	reconnectCount              int
+	lagMs                       int64
+	namesMu                     sync.Mutex
+	namesPending                map[string]chan []string // channel name -> result chan
+	pingDone                    chan struct{}
+	onDownloadChannelDetected   func(channel, detected string)
 }
 
 // ConnectionStatusEvent is the Data payload for EventConnectionStatus events.
@@ -561,6 +566,34 @@ func (c *Connection) handleRawLine(line string) {
 
 	// Handle NAMES (353/366) replies
 	c.handleNamesReply(parts)
+
+	// Auto-detect download channel from topic (332 RPL_TOPIC)
+	// Only fires when the realm has no download_channel configured yet.
+	if len(parts) >= 5 && strings.ToUpper(parts[1]) == "332" && c.onDownloadChannelDetected != nil {
+		ch := strings.TrimPrefix(parts[3], ":")
+		if c.realmNeedsDownloadChannel(ch) {
+			topic := strings.TrimPrefix(parts[4], ":")
+			if m := detectDownloadChanRe.FindStringSubmatch(topic); len(m) >= 2 {
+				detected := strings.ToLower(m[1])
+				if !strings.EqualFold(detected, ch) {
+					c.onDownloadChannelDetected(ch, detected)
+				}
+			}
+		}
+	}
+}
+
+// realmNeedsDownloadChannel returns true if the realm for the given channel
+// has no download_channel set yet.
+func (c *Connection) realmNeedsDownloadChannel(channel string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, r := range c.realms {
+		if strings.EqualFold(r.Name, channel) {
+			return r.DownloadChannel == ""
+		}
+	}
+	return false
 }
 
 // extractChannelFromRaw returns the channel name from a raw IRC line (JOIN, PART, MODE, KICK,

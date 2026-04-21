@@ -15,6 +15,7 @@ const (
 	EventDownloadStatus    EventType = "download_status"
 	EventNotification      EventType = "notification"
 	EventError             EventType = "error_event"
+	EventRealmUpdated      EventType = "realm_updated"
 )
 
 // ErrorEvent is the payload for EventError bus events.

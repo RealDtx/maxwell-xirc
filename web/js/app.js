@@ -1366,6 +1366,16 @@ document.addEventListener('alpine:init', () => {
                 if (dlStatus === 'completed' || dlStatus === 'failed' || dlStatus === 'cancelled') {
                     this.loadDownloads();
                 }
+            } else if (type === 'realm_updated') {
+                const d = data.data;
+                if (d && d.field === 'download_channel' && d.value && data.channel) {
+                    const key = this.channelKey(data.server_id, data.channel);
+                    if (this._realmConfigs[key]) {
+                        this._realmConfigs[key].download_channel = d.value;
+                    }
+                    this._channelConfigs[key] = d.value;
+                    api.joinChannel(data.server_id, d.value).catch(() => {});
+                }
             } else if (type === 'connection_status') {
                 const d = data.data;
                 const status = typeof d === 'string' ? d : d.status;
