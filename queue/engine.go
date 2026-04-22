@@ -415,6 +415,50 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		}
 	}
 
+	// Auto-extract tar archives and route/hook each extracted file
+	if e.storageCfg != nil && e.storageCfg.AutoExtract.Enabled && routing.IsArchive(offer.Filename) {
+		extractDir := filepath.Dir(finalPath)
+		extracted, extractErr := routing.Extract(finalPath, extractDir)
+		if extractErr != nil {
+			log.Printf("auto-extract failed for download %d (%s): %v", downloadID, offer.Filename, extractErr)
+		} else {
+			extractRules, _ := e.store.GetFileRoutingRules()
+			for _, ef := range extracted {
+				efName := filepath.Base(ef)
+				efFinal := ef
+				if len(extractRules) > 0 {
+					if destDir := routing.MatchRule(efName, extractRules); destDir != "" {
+						if moved, err := routing.MoveFile(ef, destDir); err != nil {
+							log.Printf("routing extracted file %q: %v", efName, err)
+						} else {
+							efFinal = moved
+						}
+					}
+				}
+				efCtx := hCtx
+				efCtx.FilePath = efFinal
+				efCtx.Filename = efName
+				if info, err := os.Stat(efFinal); err == nil {
+					efCtx.Filesize = info.Size()
+				}
+				for _, hook := range hooks {
+					if !hook.Enabled {
+						continue
+					}
+					result := routing.RunHook(hook, efCtx)
+					if result.Error != "" {
+						log.Printf("hook %q failed for extracted file %q: %s", hook.Name, efName, result.Error)
+					}
+				}
+			}
+			if e.storageCfg.AutoExtract.DeleteArchive {
+				if err := os.Remove(finalPath); err != nil {
+					log.Printf("auto-extract: failed to remove archive %q: %v", finalPath, err)
+				}
+			}
+		}
+	}
+
 	// Update destination_path in DB to the final routed location
 	if finalPath != destPath {
 		if err := e.queue.UpdateDestinationPath(downloadID, finalPath); err != nil {

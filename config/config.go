@@ -23,12 +23,18 @@ type DatabaseConfig struct {
 	DSN    string `yaml:"dsn"`
 }
 
+type AutoExtractConfig struct {
+	Enabled       bool `yaml:"enabled"`
+	DeleteArchive bool `yaml:"delete_archive"`
+}
+
 type StorageConfig struct {
-	MediaDir          string `yaml:"media_dir"`
-	DownloadsDir      string `yaml:"downloads_dir"`
-	TempDir           string `yaml:"temp_dir"`
-	MinFreeSpace      string `yaml:"min_free_space"`
-	CriticalFreeSpace string `yaml:"critical_free_space"`
+	MediaDir          string            `yaml:"media_dir"`
+	DownloadsDir      string            `yaml:"downloads_dir"`
+	TempDir           string            `yaml:"temp_dir"`
+	MinFreeSpace      string            `yaml:"min_free_space"`
+	CriticalFreeSpace string            `yaml:"critical_free_space"`
+	AutoExtract       AutoExtractConfig `yaml:"auto_extract"`
 }
 
 type DCCConfig struct {
