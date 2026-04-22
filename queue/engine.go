@@ -421,6 +421,18 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		extracted, extractErr := routing.Extract(finalPath, extractDir)
 		if extractErr != nil {
 			log.Printf("auto-extract failed for download %d (%s): %v", downloadID, offer.Filename, extractErr)
+			errMsg := fmt.Sprintf("extraction failed: %v", extractErr)
+			if markErr := e.queue.MarkNeedsAction(downloadID, errMsg); markErr != nil {
+				log.Printf("auto-extract: could not mark download %d needs-action: %v", downloadID, markErr)
+			}
+			e.bus.Publish(irc.Event{
+				Type: irc.EventDownloadStatus,
+				Data: map[string]interface{}{
+					"download_id": downloadID,
+					"status":      "needs_action",
+					"error":       errMsg,
+				},
+			})
 		} else {
 			extractRules, _ := e.store.GetFileRoutingRules()
 			for _, ef := range extracted {
@@ -433,6 +445,14 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 						} else {
 							efFinal = moved
 						}
+					}
+				}
+				// If the file wasn't routed out of extractDir, flatten it to extractDir
+				// so that subdirectories created by tar don't linger.
+				if efFinal == ef && filepath.Dir(efFinal) != extractDir {
+					flat := filepath.Join(extractDir, efName)
+					if err := os.Rename(efFinal, flat); err == nil {
+						efFinal = flat
 					}
 				}
 				efCtx := hCtx
@@ -451,6 +471,10 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 					}
 				}
 			}
+			// Remove subdirectories created by tar — all files have been routed
+			// or flattened, so these should now be empty.
+			routing.RemoveEmptyDirs(extractDir)
+
 			if e.storageCfg.AutoExtract.DeleteArchive {
 				if err := os.Remove(finalPath); err != nil {
 					log.Printf("auto-extract: failed to remove archive %q: %v", finalPath, err)

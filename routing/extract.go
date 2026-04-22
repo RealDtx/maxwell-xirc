@@ -2,9 +2,11 @@ package routing
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -49,4 +51,28 @@ func Extract(archivePath, destDir string) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+// RemoveEmptyDirs removes empty subdirectories under root (but not root itself),
+// working deepest-first so that parent directories become empty once their
+// children are removed.
+func RemoveEmptyDirs(root string) {
+	var dirs []string
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() && path != root {
+			dirs = append(dirs, path)
+		}
+		return nil
+	})
+	// Sort deepest first so children are removed before their parents are checked.
+	sort.Slice(dirs, func(i, j int) bool {
+		return strings.Count(dirs[i], string(filepath.Separator)) >
+			strings.Count(dirs[j], string(filepath.Separator))
+	})
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err == nil && len(entries) == 0 {
+			os.Remove(dir)
+		}
+	}
 }
