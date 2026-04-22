@@ -71,6 +71,19 @@ echo "  -- Storage directories (paths on the target server) --"
 ask "Downloads directory" "/srv/downloads" DOWNLOADS_DIR
 ask "DLNA / media directory" "/srv/dlna/media" MEDIA_DIR
 ask "Temp directory (for in-progress DCC transfers)" "${DOWNLOADS_DIR}/.tmp" TEMP_DIR
+echo
+echo "  -- Auto-extract --"
+echo "  When enabled, downloaded tar archives (.tar.gz, .tar.bz2, .tar.xz, etc.)"
+echo "  are unpacked automatically and each extracted file goes through the"
+echo "  configured routing rules (e.g. .mkv → media dir)."
+ask_yn "Auto-extract tar archives after download" "n" AUTO_EXTRACT
+AUTO_EXTRACT_BOOL="false"
+[[ "$AUTO_EXTRACT" == "y" ]] && AUTO_EXTRACT_BOOL="true"
+AUTO_EXTRACT_DELETE_BOOL="false"
+if [[ "$AUTO_EXTRACT" == "y" ]]; then
+    ask_yn "Delete archive after successful extraction" "y" AUTO_EXTRACT_DELETE
+    [[ "$AUTO_EXTRACT_DELETE" == "y" ]] && AUTO_EXTRACT_DELETE_BOOL="true"
+fi
 
 # ── database ──────────────────────────────────────────────────────────────────
 
@@ -201,8 +214,8 @@ storage:
   min_free_space: 1GB
   critical_free_space: 500MB
   auto_extract:
-    enabled: false
-    delete_archive: false
+    enabled: ${AUTO_EXTRACT_BOOL}
+    delete_archive: ${AUTO_EXTRACT_DELETE_BOOL}
 
 dcc:
   passive_enabled: ${DCC_PASSIVE_BOOL}
