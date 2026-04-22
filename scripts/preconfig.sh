@@ -200,6 +200,9 @@ storage:
   temp_dir: ${TEMP_DIR}
   min_free_space: 1GB
   critical_free_space: 500MB
+  auto_extract:
+    enabled: false
+    delete_archive: false
 
 dcc:
   passive_enabled: ${DCC_PASSIVE_BOOL}
