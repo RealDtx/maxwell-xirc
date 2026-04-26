@@ -1,4 +1,4 @@
-# Agent Instructions for xirc
+# Agent Instructions for maXwell IRC
 
 ## Versioning
 
@@ -12,11 +12,11 @@
 - **Always build via `make`** — the Makefile points to the correct Go binary automatically:
   - Build: `make build`
   - Test: `make test`
-  - Direct invocation: `~/go-install/go/bin/go build -o xirc .`
+  - Direct invocation: `~/go-install/go/bin/go build -o maxwell-irc .`
 - After dependency changes: `~/go-install/go/bin/go mod tidy`
 
 ## Server
 
-- The xirc server runs on port **8085**.
+- The maxwell-irc server runs on port **8085**.
 - Do **not** start the server automatically — the user starts it manually (it connects to external IRC servers).
-- DB: `./data/xirc.db` (SQLite)
+- DB: `./data/maxwell-irc.db` (SQLite)

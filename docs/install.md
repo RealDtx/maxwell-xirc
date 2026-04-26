@@ -1,6 +1,6 @@
-# xirc Installation Guide
+# maXwell IRC Installation Guide
 
-This guide covers deploying xirc to a Raspberry Pi (or any Linux server) for the first time.
+This guide covers deploying maXwell IRC to a Raspberry Pi (or any Linux server) for the first time.
 
 ---
 
@@ -41,33 +41,33 @@ The script prompts for the following (press Enter to accept the default):
 | Target server name (profile) | `maxwell` | Names the profile dir `.maxwell/` |
 | SSH host | `192.168.20.2` | IP or hostname of the Pi |
 | SSH user | `pi` | Must have passwordless sudo |
-| Install directory | `/opt/xirc` | Where the binary and data live on target |
-| Service OS username | `xirc` | Dedicated unprivileged user |
-| HTTP port | `8085` | xirc binds to 127.0.0.1:PORT |
+| Install directory | `/opt/maxwell-irc` | Where the binary and data live on target |
+| Service OS username | `maxwell-irc` | Dedicated unprivileged user |
+| HTTP port | `8085` | maxwell-irc binds to 127.0.0.1:PORT |
 | Downloads directory | `/srv/downloads` | Where DCC files are saved |
 | DLNA / media directory | `/srv/dlna/media` | Destination for routed media files |
 | Temp directory | `/srv/downloads/.tmp` | In-progress DCC transfers |
 | Database driver | `sqlite` | Or `mysql` / `mariadb` |
-| SQLite path | `<install_dir>/data/xirc.db` | SQLite only |
-| MySQL DSN | `xirc:…@tcp(…)/xirc` | MySQL/MariaDB only |
+| SQLite path | `<install_dir>/data/maxwell-irc.db` | SQLite only |
+| MySQL DSN | `mxirc:…@tcp(…)/maxwell_irc` | MySQL/MariaDB only |
 | Passive DCC | `n` | Enable if the Pi is behind NAT |
 | Use nginx | `y` | Generates an nginx proxy config |
 | Nginx mode | `i` (subpath) | `s` = standalone vhost, `i` = location blocks for existing server |
-| URL prefix *(subpath mode)* | `/xirc` | Path prefix, e.g. `http://local/xirc` |
-| Nginx server_name *(standalone)* | `xirc.local` | Hostname for standalone vhost |
+| URL prefix *(subpath mode)* | `/mxirc` | Path prefix, e.g. `http://local/mxirc` |
+| Nginx server_name *(standalone)* | `maxwell-irc.local` | Hostname for standalone vhost |
 | Nginx listen port *(standalone)* | `80` | Port for standalone vhost |
 
-**Database tables:** xirc uses `CREATE TABLE IF NOT EXISTS` and runs all migrations automatically on startup. No manual schema setup is needed for either SQLite or MySQL — just provide a reachable database.
+**Database tables:** maXwell IRC uses `CREATE TABLE IF NOT EXISTS` and runs all migrations automatically on startup. No manual schema setup is needed for either SQLite or MySQL — just provide a reachable database.
 
-**No nginx:** If you opt out, xirc binds to `127.0.0.1` (localhost only) — it is unreachable from the network until you add a reverse proxy. Never expose the raw port directly.
+**No nginx:** If you opt out, maxwell-irc binds to `127.0.0.1` (localhost only) — it is unreachable from the network until you add a reverse proxy. Never expose the raw port directly.
 
-**Subpath mode (recommended when you already have nginx running):** The script generates `nginx-xirc-location.conf`, a snippet with `location /xirc/` and `location /xirc/ws` blocks. After deploy copies it to `/etc/nginx/snippets/xirc.conf`, add one line to your existing nginx `server` block:
+**Subpath mode (recommended when you already have nginx running):** The script generates `nginx-maxwell-irc-location.conf`, a snippet with `location /mxirc/` and `location /mxirc/ws` blocks. After deploy copies it to `/etc/nginx/snippets/maxwell-irc.conf`, add one line to your existing nginx `server` block:
 ```nginx
-include /etc/nginx/snippets/xirc.conf;
+include /etc/nginx/snippets/maxwell-irc.conf;
 ```
 Then reload nginx: `sudo nginx -t && sudo systemctl reload nginx`.
 
-**Standalone mode:** A full `nginx-xirc.conf` server block is generated and deployed to `sites-available/`. The `sites-enabled/` symlink is created automatically by `make deploy`.
+**Standalone mode:** A full `nginx-maxwell-irc.conf` server block is generated and deployed to `sites-available/`. The `sites-enabled/` symlink is created automatically by `make deploy`.
 
 Generated files are written to `.<profile>/` (e.g. `.maxwell/`) and that directory is added to `.gitignore` automatically.
 
@@ -80,22 +80,22 @@ SSH to the Pi and run these once. Adjust paths if you chose non-default settings
 ### 2a — Create system user
 
 ```bash
-sudo groupadd --system xirc
-sudo useradd --system --gid xirc --home-dir /opt/xirc --shell /usr/sbin/nologin xirc
+sudo groupadd --system maxwell-irc
+sudo useradd --system --gid maxwell-irc --home-dir /opt/maxwell-irc --shell /usr/sbin/nologin maxwell-irc
 ```
 
 ### 2b — Create directory structure
 
 ```bash
-sudo mkdir -p /opt/xirc/data
+sudo mkdir -p /opt/maxwell-irc/data
 sudo mkdir -p /srv/downloads/.tmp
 sudo mkdir -p /srv/dlna/media
 
-sudo chown -R xirc:xirc /opt/xirc
-sudo chown -R xirc:xirc /srv/downloads
-sudo chown -R xirc:xirc /srv/dlna/media
+sudo chown -R maxwell-irc:maxwell-irc /opt/maxwell-irc
+sudo chown -R maxwell-irc:maxwell-irc /srv/downloads
+sudo chown -R maxwell-irc:maxwell-irc /srv/dlna/media
 
-sudo chmod 750 /opt/xirc/data
+sudo chmod 750 /opt/maxwell-irc/data
 ```
 
 ### 2c — Allow the deploy user to write to the install dir
@@ -103,21 +103,21 @@ sudo chmod 750 /opt/xirc/data
 `make deploy` runs rsync as your SSH user, so it needs write access:
 
 ```bash
-sudo usermod -aG xirc pi       # replace 'pi' with your SSH user if different
-sudo chmod g+w /opt/xirc
-sudo chmod g+w /opt/xirc/data
+sudo usermod -aG maxwell-irc pi       # replace 'pi' with your SSH user if different
+sudo chmod g+w /opt/maxwell-irc
+sudo chmod g+w /opt/maxwell-irc/data
 ```
 
-Log out and back in (or run `newgrp xirc`) for the group change to take effect.
+Log out and back in (or run `newgrp maxwell-irc`) for the group change to take effect.
 
 ### 2d — Set up nginx
 
 **Standalone mode:** `make deploy` copies the config to `sites-available/` and creates the `sites-enabled/` symlink automatically. Nothing to do manually.
 
-**Subpath mode:** `make deploy` copies the snippet to `/etc/nginx/snippets/xirc.conf`. Add one line inside your existing nginx `server` block and reload:
+**Subpath mode:** `make deploy` copies the snippet to `/etc/nginx/snippets/maxwell-irc.conf`. Add one line inside your existing nginx `server` block and reload:
 
 ```nginx
-include /etc/nginx/snippets/xirc.conf;
+include /etc/nginx/snippets/maxwell-irc.conf;
 ```
 
 ```bash
@@ -134,25 +134,25 @@ make deploy PROFILE=maxwell
 
 This will:
 1. Cross-compile for ARM64
-2. Push `xirc-arm64` to `<install_dir>/xirc`
-3. Install `.maxwell/xirc.service` to `/etc/systemd/system/` and reload systemd
+2. Push `maxwell-irc-arm64` to `<install_dir>/maxwell-irc`
+3. Install `.maxwell/maxwell-irc.service` to `/etc/systemd/system/` and reload systemd
 4. For standalone nginx: install config to `sites-available/`, create `sites-enabled/` symlink, reload nginx
-   For subpath nginx: copy snippet to `/etc/nginx/snippets/xirc.conf`, reload nginx
+   For subpath nginx: copy snippet to `/etc/nginx/snippets/maxwell-irc.conf`, reload nginx
 5. Push `.maxwell/config.yaml` to `<install_dir>/config.yaml`
-6. `sudo systemctl restart xirc`
+6. `sudo systemctl restart maxwell-irc`
 
 ### Enable start on boot
 
 ```bash
-ssh pi@192.168.20.2 "sudo systemctl enable xirc"
+ssh pi@192.168.20.2 "sudo systemctl enable maxwell-irc"
 ```
 
 ### Verify
 
 ```bash
 # On the Pi:
-sudo systemctl status xirc
-journalctl -u xirc -f
+sudo systemctl status maxwell-irc
+journalctl -u maxwell-irc -f
 
 # From another machine on the network (nginx):
 curl http://192.168.20.2/

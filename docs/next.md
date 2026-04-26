@@ -6,7 +6,7 @@ Next features / fixes:
 * Easy server/realm config export
 * All server search windows share text input: Type in one, shows up directly (without search) in the others
 * Settings -> Realms should show all Realms grouped by server until server filter selected
-* xirc logo - also make it customizable / configurable 
+* maXwell IRC logo - also make it customizable / configurable 
 * explain pattern matching somewhere; Guess: it tests pattern with a plausibility verification by Priority; 
 **! We should keep it auto-detect but configurable per-realm!!! so each realm config should come with it's own regex which might even make sense to version or at least date 
 --> Test all pattern, if multiple match let user decide; 
