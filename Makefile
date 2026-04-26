@@ -1,6 +1,6 @@
 .PHONY: build test clean docker run deploy preconfig
 
-BINARY=xirc
+BINARY=maxwell-irc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GO ?= $(HOME)/go-install/go/bin/go
 
@@ -12,7 +12,7 @@ PROFILE_DIR = .$(PROFILE)
 # Fallback values used when no profile exists (or overridden on the command line)
 PI_HOST     ?= 192.168.20.2
 PI_USER     ?= pi
-INSTALL_DIR ?= /opt/xirc
+INSTALL_DIR ?= /opt/maxwell-irc
 
 build:
 	$(GO) build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY) .
@@ -32,7 +32,7 @@ build-pi3:
 	GOOS=linux GOARCH=arm GOARM=7 $(GO) build -ldflags="-s -w" -o $(BINARY)-arm .
 
 docker:
-	docker build -f deploy/Dockerfile -t xirc .
+	docker build -f deploy/Dockerfile -t maxwell-irc .
 
 docker-up:
 	cd deploy && docker compose up -d
@@ -57,19 +57,19 @@ PI_CONFIG ?=
 deploy: build-pi
 	@test -d "$(PROFILE_DIR)" || \
 	  { echo "Error: profile '$(PROFILE)' not found. Run 'make preconfig PROFILE=$(PROFILE)' first."; exit 1; }
-	rsync -avz --progress $(BINARY)-arm64 "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/xirc
+	rsync -avz --progress $(BINARY)-arm64 "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/maxwell-irc
 	rsync -avz --delete web/ "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/web/
-	rsync -avz $(PROFILE_DIR)/xirc.service "$(PI_USER)@$(PI_HOST)":/tmp/
-	ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/xirc.service /etc/systemd/system/xirc.service && sudo systemctl daemon-reload"
-	@if [ -f "$(PROFILE_DIR)/nginx-xirc.conf" ]; then \
-	  rsync -avz $(PROFILE_DIR)/nginx-xirc.conf "$(PI_USER)@$(PI_HOST)":/tmp/; \
-	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-xirc.conf /etc/nginx/sites-available/xirc \
-	    && sudo ln -sf /etc/nginx/sites-available/xirc /etc/nginx/sites-enabled/xirc \
+	rsync -avz $(PROFILE_DIR)/maxwell-irc.service "$(PI_USER)@$(PI_HOST)":/tmp/
+	ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/maxwell-irc.service /etc/systemd/system/maxwell-irc.service && sudo systemctl daemon-reload"
+	@if [ -f "$(PROFILE_DIR)/nginx-maxwell-irc.conf" ]; then \
+	  rsync -avz $(PROFILE_DIR)/nginx-maxwell-irc.conf "$(PI_USER)@$(PI_HOST)":/tmp/; \
+	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-maxwell-irc.conf /etc/nginx/sites-available/maxwell-irc \
+	    && sudo ln -sf /etc/nginx/sites-available/maxwell-irc /etc/nginx/sites-enabled/maxwell-irc \
 	    && sudo nginx -t && sudo systemctl reload nginx"; \
 	fi
-	@if [ -f "$(PROFILE_DIR)/nginx-xirc-location.conf" ]; then \
-	  rsync -avz $(PROFILE_DIR)/nginx-xirc-location.conf "$(PI_USER)@$(PI_HOST)":/tmp/; \
-	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-xirc-location.conf /etc/nginx/snippets/xirc.conf \
+	@if [ -f "$(PROFILE_DIR)/nginx-maxwell-irc-location.conf" ]; then \
+	  rsync -avz $(PROFILE_DIR)/nginx-maxwell-irc-location.conf "$(PI_USER)@$(PI_HOST)":/tmp/; \
+	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-maxwell-irc-location.conf /etc/nginx/snippets/maxwell-irc.conf \
 	    && sudo nginx -t && sudo systemctl reload nginx"; \
 	fi
 	@if [ -n "$(PI_CONFIG)" ]; then \
@@ -77,7 +77,7 @@ deploy: build-pi
 	elif [ -f "$(PROFILE_DIR)/config.yaml" ]; then \
 	  rsync -avz --progress "$(PROFILE_DIR)/config.yaml" "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/config.yaml; \
 	fi
-	ssh "$(PI_USER)@$(PI_HOST)" "sudo systemctl restart xirc"
+	ssh "$(PI_USER)@$(PI_HOST)" "sudo systemctl restart maxwell-irc"
 
 clean:
 	rm -f $(BINARY) $(BINARY)-arm64 $(BINARY)-arm
