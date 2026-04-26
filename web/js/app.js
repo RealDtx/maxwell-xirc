@@ -61,7 +61,7 @@ document.addEventListener('alpine:init', () => {
         _searchDisplayLimit: 200,
         searchBotWarning: null,
         searchTargets: [],
-        searchViewMode: localStorage.getItem('xirc_searchViewMode') || 'merged',
+        searchViewMode: localStorage.getItem('mxirc_searchViewMode') || 'merged',
         downloads: [],
         downloadFilter: 'all',
         ircMessages: {},
@@ -91,8 +91,8 @@ document.addEventListener('alpine:init', () => {
         showAddDestForm: false,
 
         // Mode
-        appMode: localStorage.getItem('xirc_mode') || 'simple',
-        dateFormat: localStorage.getItem('xirc_date_format') || 'DD-MM-YYYY HH:MM:SS',
+        appMode: localStorage.getItem('mxirc_mode') || 'simple',
+        dateFormat: localStorage.getItem('mxirc_date_format') || 'DD-MM-YYYY HH:MM:SS',
 
         // Channel configs map: channelKey -> download_channel
         _channelConfigs: {},
@@ -303,7 +303,7 @@ document.addEventListener('alpine:init', () => {
 
         setMode(mode) {
             this.appMode = mode;
-            localStorage.setItem('xirc_mode', mode);
+            localStorage.setItem('mxirc_mode', mode);
         },
 
         // --- Server view ---
@@ -355,7 +355,7 @@ document.addEventListener('alpine:init', () => {
         },
         setChannelLayout(key, layout) {
             this._channelLayout = Object.assign({}, this._channelLayout, {[key]: layout});
-            localStorage.setItem('xirc_layout_' + key, layout);
+            localStorage.setItem('mxirc_layout_' + key, layout);
         },
         activeTab(key) {
             return this.activeChannelTab[key] || 'chat';
@@ -793,7 +793,7 @@ document.addEventListener('alpine:init', () => {
 
         toggleSearchViewMode() {
             this.searchViewMode = this.searchViewMode === 'merged' ? 'grouped' : 'merged';
-            localStorage.setItem('xirc_searchViewMode', this.searchViewMode);
+            localStorage.setItem('mxirc_searchViewMode', this.searchViewMode);
         },
 
         groupedSearchResults() {
@@ -1844,7 +1844,7 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
             const yaml = this._patternsToYaml(this.patternSettingsList);
-            this._downloadText('xirc-patterns-' + this._exportDateStr() + '.yaml', yaml, 'text/yaml');
+            this._downloadText('mxirc-patterns-' + this._exportDateStr() + '.yaml', yaml, 'text/yaml');
         },
 
         exportPatternsJSON() {
@@ -1864,7 +1864,7 @@ document.addEventListener('alpine:init', () => {
                 };
             });
             const json = JSON.stringify({ patterns: data }, null, 2);
-            this._downloadText('xirc-patterns-' + this._exportDateStr() + '.json', json, 'application/json');
+            this._downloadText('mxirc-patterns-' + this._exportDateStr() + '.json', json, 'application/json');
         },
 
         async importPatternsFile(event) {
@@ -1908,7 +1908,7 @@ document.addEventListener('alpine:init', () => {
             setTimeout(() => { this.patternImportMsg = ''; }, 5000);
         },
 
-        // Minimal line-based YAML parser — handles only the xirc export format.
+        // Minimal line-based YAML parser — handles only the mxirc export format.
         _parseExportYaml(text) {
             const lines = text.split('\n');
             const patterns = [];
@@ -2089,11 +2089,11 @@ document.addEventListener('alpine:init', () => {
             this._channelLayout = {};
             for (let i = 0; i < localStorage.length; i++) {
                 const k = localStorage.key(i);
-                if (k && k.startsWith('xirc_layout_')) {
-                    this._channelLayout[k.slice('xirc_layout_'.length)] = localStorage.getItem(k);
+                if (k && k.startsWith('mxirc_layout_')) {
+                    this._channelLayout[k.slice('mxirc_layout_'.length)] = localStorage.getItem(k);
                 }
             }
-            this.statsOnlyDefault = localStorage.getItem('xirc_stats_only') === 'true';
+            this.statsOnlyDefault = localStorage.getItem('mxirc_stats_only') === 'true';
 
             // Load servers
             try {

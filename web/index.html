@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>xirc</title>
+    <title>maXwell IRC</title>
     <link rel="stylesheet" href="/css/style.css">
     <style>
         [x-cloak] { display: none !important; }
@@ -33,7 +33,7 @@
 
     <!-- Sidebar -->
     <aside class="sidebar" :class="sidebarOpen ? 'open' : ''">
-        <div class="sidebar-header" @click="setView('home')" style="cursor:pointer;">xirc</div>
+        <div class="sidebar-header" @click="setView('home')" style="cursor:pointer;">maXwell IRC</div>
 
         <div class="server-tree" x-show="appMode === 'advanced'">
             <div style="display:flex; justify-content:flex-end; gap:6px; padding:0 8px 4px; font-size:11px; opacity:0.5;">
@@ -1263,16 +1263,16 @@
                                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
                                     <input type="text"
                                            x-model="dateFormat"
-                                           @input="localStorage.setItem('xirc_date_format', dateFormat)"
+                                           @input="localStorage.setItem('mxirc_date_format', dateFormat)"
                                            style="flex:1;padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;font-family:monospace;">
                                 </div>
                                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
                                     <button class="btn btn-sm"
-                                            @click="dateFormat='DD-MM-YYYY HH:MM:SS'; localStorage.setItem('xirc_date_format', dateFormat)">DD-MM-YYYY</button>
+                                            @click="dateFormat='DD-MM-YYYY HH:MM:SS'; localStorage.setItem('mxirc_date_format', dateFormat)">DD-MM-YYYY</button>
                                     <button class="btn btn-sm"
-                                            @click="dateFormat='YYYY-MM-DD HH:MM:SS'; localStorage.setItem('xirc_date_format', dateFormat)">YYYY-MM-DD</button>
+                                            @click="dateFormat='YYYY-MM-DD HH:MM:SS'; localStorage.setItem('mxirc_date_format', dateFormat)">YYYY-MM-DD</button>
                                     <button class="btn btn-sm"
-                                            @click="dateFormat='MM/DD/YYYY HH:MM:SS'; localStorage.setItem('xirc_date_format', dateFormat)">MM/DD/YYYY</button>
+                                            @click="dateFormat='MM/DD/YYYY HH:MM:SS'; localStorage.setItem('mxirc_date_format', dateFormat)">MM/DD/YYYY</button>
                                 </div>
                                 <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
                                     Preview: <span x-text="formatDateCustom(new Date().toISOString(), dateFormat)"></span>
@@ -1480,10 +1480,10 @@
             <!-- Stats-only toggle -->
             <div class="settings-card mb-4" style="display:flex;align-items:center;gap:1rem;">
                 <label class="text-sm">Download mode:</label>
-                <button @click="statsOnlyDefault = false; localStorage.setItem('xirc_stats_only', 'false')"
+                <button @click="statsOnlyDefault = false; localStorage.setItem('mxirc_stats_only', 'false')"
                         :class="!statsOnlyDefault ? 'active' : ''"
                         class="mode-btn">Save file</button>
-                <button @click="statsOnlyDefault = true; localStorage.setItem('xirc_stats_only', 'true')"
+                <button @click="statsOnlyDefault = true; localStorage.setItem('mxirc_stats_only', 'true')"
                         :class="statsOnlyDefault ? 'active-warning' : ''"
                         class="mode-btn">Stats only (don't save)</button>
                 <span x-show="statsOnlyDefault" class="text-muted text-xs">
@@ -1735,7 +1735,7 @@
     <!-- Post-setup restart banner -->
     <div :style="setupBanner ? 'display:block' : 'display:none'"
          style="position:fixed; top:0; left:0; right:0; z-index:9998; background:#1a5c2a; color:#fff; padding:10px 20px; font-size:13px; text-align:center;">
-        Setup complete — restart xirc for changes to take effect.
+        Setup complete — restart maXwell IRC for changes to take effect.
         <button @click="setupBanner=false" style="margin-left:12px; background:transparent; border:none; color:#fff; cursor:pointer; font-size:16px;">×</button>
     </div>
 </div>
