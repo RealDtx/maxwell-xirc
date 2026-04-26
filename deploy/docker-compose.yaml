@@ -1,9 +1,9 @@
 services:
-  xirc:
+  maxwell-irc:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    container_name: xirc
+    container_name: maxwell-irc
     restart: unless-stopped
     ports:
       - "127.0.0.1:8085:8085"
@@ -14,26 +14,26 @@ services:
     environment:
       - TZ=Europe/Berlin
     networks:
-      - xirc
+      - maxwell-irc
 
   db:
     image: mariadb:11
-    container_name: xirc-db
+    container_name: maxwell-irc-db
     restart: unless-stopped
     profiles:
       - mariadb
     environment:
       - MYSQL_ROOT_PASSWORD=changeme
-      - MYSQL_DATABASE=xirc
-      - MYSQL_USER=xirc
+      - MYSQL_DATABASE=maxwell_irc
+      - MYSQL_USER=maxwell_irc
       - MYSQL_PASSWORD=changeme
     volumes:
       - db_data:/var/lib/mysql
     networks:
-      - xirc
+      - maxwell-irc
 
 networks:
-  xirc:
+  maxwell-irc:
     driver: bridge
 
 volumes:
