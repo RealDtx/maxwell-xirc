@@ -23,8 +23,8 @@ func TestLoadFullConfig(t *testing.T) {
 	if cfg.Database.Driver != "sqlite" {
 		t.Errorf("expected driver sqlite, got %s", cfg.Database.Driver)
 	}
-	if cfg.Database.Path != "./data/xirc.db" {
-		t.Errorf("expected path ./data/xirc.db, got %s", cfg.Database.Path)
+	if cfg.Database.Path != "./data/maxwell-irc.db" {
+		t.Errorf("expected path ./data/maxwell-irc.db, got %s", cfg.Database.Path)
 	}
 	if cfg.Storage.MediaDir != "/srv/dlna/media" {
 		t.Errorf("expected media_dir /srv/dlna/media, got %s", cfg.Storage.MediaDir)

@@ -153,8 +153,8 @@ func TestNewIRCClient_FallsBackToXircWhenEmpty(t *testing.T) {
 		Enabled:  true,
 	}
 	client := newIRCClient(srv)
-	if client.Nick() != "xirc" {
-		t.Errorf("expected fallback nick %q, got %q", "xirc", client.Nick())
+	if client.Nick() != "mxirc" {
+		t.Errorf("expected fallback nick %q, got %q", "mxirc", client.Nick())
 	}
 }
 

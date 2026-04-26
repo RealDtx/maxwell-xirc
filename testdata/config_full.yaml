@@ -4,7 +4,7 @@ server:
 
 database:
   driver: sqlite
-  path: ./data/xirc.db
+  path: ./data/maxwell-irc.db
   dsn: ""
 
 storage:

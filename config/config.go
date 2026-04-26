@@ -78,7 +78,7 @@ func defaults() Config {
 		},
 		Database: DatabaseConfig{
 			Driver: "sqlite",
-			Path:   "./data/xirc.db",
+			Path:   "./data/maxwell-irc.db",
 		},
 		Storage: StorageConfig{
 			MediaDir:          "/srv/dlna/media",

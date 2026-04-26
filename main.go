@@ -52,7 +52,7 @@ func checkDirectories(store db.Store) []string {
 		}
 		seen[r.DestinationDir] = true
 
-		probe := r.DestinationDir + "/.xirc_write_check"
+		probe := r.DestinationDir + "/.mxirc_write_check"
 		f, err := os.Create(probe)
 		if err == nil {
 			f.Close()
@@ -95,7 +95,7 @@ func runCLIWizard(badDirs []string, store db.Store, state *server.SetupState) {
 	}
 	suggestions := server.DefaultSuggestions(badDirs, rules, state.HomeDir)
 
-	fmt.Fprintf(os.Stderr, "\nxirc: the following destination directories do not exist:\n\n")
+	fmt.Fprintf(os.Stderr, "\nmaxwell-irc: the following destination directories do not exist:\n\n")
 	for _, dir := range badDirs {
 		patterns := server.PatternsForDir(rules, dir)
 		fmt.Fprintf(os.Stderr, "  %s\n    → used by: %s\n", dir, strings.Join(patterns, " "))
@@ -278,7 +278,7 @@ func main() {
 		eng.Stop()
 	}()
 
-	log.Printf("xirc starting on %s", addr)
+	log.Printf("maxwell-irc starting on %s", addr)
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("server error: %v", err)
 	}

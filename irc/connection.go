@@ -61,13 +61,13 @@ func newIRCClient(srv *db.Server) IRCClient {
 	addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
 	nick := srv.Nickname
 	if nick == "" {
-		nick = "xirc"
+		nick = "mxirc"
 	}
 	cfg := RawClientConfig{
 		Addr:     addr,
 		Nick:     nick,
 		User:     nick,
-		Realname: "xirc XDCC client",
+		Realname: "maXwell IRC XDCC client",
 		UseTLS:   srv.SSL,
 	}
 	switch srv.AuthMethod {
@@ -495,7 +495,7 @@ func (c *Connection) pingLoop(client IRCClient, done <-chan struct{}) {
 			c.mu.Lock()
 			c.lagMs = -sent // negative = ping in flight
 			c.mu.Unlock()
-			client.SendLine(fmt.Sprintf("PING :xirc%d", sent))
+			client.SendLine(fmt.Sprintf("PING :mxirc%d", sent))
 		case <-c.stopCh:
 			return
 		case <-done:
