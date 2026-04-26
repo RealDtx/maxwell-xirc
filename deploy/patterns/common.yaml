@@ -1,4 +1,4 @@
-# maXwell IRC pattern export - v1
+# xirc pattern export - v1
 # Common XDCC bot response patterns
 patterns:
   - name: "hash-x-bracket"

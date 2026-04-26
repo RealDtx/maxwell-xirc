@@ -14,8 +14,10 @@ next_features.d
 # Preconfig profile directories — add your own profile patterns here
 # e.g. .maxwell/ .pi2/ etc. Preconfig adds these automatically.
 
-# Internal AI tooling (not for public repo)
-docs/superpowers/
+# Editor and AI assistant directories (local tooling, not for public repo)
+.claude/
+.copilot/
+docs/.claude/
 **/settings.local.json
 
 # Go build artifacts
