@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# xirc deployment preconfig — generates a named profile directory with all
-# deployment artefacts: config.yaml, xirc.service, nginx config, settings.mk.
+# maXwell IRC deployment preconfig — generates a named profile directory with all
+# deployment artefacts: config.yaml, maxwell-irc.service, nginx config, settings.mk.
 # Run with: bash scripts/preconfig.sh   or   make preconfig [PROFILE=name]
 set -euo pipefail
 
@@ -34,7 +34,7 @@ hr() { echo "  ─────────────────────�
 # ── welcome ───────────────────────────────────────────────────────────────────
 
 echo
-echo "  xirc deployment preconfig"
+echo "  maXwell IRC deployment preconfig"
 hr
 echo "  Press Enter to accept the default shown in [brackets]."
 echo
@@ -60,9 +60,9 @@ ask "SSH user (must have passwordless sudo)" "pi" PI_USER
 
 echo
 echo "  -- Installation --"
-ask "Install directory on target" "/opt/xirc" INSTALL_DIR
-ask "Service OS username" "xirc" XIRC_USER
-ask "HTTP port xirc listens on" "8085" XIRC_PORT
+ask "Install directory on target" "/opt/maxwell-irc" INSTALL_DIR
+ask "Service OS username" "maxwell-irc" XIRC_USER
+ask "HTTP port maxwell-irc listens on" "8085" XIRC_PORT
 
 # ── storage ───────────────────────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ fi
 
 echo
 echo "  -- Database --"
-echo "  xirc creates all tables automatically on first startup (CREATE TABLE IF NOT EXISTS)."
+echo "  maXwell IRC creates all tables automatically on first startup (CREATE TABLE IF NOT EXISTS)."
 echo "  No manual schema setup is required."
 echo
 echo "  Options: sqlite  mysql"
@@ -98,7 +98,7 @@ ask "Database driver" "sqlite" DB_DRIVER
 case "${DB_DRIVER,,}" in
     sqlite)
         DB_DRIVER="sqlite"
-        ask "SQLite file path (on target)" "${INSTALL_DIR}/data/xirc.db" DB_PATH
+        ask "SQLite file path (on target)" "${INSTALL_DIR}/data/maxwell-irc.db" DB_PATH
         DB_DSN=""
         ;;
     mysql|mariadb)
@@ -107,12 +107,12 @@ case "${DB_DRIVER,,}" in
         echo
         echo "  DSN format: user:password@tcp(host:3306)/dbname"
         echo "  The database and user must already exist; tables are created automatically."
-        ask "MySQL DSN" "xirc:changeme@tcp(127.0.0.1:3306)/xirc" DB_DSN
+        ask "MySQL DSN" "mxirc:changeme@tcp(127.0.0.1:3306)/maxwell_irc" DB_DSN
         ;;
     *)
         echo "  Unknown driver '${DB_DRIVER}' — defaulting to sqlite."
         DB_DRIVER="sqlite"
-        ask "SQLite file path (on target)" "${INSTALL_DIR}/data/xirc.db" DB_PATH
+        ask "SQLite file path (on target)" "${INSTALL_DIR}/data/maxwell-irc.db" DB_PATH
         DB_DSN=""
         ;;
 esac
@@ -150,13 +150,13 @@ if [[ "$USE_NGINX" == "y" ]]; then
     case "${NGINX_MODE,,}" in
         s|standalone)
             NGINX_MODE="standalone"
-            ask "Nginx server_name (hostname for the vhost)" "xirc.local" NGINX_SERVER_NAME
+            ask "Nginx server_name (hostname for the vhost)" "maxwell-irc.local" NGINX_SERVER_NAME
             ask "Nginx listen port" "80" NGINX_LISTEN_PORT
             NGINX_PREFIX=""
             ;;
         *)
             NGINX_MODE="subpath"
-            ask "URL prefix (no trailing slash)" "/xirc" NGINX_PREFIX
+            ask "URL prefix (no trailing slash)" "/mxirc" NGINX_PREFIX
             NGINX_LISTEN_PORT=""
             NGINX_SERVER_NAME=""
             ;;
@@ -164,9 +164,9 @@ if [[ "$USE_NGINX" == "y" ]]; then
 else
     echo
     echo "  *** IMPORTANT SECURITY WARNING ***"
-    echo "  Nginx is disabled.  xirc will listen on 127.0.0.1:${XIRC_PORT}."
+    echo "  Nginx is disabled.  maXwell IRC will listen on 127.0.0.1:${XIRC_PORT}."
     echo "  Do NOT expose port ${XIRC_PORT} directly to the internet."
-    echo "  You MUST place xirc behind a TLS-terminating reverse proxy before"
+    echo "  You MUST place maXwell IRC behind a TLS-terminating reverse proxy before"
     echo "  any public access.  Without a proxy, the WebSocket and session"
     echo "  cookies are transmitted in plaintext."
     echo
@@ -230,10 +230,10 @@ notifications:
   quiet_hours_end: ""
 CONFIG
 
-# --- xirc.service ---
-cat > "${PROFILE_DIR}/xirc.service" <<SERVICE
+# --- maxwell-irc.service ---
+cat > "${PROFILE_DIR}/maxwell-irc.service" <<SERVICE
 [Unit]
-Description=xirc - XDCC IRC Web Client
+Description=maXwell IRC - XDCC IRC Web Client
 After=network.target
 Wants=network-online.target
 
@@ -242,7 +242,7 @@ Type=simple
 User=${XIRC_USER}
 Group=${XIRC_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/xirc --config ${INSTALL_DIR}/config.yaml
+ExecStart=${INSTALL_DIR}/maxwell-irc --config ${INSTALL_DIR}/config.yaml
 Restart=always
 RestartSec=5
 StartLimitIntervalSec=120
@@ -260,9 +260,9 @@ NoNewPrivileges=yes
 WantedBy=multi-user.target
 SERVICE
 
-# --- nginx-xirc.conf (or sentinel) ---
+# --- nginx-maxwell-irc.conf (or sentinel) ---
 if [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "standalone" ]]; then
-    cat > "${PROFILE_DIR}/nginx-xirc.conf" <<NGINX
+    cat > "${PROFILE_DIR}/nginx-maxwell-irc.conf" <<NGINX
 server {
     listen ${NGINX_LISTEN_PORT};
     server_name ${NGINX_SERVER_NAME};
@@ -293,12 +293,12 @@ server {
 }
 NGINX
     rm -f "${PROFILE_DIR}/.no-nginx"
-    rm -f "${PROFILE_DIR}/nginx-xirc-location.conf"
+    rm -f "${PROFILE_DIR}/nginx-maxwell-irc-location.conf"
 
 elif [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "subpath" ]]; then
-    cat > "${PROFILE_DIR}/nginx-xirc-location.conf" <<NGINX
-# xirc location blocks — include this inside your existing nginx server block:
-#   include /etc/nginx/snippets/xirc.conf;
+    cat > "${PROFILE_DIR}/nginx-maxwell-irc-location.conf" <<NGINX
+# maXwell IRC location blocks — include this inside your existing nginx server block:
+#   include /etc/nginx/snippets/maxwell-irc.conf;
 
 # Redirect bare prefix to trailing slash
 location = ${NGINX_PREFIX} {
@@ -336,12 +336,12 @@ location ${NGINX_PREFIX}/ws {
 }
 NGINX
     rm -f "${PROFILE_DIR}/.no-nginx"
-    rm -f "${PROFILE_DIR}/nginx-xirc.conf"
+    rm -f "${PROFILE_DIR}/nginx-maxwell-irc.conf"
 
 else
     touch "${PROFILE_DIR}/.no-nginx"
-    rm -f "${PROFILE_DIR}/nginx-xirc.conf"
-    rm -f "${PROFILE_DIR}/nginx-xirc-location.conf"
+    rm -f "${PROFILE_DIR}/nginx-maxwell-irc.conf"
+    rm -f "${PROFILE_DIR}/nginx-maxwell-irc-location.conf"
 fi
 
 # --- .gitignore ---
@@ -358,11 +358,11 @@ echo
 hr
 echo "  Generated: ${PROFILE_DIR}/"
 echo "    config.yaml       application config"
-echo "    xirc.service      systemd unit"
+echo "    maxwell-irc.service  systemd unit"
 if [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "standalone" ]]; then
-    echo "    nginx-xirc.conf          nginx vhost config"
+    echo "    nginx-maxwell-irc.conf          nginx vhost config"
 elif [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "subpath" ]]; then
-    echo "    nginx-xirc-location.conf nginx location snippet (include in your server block)"
+    echo "    nginx-maxwell-irc-location.conf nginx location snippet (include in your server block)"
 fi
 echo "    settings.mk       Makefile deploy variables"
 hr
