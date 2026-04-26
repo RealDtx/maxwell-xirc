@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 type mockStore struct {

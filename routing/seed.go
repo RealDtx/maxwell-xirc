@@ -1,6 +1,6 @@
 package routing
 
-import "github.com/maxwell-xirc/xirc/db"
+import "github.com/RealDtx/maxwell-irc/db"
 
 // SyncBuiltinRuleDirs updates all existing builtin routing rules to match the
 // current mediaDir and downloadsDir from config.yaml. This keeps the DB in sync

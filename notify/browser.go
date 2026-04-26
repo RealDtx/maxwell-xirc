@@ -1,6 +1,6 @@
 package notify
 
-import "github.com/maxwell-xirc/xirc/irc"
+import "github.com/RealDtx/maxwell-irc/irc"
 
 type BrowserNotifier struct {
 	bus *irc.EventBus

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/db"
-	"github.com/maxwell-xirc/xirc/irc"
+	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/irc"
 )
 
 func newTestStore(t *testing.T) (db.Store, func()) {

@@ -5,7 +5,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/maxwell-xirc/xirc/irc"
+	"github.com/RealDtx/maxwell-irc/irc"
 )
 
 type Hub struct {

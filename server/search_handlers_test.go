@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/db"
-	"github.com/maxwell-xirc/xirc/irc"
-	"github.com/maxwell-xirc/xirc/parser"
+	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/parser"
 )
 
 func newTestServerWithStore(t *testing.T) (*Server, db.Store, func()) {

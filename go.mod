@@ -1,4 +1,4 @@
-module github.com/maxwell-xirc/xirc
+module github.com/RealDtx/maxwell-irc
 
 go 1.26.0
 

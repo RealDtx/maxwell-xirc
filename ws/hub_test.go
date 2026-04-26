@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/irc"
+	"github.com/RealDtx/maxwell-irc/irc"
 )
 
 func TestHub_BroadcastsEvents(t *testing.T) {

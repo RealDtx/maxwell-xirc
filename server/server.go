@@ -5,11 +5,11 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/maxwell-xirc/xirc/db"
-	ircpkg "github.com/maxwell-xirc/xirc/irc"
-	"github.com/maxwell-xirc/xirc/parser"
-	"github.com/maxwell-xirc/xirc/queue"
-	ws "github.com/maxwell-xirc/xirc/ws"
+	"github.com/RealDtx/maxwell-irc/db"
+	ircpkg "github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/parser"
+	"github.com/RealDtx/maxwell-irc/queue"
+	ws "github.com/RealDtx/maxwell-irc/ws"
 )
 
 type Server struct {

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 // MatchRule returns the destination directory for a filename based on routing rules.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	ircpkg "github.com/maxwell-xirc/xirc/irc"
+	ircpkg "github.com/RealDtx/maxwell-irc/irc"
 )
 
 // GET /api/irc/{server_id}/messages?channel=&before=RFC3339&limit=200

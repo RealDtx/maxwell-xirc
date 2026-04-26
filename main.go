@@ -16,17 +16,17 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/maxwell-xirc/xirc/config"
-	"github.com/maxwell-xirc/xirc/db"
-	"github.com/maxwell-xirc/xirc/internal/debug"
-	"github.com/maxwell-xirc/xirc/internal/exitcodes"
-	ircpkg "github.com/maxwell-xirc/xirc/irc"
-	"github.com/maxwell-xirc/xirc/notify"
-	"github.com/maxwell-xirc/xirc/parser"
-	"github.com/maxwell-xirc/xirc/queue"
-	"github.com/maxwell-xirc/xirc/routing"
-	"github.com/maxwell-xirc/xirc/server"
-	wsPkg "github.com/maxwell-xirc/xirc/ws"
+	"github.com/RealDtx/maxwell-irc/config"
+	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/internal/debug"
+	"github.com/RealDtx/maxwell-irc/internal/exitcodes"
+	ircpkg "github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/notify"
+	"github.com/RealDtx/maxwell-irc/parser"
+	"github.com/RealDtx/maxwell-irc/queue"
+	"github.com/RealDtx/maxwell-irc/routing"
+	"github.com/RealDtx/maxwell-irc/server"
+	wsPkg "github.com/RealDtx/maxwell-irc/ws"
 )
 
 //go:embed all:web

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 func newTestStore(t *testing.T) (db.Store, func()) {

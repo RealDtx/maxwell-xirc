@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 func TestBuiltinPatterns_AllCompile(t *testing.T) {

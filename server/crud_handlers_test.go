@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 func TestGetServers_Empty(t *testing.T) {

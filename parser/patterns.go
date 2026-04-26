@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 var ErrNoMatch = errors.New("no pattern matched")

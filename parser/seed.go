@@ -3,7 +3,7 @@ package parser
 import (
 	"log"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 type BuiltinPattern struct {

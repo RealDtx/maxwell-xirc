@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/config"
-	"github.com/maxwell-xirc/xirc/db"
-	"github.com/maxwell-xirc/xirc/dcc"
-	"github.com/maxwell-xirc/xirc/irc"
-	"github.com/maxwell-xirc/xirc/routing"
+	"github.com/RealDtx/maxwell-irc/config"
+	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/dcc"
+	"github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/routing"
 )
 
 type PendingRequest struct {

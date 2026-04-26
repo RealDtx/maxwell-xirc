@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
-	wsPkg "github.com/maxwell-xirc/xirc/ws"
+	wsPkg "github.com/RealDtx/maxwell-irc/ws"
 )
 
 var upgrader = websocket.Upgrader{

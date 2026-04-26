@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/maxwell-xirc/xirc/config"
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/config"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 // SetupState carries wizard data from main() into the HTTP server.

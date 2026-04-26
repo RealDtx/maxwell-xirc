@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	ircpkg "github.com/maxwell-xirc/xirc/irc"
+	ircpkg "github.com/RealDtx/maxwell-irc/irc"
 )
 
 // GET /api/errors?limit=50

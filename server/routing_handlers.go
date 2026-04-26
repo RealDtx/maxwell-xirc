@@ -6,7 +6,7 @@ import (
 	"path"
 	"strconv"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 // handleRoutingRules handles GET /api/routing/rules and POST /api/routing/rules

@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/db"
-	"github.com/maxwell-xirc/xirc/internal/debug"
-	"github.com/maxwell-xirc/xirc/irc"
+	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/internal/debug"
+	"github.com/RealDtx/maxwell-irc/irc"
 )
 
 // ircFormattingRe matches IRC color/formatting control codes.

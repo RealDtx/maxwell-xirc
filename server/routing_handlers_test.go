@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 func TestGetRoutingRules(t *testing.T) {

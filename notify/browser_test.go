@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/irc"
+	"github.com/RealDtx/maxwell-irc/irc"
 )
 
 func TestBrowserNotifier_PublishesEvent(t *testing.T) {

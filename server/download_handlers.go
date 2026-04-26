@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {

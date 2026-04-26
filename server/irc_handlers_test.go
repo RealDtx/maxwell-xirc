@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/maxwell-xirc/xirc/irc"
+	"github.com/RealDtx/maxwell-irc/irc"
 )
 
 func TestGetIRCStatus(t *testing.T) {

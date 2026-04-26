@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/db"
-	"github.com/maxwell-xirc/xirc/internal/debug"
-	"github.com/maxwell-xirc/xirc/parser"
+	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/internal/debug"
+	"github.com/RealDtx/maxwell-irc/parser"
 )
 
 func (s *Server) handleGetSearchResults(w http.ResponseWriter, r *http.Request) {

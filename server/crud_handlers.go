@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {

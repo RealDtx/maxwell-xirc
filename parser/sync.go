@@ -3,7 +3,7 @@ package parser
 import (
 	"encoding/json"
 
-	"github.com/maxwell-xirc/xirc/db"
+	"github.com/RealDtx/maxwell-irc/db"
 )
 
 // ConfigPattern is a plain-Go representation of a pattern defined in config.

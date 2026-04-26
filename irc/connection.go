@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/maxwell-xirc/xirc/db"
-	"github.com/maxwell-xirc/xirc/internal/debug"
+	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/internal/debug"
 )
 
 // detectDownloadChanRe matches IRC channel names ending in "-chat" (e.g. #mg-chat).
