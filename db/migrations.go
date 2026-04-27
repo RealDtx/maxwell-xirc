@@ -13,7 +13,7 @@ func migrationStatements() []string {
 			host TEXT NOT NULL,
 			port INTEGER NOT NULL DEFAULT 6667,
 			ssl INTEGER NOT NULL DEFAULT 0,
-			nickname TEXT NOT NULL DEFAULT 'xirc_user',
+			nickname TEXT NOT NULL DEFAULT 'maxwell_user',
 			alt_nicknames TEXT NOT NULL DEFAULT '[]',
 			auth_method TEXT NOT NULL DEFAULT 'none',
 			auth_password TEXT NOT NULL DEFAULT '',

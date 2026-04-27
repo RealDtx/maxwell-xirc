@@ -22,7 +22,7 @@ func mysqlMigrationStatements() []string {
 			host VARCHAR(255) NOT NULL,
 			port INT NOT NULL DEFAULT 6667,
 			` + "`ssl`" + ` BOOLEAN NOT NULL DEFAULT FALSE,
-			nickname VARCHAR(255) NOT NULL DEFAULT 'xirc_user',
+			nickname VARCHAR(255) NOT NULL DEFAULT 'maxwell_user',
 			alt_nicknames TEXT NOT NULL,
 			auth_method VARCHAR(50) NOT NULL DEFAULT 'none',
 			auth_password VARCHAR(255) NOT NULL DEFAULT '',
