@@ -45,7 +45,7 @@ For full installation instructions, see [docs/install.md](docs/install.md).
 ## Requirements
 
 **Development machine:**
-- Go (configured at `~/go-install/go`)
+- Go 1.21+
 - make
 - rsync
 - ssh (for remote deployment)
