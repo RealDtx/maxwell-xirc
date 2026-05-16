@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -189,7 +190,6 @@ func (t *Transfer) Start() error {
 			wasCancelled := t.cancelled
 			t.mu.RUnlock()
 			if wasCancelled {
-				os.Remove(t.partPath)
 				return ErrCancelled
 			}
 			return fmt.Errorf("reading from connection: %w", readErr)
@@ -217,8 +217,18 @@ func (t *Transfer) Start() error {
 	}
 
 	// Rename .part to final
-	file.Close()
+	if err := file.Close(); err != nil {
+		log.Printf("warning: closing part file %s: %v", t.partPath, err)
+	}
 	if err := os.Rename(t.partPath, t.destPath); err != nil {
+		// If the .part file is gone but the final file already exists, a previous
+		// transfer completed it (e.g. service restart after successful rename).
+		if os.IsNotExist(err) {
+			if _, statErr := os.Stat(t.destPath); statErr == nil {
+				log.Printf("part file gone but final file exists at %s — treating as complete", t.destPath)
+				return nil
+			}
+		}
 		return fmt.Errorf("renaming part file: %w", err)
 	}
 

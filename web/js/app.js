@@ -1155,6 +1155,11 @@ document.addEventListener('alpine:init', () => {
             api.moveDownload(id).then(() => this.loadDownloads()).catch(console.error);
         },
 
+        toggleAutoExtract(dl, val) {
+            dl.auto_extract = val;
+            api.setAutoExtract(dl.id, val).catch(console.error);
+        },
+
         downloadProgress(dl) {
             if (!dl.total_size) return 0;
             return Math.round((dl.bytes_received / dl.total_size) * 100);
@@ -1162,7 +1167,13 @@ document.addEventListener('alpine:init', () => {
 
         dlSpeedInfo(dl) {
             if (dl.status === 'downloading') return dl.speed ? formatSpeed(dl.speed) : '-';
-            if (dl.status === 'completed') return dl.average_speed ? formatSpeed(dl.average_speed) : '-';
+            if (dl.status === 'completed') {
+                if (dl.error_message) {
+                    var msg = dl.error_message;
+                    return msg.length > 40 ? msg.slice(0, 37) + '...' : msg;
+                }
+                return dl.average_speed ? formatSpeed(dl.average_speed) : '-';
+            }
             if (dl.status === 'failed' || dl.status === 'needs_action') {
                 var msg = dl.error_message || '';
                 return msg.length > 40 ? msg.slice(0, 37) + '...' : (msg || '-');
@@ -1360,10 +1371,16 @@ document.addEventListener('alpine:init', () => {
                     dl.bytes_received = p.bytes_received;
                     dl.total_size = p.total_size;
                     dl.speed = p.speed;
+                    if (dl.status !== 'downloading') {
+                        dl.status = 'downloading';
+                    }
+                } else {
+                    // Download started before our list was loaded — reload to pick it up
+                    this.loadDownloads();
                 }
             } else if (type === 'download_status') {
                 const dlStatus = data.data && data.data.status;
-                if (dlStatus === 'completed' || dlStatus === 'failed' || dlStatus === 'cancelled') {
+                if (dlStatus === 'completed' || dlStatus === 'failed' || dlStatus === 'cancelled' || dlStatus === 'needs_action') {
                     this.loadDownloads();
                 }
             } else if (type === 'realm_updated') {

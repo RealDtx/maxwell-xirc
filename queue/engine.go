@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/RealDtx/maxwell-irc/config"
@@ -37,6 +38,7 @@ type Engine struct {
 	transferMu         sync.Mutex
 	activeTransfers    map[int64]*dcc.Transfer
 	cancelledTransfers map[int64]bool
+	activeDestPaths    map[string]bool // base filenames currently being transferred
 }
 
 func NewEngine(store db.Store, bus *irc.EventBus, ircMgr *irc.Manager, storageCfg *config.StorageConfig, maxConcurrent int) *Engine {
@@ -50,6 +52,7 @@ func NewEngine(store db.Store, bus *irc.EventBus, ircMgr *irc.Manager, storageCf
 		pendingByBot:       make(map[string]*PendingRequest),
 		activeTransfers:    make(map[int64]*dcc.Transfer),
 		cancelledTransfers: make(map[int64]bool),
+		activeDestPaths:    make(map[string]bool),
 	}
 }
 
@@ -225,14 +228,16 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		return
 	}
 
-	// Check for existing .part file (resume)
-	tempPath := filepath.Join(e.storageCfg.TempDir, offer.Filename+".part")
+	e.transferMu.Lock()
+	destPath := e.uniqueDestPathLocked(offer.Filename)
+	e.activeDestPaths[filepath.Base(destPath)] = true
+	e.transferMu.Unlock()
+
+	// Check for existing .part file (resume) using the unique destPath
 	var resumeOffset int64
-	if info, err := os.Stat(tempPath); err == nil {
+	if info, err := os.Stat(destPath + ".part"); err == nil {
 		resumeOffset = info.Size()
 	}
-
-	destPath := filepath.Join(e.storageCfg.TempDir, offer.Filename)
 
 	// Start transfer in goroutine
 	e.wg.Add(1)
@@ -240,6 +245,30 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		defer e.wg.Done()
 		e.runTransfer(pending.DownloadID, offer, destPath, resumeOffset)
 	}()
+}
+
+// uniqueDestPathLocked returns a unique destination path for filename, inserting
+// a numeric counter before the extension when the plain name is already in use
+// (active transfer or existing final file on disk). Must be called with transferMu held.
+func (e *Engine) uniqueDestPathLocked(filename string) string {
+	ext := filepath.Ext(filename)
+	base := strings.TrimSuffix(filename, ext)
+	for i := 0; ; i++ {
+		var name string
+		if i == 0 {
+			name = filename
+		} else {
+			name = fmt.Sprintf("%s.%d%s", base, i, ext)
+		}
+		candidate := filepath.Join(e.storageCfg.TempDir, name)
+		if e.activeDestPaths[name] {
+			continue
+		}
+		if _, err := os.Stat(candidate); err == nil {
+			continue // final file already exists at this path
+		}
+		return candidate
+	}
 }
 
 func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath string, resumeOffset int64) {
@@ -257,6 +286,7 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		e.transferMu.Lock()
 		delete(e.activeTransfers, downloadID)
 		delete(e.cancelledTransfers, downloadID)
+		delete(e.activeDestPaths, filepath.Base(destPath))
 		e.transferMu.Unlock()
 	}()
 
@@ -416,68 +446,82 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	}
 
 	// Auto-extract tar archives and route/hook each extracted file
-	if e.storageCfg != nil && e.storageCfg.AutoExtract.Enabled && routing.IsArchive(offer.Filename) {
+	if dlErr == nil && dl != nil && dl.AutoExtract && routing.IsArchive(offer.Filename) {
 		extractDir := filepath.Dir(finalPath)
-		extracted, extractErr := routing.Extract(finalPath, extractDir)
-		if extractErr != nil {
-			log.Printf("auto-extract failed for download %d (%s): %v", downloadID, offer.Filename, extractErr)
-			errMsg := fmt.Sprintf("extraction failed: %v", extractErr)
-			if markErr := e.queue.MarkNeedsAction(downloadID, errMsg); markErr != nil {
-				log.Printf("auto-extract: could not mark download %d needs-action: %v", downloadID, markErr)
+
+		// Check available disk space before attempting extraction
+		var skipExtract bool
+		if info, statErr := os.Stat(finalPath); statErr == nil {
+			var fsStat syscall.Statfs_t
+			if fsErr := syscall.Statfs(extractDir, &fsStat); fsErr == nil {
+				available := fsStat.Bavail * uint64(fsStat.Bsize)
+				needed := uint64(info.Size())
+				if available < needed {
+					log.Printf("auto-extract skipped for download %d (%s): insufficient disk space (need %d, have %d)", downloadID, offer.Filename, needed, available)
+					spaceErr := fmt.Errorf("insufficient disk space for extraction: need %d bytes, have %d bytes available", needed, available)
+					if markErr := e.queue.SetExtractionError(downloadID, spaceErr.Error()); markErr != nil {
+						log.Printf("could not record extraction error for download %d: %v", downloadID, markErr)
+					}
+					skipExtract = true
+				}
 			}
-			e.bus.Publish(irc.Event{
-				Type: irc.EventDownloadStatus,
-				Data: map[string]interface{}{
-					"download_id": downloadID,
-					"status":      "needs_action",
-					"error":       errMsg,
-				},
-			})
-		} else {
-			extractRules, _ := e.store.GetFileRoutingRules()
-			for _, ef := range extracted {
-				efName := filepath.Base(ef)
-				efFinal := ef
-				if len(extractRules) > 0 {
-					if destDir := routing.MatchRule(efName, extractRules); destDir != "" {
-						if moved, err := routing.MoveFile(ef, destDir); err != nil {
-							log.Printf("routing extracted file %q: %v", efName, err)
-						} else {
-							efFinal = moved
+		}
+		if !skipExtract {
+			extracted, extractErr := routing.Extract(finalPath, extractDir)
+			if extractErr != nil {
+				log.Printf("auto-extract failed for download %d (%s): %v", downloadID, offer.Filename, extractErr)
+				errMsg := fmt.Sprintf("extraction failed: %v", extractErr)
+				if markErr := e.queue.SetExtractionError(downloadID, errMsg); markErr != nil {
+					log.Printf("auto-extract: could not record extraction error for download %d: %v", downloadID, markErr)
+				}
+				// Archive remains untouched. Fall through to the completed WS event.
+			} else {
+				extractRules, _ := e.store.GetFileRoutingRules()
+				for _, ef := range extracted {
+					efName := filepath.Base(ef)
+					efFinal := ef
+					if len(extractRules) > 0 {
+						if destDir := routing.MatchRule(efName, extractRules); destDir != "" {
+							if moved, err := routing.MoveFile(ef, destDir); err != nil {
+								log.Printf("routing extracted file %q: %v", efName, err)
+							} else {
+								efFinal = moved
+							}
+						}
+					}
+					// If the file wasn't routed out of extractDir, flatten it to extractDir
+					// so that subdirectories created by tar don't linger.
+					if efFinal == ef && filepath.Dir(efFinal) != extractDir {
+						flat := filepath.Join(extractDir, efName)
+						if err := os.Rename(efFinal, flat); err == nil {
+							efFinal = flat
+						}
+					}
+					efCtx := hCtx
+					efCtx.FilePath = efFinal
+					efCtx.Filename = efName
+					if info, err := os.Stat(efFinal); err == nil {
+						efCtx.Filesize = info.Size()
+					}
+					for _, hook := range hooks {
+						if !hook.Enabled {
+							continue
+						}
+						result := routing.RunHook(hook, efCtx)
+						if result.Error != "" {
+							log.Printf("hook %q failed for extracted file %q: %s", hook.Name, efName, result.Error)
 						}
 					}
 				}
-				// If the file wasn't routed out of extractDir, flatten it to extractDir
-				// so that subdirectories created by tar don't linger.
-				if efFinal == ef && filepath.Dir(efFinal) != extractDir {
-					flat := filepath.Join(extractDir, efName)
-					if err := os.Rename(efFinal, flat); err == nil {
-						efFinal = flat
-					}
-				}
-				efCtx := hCtx
-				efCtx.FilePath = efFinal
-				efCtx.Filename = efName
-				if info, err := os.Stat(efFinal); err == nil {
-					efCtx.Filesize = info.Size()
-				}
-				for _, hook := range hooks {
-					if !hook.Enabled {
-						continue
-					}
-					result := routing.RunHook(hook, efCtx)
-					if result.Error != "" {
-						log.Printf("hook %q failed for extracted file %q: %s", hook.Name, efName, result.Error)
-					}
-				}
-			}
-			// Remove subdirectories created by tar — all files have been routed
-			// or flattened, so these should now be empty.
-			routing.RemoveEmptyDirs(extractDir)
+				// Remove subdirectories created by tar — all files have been routed
+				// or flattened, so these should now be empty.
+				routing.RemoveEmptyDirs(extractDir)
 
-			if e.storageCfg.AutoExtract.DeleteArchive {
-				if err := os.Remove(finalPath); err != nil {
-					log.Printf("auto-extract: failed to remove archive %q: %v", finalPath, err)
+				if e.storageCfg != nil && e.storageCfg.AutoExtract.DeleteArchive {
+					log.Printf("auto-extract: deleting archive %q after successful extraction", finalPath)
+					if err := os.Remove(finalPath); err != nil {
+						log.Printf("auto-extract: failed to remove archive %q: %v", finalPath, err)
+					}
 				}
 			}
 		}

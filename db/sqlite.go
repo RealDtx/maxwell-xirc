@@ -206,7 +206,7 @@ func (s *SQLiteStore) UpdateRealmSearchBot(id int64, botNick string) error {
 func (s *SQLiteStore) GetDownloads(status string) ([]Download, error) {
 	var rows *sql.Rows
 	var err error
-	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only FROM downloads"
+	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract FROM downloads"
 	if status != "" {
 		rows, err = s.db.Query(query+" WHERE status=? ORDER BY created_at DESC", status)
 	} else {
@@ -221,13 +221,15 @@ func (s *SQLiteStore) GetDownloads(status string) ([]Download, error) {
 	for rows.Next() {
 		var dl Download
 		var statsOnly int
+		var autoExtract int
 		if err := rows.Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 			&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 			&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-			&dl.CreatedAt, &statsOnly); err != nil {
+			&dl.CreatedAt, &statsOnly, &autoExtract); err != nil {
 			return nil, err
 		}
 		dl.StatsOnly = statsOnly == 1
+		dl.AutoExtract = autoExtract == 1
 		downloads = append(downloads, dl)
 	}
 	return downloads, rows.Err()
@@ -236,27 +238,29 @@ func (s *SQLiteStore) GetDownloads(status string) ([]Download, error) {
 func (s *SQLiteStore) GetDownload(id int64) (*Download, error) {
 	var dl Download
 	var statsOnly int
+	var autoExtract int
 	err := s.db.QueryRow(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only FROM downloads WHERE id=?", id,
+		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract FROM downloads WHERE id=?", id,
 	).Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 		&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 		&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-		&dl.CreatedAt, &statsOnly)
+		&dl.CreatedAt, &statsOnly, &autoExtract)
 	if err != nil {
 		return nil, err
 	}
 	dl.StatsOnly = statsOnly == 1
+	dl.AutoExtract = autoExtract == 1
 	return &dl, nil
 }
 
 func (s *SQLiteStore) CreateDownload(dl *Download) error {
 	now := time.Now()
 	result, err := s.db.Exec(
-		`INSERT INTO downloads (server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO downloads (server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, auto_extract)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		dl.ServerID, dl.Channel, dl.BotNick, dl.PackNumber, dl.Filename, dl.Filesize,
 		dl.DownloadedBytes, dl.Status, dl.DestinationPath, dl.ErrorMessage,
-		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, now,
+		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, now, boolToInt(dl.AutoExtract),
 	)
 	if err != nil {
 		return err
@@ -268,10 +272,10 @@ func (s *SQLiteStore) CreateDownload(dl *Download) error {
 
 func (s *SQLiteStore) UpdateDownload(dl *Download) error {
 	_, err := s.db.Exec(
-		`UPDATE downloads SET channel=?, bot_nick=?, pack_number=?, filename=?, filesize=?, downloaded_bytes=?, status=?, destination_path=?, error_message=?, peak_speed=?, average_speed=?, started_at=?, completed_at=?, created_at=? WHERE id=?`,
+		`UPDATE downloads SET channel=?, bot_nick=?, pack_number=?, filename=?, filesize=?, downloaded_bytes=?, status=?, destination_path=?, error_message=?, peak_speed=?, average_speed=?, started_at=?, completed_at=?, created_at=?, auto_extract=? WHERE id=?`,
 		dl.Channel, dl.BotNick, dl.PackNumber, dl.Filename, dl.Filesize,
 		dl.DownloadedBytes, dl.Status, dl.DestinationPath, dl.ErrorMessage,
-		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, dl.CreatedAt, dl.ID,
+		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, dl.CreatedAt, boolToInt(dl.AutoExtract), dl.ID,
 	)
 	return err
 }

@@ -145,6 +145,9 @@ func migrationStatements() []string {
 		`ALTER TABLE parse_patterns ADD COLUMN tags TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE parse_patterns ADD COLUMN server_id INTEGER`,
 		`ALTER TABLE parse_patterns ADD COLUMN channel TEXT NOT NULL DEFAULT ''`,
+
+		`ALTER TABLE downloads ADD COLUMN auto_extract INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE downloads ADD COLUMN auto_extract BOOLEAN NOT NULL DEFAULT TRUE`,
 	}
 }
 

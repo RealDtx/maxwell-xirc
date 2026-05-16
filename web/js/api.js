@@ -98,6 +98,7 @@ const api = {
     moveDownload(id)      { return this.post('/downloads/move', { download_id: id }); },
     deleteDownloads(ids) { return this.post('/downloads/delete', { ids }); },
     clearDownloads(status) { return this.post('/downloads/clear', { status }); },
+    setAutoExtract(id, enabled) { return this.post('/downloads/set-auto-extract', { download_id: id, auto_extract: enabled }); },
 
     // Storage
     getStorageStats() { return this.get('/storage'); },

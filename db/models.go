@@ -71,6 +71,7 @@ type Download struct {
 	CompletedAt     *time.Time `json:"completed_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 	StatsOnly       bool       `json:"stats_only"`
+	AutoExtract     bool       `json:"auto_extract"`
 }
 
 type SearchResult struct {

@@ -27,15 +27,21 @@ func IsArchive(filename string) bool {
 }
 
 // Extract unpacks archivePath into destDir and returns the paths of all
-// extracted regular files. Extraction is done in-place — no temporary staging
-// directory is created. Requires tar(1).
+// extracted regular files. Extraction is performed into a temporary staging
+// directory inside destDir (so it lives on the same filesystem). On failure
+// the staging directory is removed, leaving the archive untouched. Requires tar(1).
 func Extract(archivePath, destDir string) ([]string, error) {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating extract dir: %w", err)
 	}
-	// -x extract, -v list extracted names, -f read from file, -C change to destDir
-	out, err := exec.Command("tar", "-xvf", archivePath, "-C", destDir).Output()
+	tempDir, err := os.MkdirTemp(destDir, ".extract_")
 	if err != nil {
+		return nil, fmt.Errorf("creating temp extract dir: %w", err)
+	}
+	// -x extract, -v list extracted names, -f read from file, -C change to tempDir
+	out, err := exec.Command("tar", "-xvf", archivePath, "-C", tempDir).Output()
+	if err != nil {
+		os.RemoveAll(tempDir) // clean up any partial extraction
 		return nil, fmt.Errorf("tar: %w", err)
 	}
 
@@ -45,7 +51,7 @@ func Extract(archivePath, destDir string) ([]string, error) {
 		if line == "" || strings.HasSuffix(line, "/") {
 			continue // skip blank lines and directory entries
 		}
-		fullPath := filepath.Join(destDir, line)
+		fullPath := filepath.Join(tempDir, line)
 		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
 			files = append(files, fullPath)
 		}

@@ -850,11 +850,16 @@
                                                 </template>
                                             </td>
                                             <td>
-                                                <span
-                                                    class="badge"
-                                                    :class="'badge-' + dl.status"
-                                                    x-text="dl.status"
-                                                ></span>
+                                                <span style="white-space:nowrap;">
+                                                    <span
+                                                        class="badge"
+                                                        :class="'badge-' + dl.status"
+                                                        x-text="dl.status"
+                                                    ></span>
+                                                    <template x-if="dl.status === 'completed' && dl.error_message">
+                                                        <span :title="dl.error_message" style="cursor:help; color:#e0a800; margin-left:3px; font-size:13px;">⚠</span>
+                                                    </template>
+                                                </span>
                                             </td>
                                             <td x-text="dl.filename || '-'"></td>
                                             <td>
@@ -882,6 +887,10 @@
                                             <td style="white-space:nowrap;">
                                                 <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
                                                     <span>
+                                                        <label style="font-size:12px; margin-right:6px; cursor:pointer; white-space:nowrap;">
+                                                            <input type="checkbox" :checked="dl.auto_extract !== false" @change="toggleAutoExtract(dl, $event.target.checked)" style="vertical-align:middle;">
+                                                            Extract
+                                                        </label>
                                                         <button class="btn btn-danger btn-sm" @click="cancelDownload(dl.id)">Cancel</button>
                                                         <template x-if="dl.status === 'queued'">
                                                             <button class="btn btn-sm" style="margin-left:4px" @click="moveToFront(dl.id)">Move to front</button>

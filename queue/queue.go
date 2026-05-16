@@ -21,16 +21,17 @@ func New(store db.Store, maxConcurrent int) *Queue {
 	}
 }
 
-func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64, statsOnly bool) (*db.Download, error) {
+func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64, statsOnly bool, autoExtract bool) (*db.Download, error) {
 	dl := &db.Download{
-		ServerID:   serverID,
-		Channel:    channel,
-		BotNick:    botNick,
-		PackNumber: packNumber,
-		Filename:   filename,
-		Filesize:   filesize,
-		Status:     "queued",
-		StatsOnly:  statsOnly,
+		ServerID:    serverID,
+		Channel:     channel,
+		BotNick:     botNick,
+		PackNumber:  packNumber,
+		Filename:    filename,
+		Filesize:    filesize,
+		Status:      "queued",
+		StatsOnly:   statsOnly,
+		AutoExtract: autoExtract,
 	}
 
 	if err := q.store.CreateDownload(dl); err != nil {
@@ -38,6 +39,15 @@ func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, fil
 	}
 
 	return dl, nil
+}
+
+func (q *Queue) SetExtractionError(id int64, errMsg string) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.ErrorMessage = errMsg
+	return q.store.UpdateDownload(dl)
 }
 
 // NextAndMarkDownloading returns the next queued download to process and atomically
