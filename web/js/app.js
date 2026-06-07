@@ -1165,13 +1165,16 @@ document.addEventListener('alpine:init', () => {
             return Math.round((dl.bytes_received / dl.total_size) * 100);
         },
 
+        isArchive(filename) {
+            if (!filename) return false;
+            const lower = filename.toLowerCase();
+            return ['.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.tar.zst']
+                .some(ext => lower.endsWith(ext));
+        },
+
         dlSpeedInfo(dl) {
             if (dl.status === 'downloading') return dl.speed ? formatSpeed(dl.speed) : '-';
             if (dl.status === 'completed') {
-                if (dl.error_message) {
-                    var msg = dl.error_message;
-                    return msg.length > 40 ? msg.slice(0, 37) + '...' : msg;
-                }
                 return dl.average_speed ? formatSpeed(dl.average_speed) : '-';
             }
             if (dl.status === 'failed' || dl.status === 'needs_action') {

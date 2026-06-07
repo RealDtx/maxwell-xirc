@@ -458,10 +458,13 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 				needed := uint64(info.Size())
 				if available < needed {
 					log.Printf("auto-extract skipped for download %d (%s): insufficient disk space (need %d, have %d)", downloadID, offer.Filename, needed, available)
-					spaceErr := fmt.Errorf("insufficient disk space for extraction: need %d bytes, have %d bytes available", needed, available)
-					if markErr := e.queue.SetExtractionError(downloadID, spaceErr.Error()); markErr != nil {
-						log.Printf("could not record extraction error for download %d: %v", downloadID, markErr)
-					}
+					e.bus.Publish(irc.Event{
+						Type: irc.EventNotification,
+						Data: map[string]string{
+							"severity": "warning",
+							"message":  fmt.Sprintf("Extraction skipped for %s: insufficient disk space (need %d MB, have %d MB)", offer.Filename, needed/1024/1024, available/1024/1024),
+						},
+					})
 					skipExtract = true
 				}
 			}
@@ -470,11 +473,14 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 			extracted, extractErr := routing.Extract(finalPath, extractDir)
 			if extractErr != nil {
 				log.Printf("auto-extract failed for download %d (%s): %v", downloadID, offer.Filename, extractErr)
-				errMsg := fmt.Sprintf("extraction failed: %v", extractErr)
-				if markErr := e.queue.SetExtractionError(downloadID, errMsg); markErr != nil {
-					log.Printf("auto-extract: could not record extraction error for download %d: %v", downloadID, markErr)
-				}
-				// Archive remains untouched. Fall through to the completed WS event.
+				e.bus.Publish(irc.Event{
+					Type: irc.EventNotification,
+					Data: map[string]string{
+						"severity": "warning",
+						"message":  fmt.Sprintf("Extraction failed for %s: %v", offer.Filename, extractErr),
+					},
+				})
+				// Archive remains untouched. Download stays completed.
 			} else {
 				extractRules, _ := e.store.GetFileRoutingRules()
 				for _, ef := range extracted {

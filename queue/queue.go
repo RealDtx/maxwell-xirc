@@ -41,15 +41,6 @@ func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, fil
 	return dl, nil
 }
 
-func (q *Queue) SetExtractionError(id int64, errMsg string) error {
-	dl, err := q.store.GetDownload(id)
-	if err != nil {
-		return err
-	}
-	dl.ErrorMessage = errMsg
-	return q.store.UpdateDownload(dl)
-}
-
 // NextAndMarkDownloading returns the next queued download to process and atomically
 // marks it as downloading under the queue lock. This prevents TOCTOU races where
 // two callers could both get the same download from Next() and start it.
