@@ -165,6 +165,7 @@ document.addEventListener('alpine:init', () => {
         patternImportError: false,
         patternTesterLine: '',
         patternTesterResult: null,
+        exportPatternsDialog: { open: false, json: '', copied: false },
 
         // Global search filter (advanced mode)
         globalSearchServerId: '',
@@ -1872,6 +1873,12 @@ document.addEventListener('alpine:init', () => {
                 alert('No patterns to export. Open the Patterns tab first.');
                 return;
             }
+            this.exportPatternsDialog.json = this._buildPatternsExportJSON();
+            this.exportPatternsDialog.copied = false;
+            this.exportPatternsDialog.open = true;
+        },
+
+        _buildPatternsExportJSON() {
             const data = this.patternSettingsList.map(p => {
                 let fm = p.field_mapping;
                 if (typeof fm === 'string') { try { fm = JSON.parse(fm); } catch (e) { fm = {}; } }
@@ -1883,8 +1890,25 @@ document.addEventListener('alpine:init', () => {
                     tags: this.parseTags(p.tags),
                 };
             });
-            const json = JSON.stringify({ patterns: data }, null, 2);
-            this._downloadText('mxirc-patterns-' + this._exportDateStr() + '.json', json, 'application/json');
+            return JSON.stringify({ patterns: data }, null, 2);
+        },
+
+        closeExportPatternsDialog() {
+            this.exportPatternsDialog.open = false;
+        },
+
+        downloadExportedPatternsJSON() {
+            this._downloadText('mxirc-patterns-' + this._exportDateStr() + '.json', this.exportPatternsDialog.json, 'application/json');
+        },
+
+        async copyExportedPatternsJSON() {
+            try {
+                await navigator.clipboard.writeText(this.exportPatternsDialog.json);
+                this.exportPatternsDialog.copied = true;
+                setTimeout(() => { this.exportPatternsDialog.copied = false; }, 2000);
+            } catch (e) {
+                console.error('copyExportedPatternsJSON failed', e);
+            }
         },
 
         async importPatternsFile(event) {
