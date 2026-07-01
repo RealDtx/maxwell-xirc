@@ -222,13 +222,26 @@
                     <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
                         <!-- Search bar -->
                         <div style="padding:10px 14px; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <div style="display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden;">
+                                <button class="btn btn-sm"
+                                        :class="searchMode === 'live' ? 'btn-primary' : ''"
+                                        style="border-radius:0;"
+                                        @click="setSearchMode('live')"
+                                        title="Send a live query to IRC search bots">Live</button>
+                                <button class="btn btn-sm"
+                                        :class="searchMode === 'index' ? 'btn-primary' : ''"
+                                        style="border-radius:0;"
+                                        @click="setSearchMode('index')"
+                                        title="Search the self-collected catalog instantly, offline">Index</button>
+                            </div>
                             <input type="text"
                                    x-model="searchQuery"
-                                   @keydown.enter="runGlobalSearch()"
-                                   placeholder="Search across all channels..."
+                                   @keydown.enter="searchMode === 'index' ? runIndexSearch() : runGlobalSearch()"
+                                   :placeholder="searchMode === 'index' ? 'Search the collected index...' : 'Search across all channels...'"
                                    style="flex:1; min-width:160px; padding:7px 10px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
                             <template x-if="appMode === 'advanced'">
                                 <select x-model="globalSearchServerId"
+                                        @change="if (searchMode === 'index') loadIndexStats()"
                                         style="padding:7px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px;">
                                     <option value="">All servers</option>
                                     <template x-for="srv in servers" :key="srv.id">
@@ -236,7 +249,7 @@
                                     </template>
                                 </select>
                             </template>
-                            <button @click="runGlobalSearch()"
+                            <button @click="searchMode === 'index' ? runIndexSearch() : runGlobalSearch()"
                                     :disabled="searchRunning || !searchQuery.trim()"
                                     class="btn btn-primary btn-sm"
                                     x-text="searchRunning ? 'Searching...' : 'Search'"></button>
@@ -261,6 +274,13 @@
                                 </template>
                             </select>
                         </div>
+                        <template x-if="searchMode === 'index'">
+                            <div style="padding:2px 14px 8px; font-size:11px; color:var(--text-muted); display:flex; gap:8px; align-items:center;">
+                                <span x-text="(indexStats.total_files || 0) + ' file(s) indexed'"></span>
+                                <span>·</span>
+                                <button @click="clearSearchIndex()" style="background:none;border:none;color:var(--text-muted);text-decoration:underline;cursor:pointer;font-size:11px;padding:0;">Clear index</button>
+                            </div>
+                        </template>
                         <!-- Results -->
                         <div style="flex:1; overflow-y:auto;">
                             <template x-if="!searchRunning && searchResults.length === 0">
@@ -275,7 +295,7 @@
                                     <button @click="searchBotWarning = null">&times;</button>
                                 </div>
                             </template>
-                            <template x-if="searchTargets.length > 0">
+                            <template x-if="searchMode === 'live' && searchTargets.length > 0">
                                 <div style="padding:4px 8px; margin-bottom:8px; font-size:12px; color:var(--text-muted); display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
                                     <template x-if="searchTargets.length <= 3">
                                         <template x-for="t in searchTargets" :key="t.server_id + ':' + t.channel">

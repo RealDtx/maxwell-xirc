@@ -90,6 +90,20 @@ const api = {
     updateParsePattern(id, p)    { return this.put('/search/patterns/' + id, p); },
     importParsePatterns(patterns){ return this.post('/search/patterns/import', { patterns }); },
 
+    // Self-collected search index — instant offline search, no IRC round-trip.
+    searchIndex(query, serverId, channel) {
+        let url = `/index/search?query=${encodeURIComponent(query)}`;
+        if (serverId) url += `&server_id=${serverId}`;
+        if (channel)  url += `&channel=${encodeURIComponent(channel)}`;
+        return this.get(url);
+    },
+    getIndexStats(serverId) {
+        return this.get('/index/stats' + (serverId ? '?server_id=' + serverId : ''));
+    },
+    clearIndex(serverId) {
+        return this.post('/index/clear', { server_id: serverId || 0 });
+    },
+
     // Downloads
     getDownloads(status)  { return this.get('/downloads' + (status ? '?status=' + status : '')); },
     requestDownload(req)  { return this.post('/downloads/request', req); },

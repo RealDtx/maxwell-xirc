@@ -170,6 +170,11 @@ document.addEventListener('alpine:init', () => {
         // Global search filter (advanced mode)
         globalSearchServerId: '',
 
+        // Search mode: 'live' hits IRC bots; 'index' searches the persistent,
+        // self-collected catalog built from past live searches (instant, offline).
+        searchMode: 'live',
+        indexStats: { total_files: 0 },
+
         // Disk stats
         diskStats: [],
 
@@ -790,6 +795,65 @@ document.addEventListener('alpine:init', () => {
                 if (this.servers[i].id === serverId) return this.servers[i].name;
             }
             return 'Server ' + serverId;
+        },
+
+        // --- Index search (self-collected, offline) ---
+
+        setSearchMode(mode) {
+            if (this.searchMode === mode) return;
+            this.searchMode = mode;
+            this.searchResults = [];
+            this.searchTargets = [];
+            this.searchBotWarning = null;
+            if (mode === 'index') this.loadIndexStats();
+        },
+
+        async runIndexSearch() {
+            if (!this.searchQuery.trim()) return;
+            const token = ++this.searchToken;
+            this.searchRunning = true;
+            this.searchBotWarning = null;
+            this.searchResults = [];
+            this.searchTargets = [];
+            try {
+                const serverId = this.globalSearchServerId || null;
+                const res = await api.searchIndex(this.searchQuery.trim(), serverId, '');
+                if (token !== this.searchToken) return;
+                this.searchResults = Array.isArray(res) ? res : [];
+                if (this.searchResults.length === 0) {
+                    this.searchBotWarning = 'No matches in the index yet — try a Live search first to build it up.';
+                }
+            } catch (e) {
+                console.error('runIndexSearch error', e);
+                if (token === this.searchToken) {
+                    this.searchBotWarning = 'Index search failed: ' + (e.message || 'unknown error');
+                }
+            } finally {
+                if (token === this.searchToken) this.searchRunning = false;
+            }
+        },
+
+        async loadIndexStats() {
+            try {
+                const serverId = this.globalSearchServerId || null;
+                const stats = await api.getIndexStats(serverId);
+                this.indexStats = stats || { total_files: 0 };
+            } catch (e) {
+                console.error('loadIndexStats error', e);
+            }
+        },
+
+        async clearSearchIndex() {
+            const scopeLabel = this.globalSearchServerId ? 'this server' : 'all servers';
+            if (!confirm('Clear the self-collected search index for ' + scopeLabel + '? This cannot be undone.')) return;
+            try {
+                const serverId = this.globalSearchServerId || null;
+                await api.clearIndex(serverId);
+                await this.loadIndexStats();
+                this.searchResults = [];
+            } catch (e) {
+                console.error('clearSearchIndex error', e);
+            }
         },
 
         toggleSearchViewMode() {
