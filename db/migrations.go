@@ -148,6 +148,24 @@ func migrationStatements() []string {
 
 		`ALTER TABLE downloads ADD COLUMN auto_extract INTEGER NOT NULL DEFAULT 1`,
 		`ALTER TABLE downloads ADD COLUMN auto_extract BOOLEAN NOT NULL DEFAULT TRUE`,
+
+		`CREATE TABLE IF NOT EXISTS indexed_files (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			server_id INTEGER NOT NULL,
+			channel TEXT NOT NULL,
+			bot_nick TEXT NOT NULL,
+			pack_number INTEGER,
+			filename TEXT NOT NULL,
+			filesize TEXT,
+			downloads_count INTEGER,
+			raw_line TEXT NOT NULL,
+			hit_count INTEGER NOT NULL DEFAULT 1,
+			first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (server_id) REFERENCES servers(id),
+			UNIQUE (server_id, channel, bot_nick, filename)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_indexed_files_filename ON indexed_files(filename)`,
 	}
 }
 

@@ -578,6 +578,21 @@ func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {
 		}
 		newlyParsed++
 
+		if match.Filename != nil && *match.Filename != "" {
+			if err := s.store.UpsertIndexedFile(&db.IndexedFile{
+				ServerID:       sr.ServerID,
+				Channel:        sr.Channel,
+				BotNick:        botNick,
+				PackNumber:     match.PackNumber,
+				Filename:       *match.Filename,
+				Filesize:       match.Filesize,
+				DownloadsCount: match.DownloadsCount,
+				RawLine:        sr.RawLine,
+			}); err != nil {
+				log.Printf("failed to upsert indexed file for reparsed result: %v", err)
+			}
+		}
+
 		// TODO: publish irc.EventSearchResult for reparsed results once server has direct EventBus access.
 	}
 
@@ -587,4 +602,106 @@ func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {
 		"field_mapping": result.FieldMapping,
 		"newly_parsed":  newlyParsed,
 	})
+}
+
+// maxIndexSearchLimit caps how many rows a single index search can return.
+const maxIndexSearchLimit = 500
+
+// handleIndexSearch handles GET /api/index/search — an instant, offline
+// search over the persistent file index (no IRC round-trip), built
+// automatically from results seen during live searches.
+func (s *Server) handleIndexSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "query is required")
+		return
+	}
+
+	var serverID int64
+	if serverIDStr := r.URL.Query().Get("server_id"); serverIDStr != "" {
+		var err error
+		serverID, err = strconv.ParseInt(serverIDStr, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid server_id")
+			return
+		}
+	}
+	channel := r.URL.Query().Get("channel")
+
+	limit := 200
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		v, err := strconv.Atoi(limitStr)
+		if err != nil || v <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	if limit > maxIndexSearchLimit {
+		limit = maxIndexSearchLimit
+	}
+
+	results, err := s.store.SearchIndexedFiles(query, serverID, channel, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if results == nil {
+		results = []db.IndexedFile{}
+	}
+	writeJSON(w, http.StatusOK, results)
+}
+
+// handleIndexStats handles GET /api/index/stats — returns the total number
+// of files in the persistent index, optionally scoped to one server.
+func (s *Server) handleIndexStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var serverID int64
+	if serverIDStr := r.URL.Query().Get("server_id"); serverIDStr != "" {
+		var err error
+		serverID, err = strconv.ParseInt(serverIDStr, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid server_id")
+			return
+		}
+	}
+
+	stats, err := s.store.GetIndexStats(serverID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// handleClearIndex handles POST /api/index/clear — deletes indexed files,
+// optionally scoped to one server (server_id absent or 0 clears all servers).
+func (s *Server) handleClearIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ServerID int64 `json:"server_id"`
+	}
+	if r.Body != nil {
+		// An empty body is fine — it just means "clear all servers".
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if err := s.store.ClearIndex(req.ServerID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }

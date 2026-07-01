@@ -860,3 +860,185 @@ func TestSQLiteStore_DownloadStats(t *testing.T) {
 		t.Errorf("unexpected history row: %+v", history[0])
 	}
 }
+
+func TestSQLiteStore_UpsertIndexedFile_CreatesEntry(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	pack := 12
+	size := "1.2G"
+	f := &IndexedFile{ServerID: srv.ID, Channel: "#chan", BotNick: "xdcc", PackNumber: &pack, Filename: "Some.Movie.2024.mkv", Filesize: &size, RawLine: "raw line"}
+	if err := store.UpsertIndexedFile(f); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 1 {
+		t.Fatalf("expected 1 indexed file, got %d", stats.TotalFiles)
+	}
+
+	results, err := store.SearchIndexedFiles("movie", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].HitCount != 1 {
+		t.Errorf("expected hit_count 1, got %d", results[0].HitCount)
+	}
+}
+
+func TestSQLiteStore_UpsertIndexedFile_UpdatesExistingIncrementsHitCount(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	pack := 1
+	size := "1G"
+	f := &IndexedFile{ServerID: srv.ID, Channel: "#chan", BotNick: "xdcc", PackNumber: &pack, Filename: "Same.File.mkv", Filesize: &size, RawLine: "raw"}
+	if err := store.UpsertIndexedFile(f); err != nil {
+		t.Fatalf("first UpsertIndexedFile failed: %v", err)
+	}
+
+	// Seen again later with a new pack number and size (bot re-listed the file).
+	pack2 := 2
+	size2 := "1.1G"
+	f2 := &IndexedFile{ServerID: srv.ID, Channel: "#chan", BotNick: "xdcc", PackNumber: &pack2, Filename: "Same.File.mkv", Filesize: &size2, RawLine: "raw2"}
+	if err := store.UpsertIndexedFile(f2); err != nil {
+		t.Fatalf("second UpsertIndexedFile failed: %v", err)
+	}
+
+	stats, err := store.GetIndexStats(srv.ID)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 1 {
+		t.Fatalf("expected upsert to dedupe into 1 row, got %d", stats.TotalFiles)
+	}
+
+	results, err := store.SearchIndexedFiles("same file", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].HitCount != 2 {
+		t.Errorf("expected hit_count 2 after second upsert, got %d", results[0].HitCount)
+	}
+	if results[0].PackNumber == nil || *results[0].PackNumber != 2 {
+		t.Errorf("expected pack_number to refresh to 2, got %v", results[0].PackNumber)
+	}
+	if results[0].Filesize == nil || *results[0].Filesize != "1.1G" {
+		t.Errorf("expected filesize to refresh to 1.1G, got %v", results[0].Filesize)
+	}
+}
+
+func TestSQLiteStore_SearchIndexedFiles_MultiWordAndScoping(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv1 := &Server{Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	srv2 := &Server{Name: "srv2", Host: "b.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv1); err != nil {
+		t.Fatalf("CreateServer srv1 failed: %v", err)
+	}
+	if err := store.CreateServer(srv2); err != nil {
+		t.Fatalf("CreateServer srv2 failed: %v", err)
+	}
+
+	entries := []*IndexedFile{
+		{ServerID: srv1.ID, Channel: "#chan1", BotNick: "bot1", Filename: "The.Matrix.1999.mkv", RawLine: "r1"},
+		{ServerID: srv1.ID, Channel: "#chan1", BotNick: "bot1", Filename: "Some.Other.Show.mkv", RawLine: "r2"},
+		{ServerID: srv2.ID, Channel: "#chan2", BotNick: "bot2", Filename: "The.Matrix.Reloaded.mkv", RawLine: "r3"},
+	}
+	for _, e := range entries {
+		if err := store.UpsertIndexedFile(e); err != nil {
+			t.Fatalf("UpsertIndexedFile failed: %v", err)
+		}
+	}
+
+	// Multi-word AND query across all servers.
+	all, err := store.SearchIndexedFiles("the matrix", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected 2 matches across servers, got %d", len(all))
+	}
+
+	// Scoped to srv1 only.
+	scoped, err := store.SearchIndexedFiles("matrix", srv1.ID, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles (scoped) failed: %v", err)
+	}
+	if len(scoped) != 1 || scoped[0].Filename != "The.Matrix.1999.mkv" {
+		t.Fatalf("expected 1 scoped match from srv1, got %+v", scoped)
+	}
+
+	// A query that doesn't match every word should return nothing.
+	none, err := store.SearchIndexedFiles("matrix xyz123", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles (no match) failed: %v", err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("expected 0 matches, got %d", len(none))
+	}
+}
+
+func TestSQLiteStore_ClearIndex(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv1 := &Server{Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	srv2 := &Server{Name: "srv2", Host: "b.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv1); err != nil {
+		t.Fatalf("CreateServer srv1 failed: %v", err)
+	}
+	if err := store.CreateServer(srv2); err != nil {
+		t.Fatalf("CreateServer srv2 failed: %v", err)
+	}
+	if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv1.ID, Channel: "#c1", BotNick: "b1", Filename: "a.mkv", RawLine: "r"}); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+	if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv2.ID, Channel: "#c2", BotNick: "b2", Filename: "b.mkv", RawLine: "r"}); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+
+	// Clearing one server's index should leave the other server's entries intact.
+	if err := store.ClearIndex(srv1.ID); err != nil {
+		t.Fatalf("ClearIndex(srv1) failed: %v", err)
+	}
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 1 {
+		t.Fatalf("expected 1 remaining indexed file, got %d", stats.TotalFiles)
+	}
+
+	// Clearing with serverID=0 clears everything.
+	if err := store.ClearIndex(0); err != nil {
+		t.Fatalf("ClearIndex(0) failed: %v", err)
+	}
+	stats, err = store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 0 {
+		t.Fatalf("expected 0 remaining indexed files, got %d", stats.TotalFiles)
+	}
+}

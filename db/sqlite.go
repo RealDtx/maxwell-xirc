@@ -485,6 +485,96 @@ func (s *SQLiteStore) MarkSearchResultParsed(id int64, botNick string, packNumbe
 	return err
 }
 
+// --- Indexed Files (self-collected search index) ---
+
+func (s *SQLiteStore) UpsertIndexedFile(f *IndexedFile) error {
+	now := time.Now().UTC().Format(rfc3339Fixed)
+	_, err := s.db.Exec(
+		`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+		ON CONFLICT(server_id, channel, bot_nick, filename) DO UPDATE SET
+			pack_number=excluded.pack_number,
+			filesize=excluded.filesize,
+			downloads_count=excluded.downloads_count,
+			raw_line=excluded.raw_line,
+			hit_count=hit_count+1,
+			last_seen_at=excluded.last_seen_at`,
+		f.ServerID, f.Channel, f.BotNick, f.PackNumber, f.Filename, f.Filesize,
+		f.DownloadsCount, f.RawLine, now, now,
+	)
+	return err
+}
+
+func (s *SQLiteStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]IndexedFile, error) {
+	words := strings.Fields(strings.ToLower(query))
+	conds := make([]string, 0, len(words)+2)
+	args := make([]interface{}, 0, len(words)+3)
+	for _, w := range words {
+		conds = append(conds, "LOWER(filename) LIKE ?")
+		args = append(args, "%"+w+"%")
+	}
+	if serverID != 0 {
+		conds = append(conds, "server_id=?")
+		args = append(args, serverID)
+	}
+	if channel != "" {
+		conds = append(conds, "channel=?")
+		args = append(args, channel)
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
+	args = append(args, limit)
+
+	rows, err := s.db.Query(
+		`SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at
+		FROM indexed_files `+where+`
+		ORDER BY last_seen_at DESC LIMIT ?`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []IndexedFile{}
+	for rows.Next() {
+		var f IndexedFile
+		if err := rows.Scan(&f.ID, &f.ServerID, &f.Channel, &f.BotNick, &f.PackNumber,
+			&f.Filename, &f.Filesize, &f.DownloadsCount, &f.RawLine, &f.HitCount,
+			&f.FirstSeenAt, &f.LastSeenAt); err != nil {
+			return nil, err
+		}
+		results = append(results, f)
+	}
+	return results, rows.Err()
+}
+
+func (s *SQLiteStore) GetIndexStats(serverID int64) (*IndexStats, error) {
+	var stats IndexStats
+	var err error
+	if serverID != 0 {
+		err = s.db.QueryRow("SELECT COUNT(*) FROM indexed_files WHERE server_id=?", serverID).Scan(&stats.TotalFiles)
+	} else {
+		err = s.db.QueryRow("SELECT COUNT(*) FROM indexed_files").Scan(&stats.TotalFiles)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+func (s *SQLiteStore) ClearIndex(serverID int64) error {
+	var err error
+	if serverID != 0 {
+		_, err = s.db.Exec("DELETE FROM indexed_files WHERE server_id=?", serverID)
+	} else {
+		_, err = s.db.Exec("DELETE FROM indexed_files")
+	}
+	return err
+}
+
 // --- Saved Searches ---
 
 func (s *SQLiteStore) GetSavedSearches() ([]SavedSearch, error) {

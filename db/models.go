@@ -127,6 +127,30 @@ type PostHook struct {
 	Enabled  bool   `json:"enabled"`
 }
 
+// IndexedFile is a persistent, deduplicated catalog entry built from
+// successfully parsed live search results. Unlike SearchResult (which is
+// scoped to a single search session and cleared on the next search),
+// IndexedFile accumulates over time so files can be found instantly without
+// re-querying the IRC bot.
+type IndexedFile struct {
+	ID             int64     `json:"id"`
+	ServerID       int64     `json:"server_id"`
+	Channel        string    `json:"channel"`
+	BotNick        string    `json:"bot_nick"`
+	PackNumber     *int      `json:"pack_number"`
+	Filename       string    `json:"filename"`
+	Filesize       *string   `json:"filesize"`
+	DownloadsCount *int      `json:"downloads_count"`
+	RawLine        string    `json:"raw_line"`
+	HitCount       int       `json:"hit_count"`
+	FirstSeenAt    time.Time `json:"first_seen_at"`
+	LastSeenAt     time.Time `json:"last_seen_at"`
+}
+
+type IndexStats struct {
+	TotalFiles int64 `json:"total_files"`
+}
+
 type FileRoutingRule struct {
 	ID             int64  `json:"id"`
 	Pattern        string `json:"pattern"`

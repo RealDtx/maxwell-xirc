@@ -88,6 +88,12 @@ func (m *mockStore) GetAllUnparsedSince(since time.Time) ([]db.SearchResult, err
 func (m *mockStore) MarkSearchResultParsed(id int64, botNick string, packNumber *int, filename *string, filesize *string, downloadsCount *int) error {
 	return nil
 }
+func (m *mockStore) UpsertIndexedFile(f *db.IndexedFile) error { return nil }
+func (m *mockStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]db.IndexedFile, error) {
+	return nil, nil
+}
+func (m *mockStore) GetIndexStats(serverID int64) (*db.IndexStats, error) { return &db.IndexStats{}, nil }
+func (m *mockStore) ClearIndex(serverID int64) error                     { return nil }
 func (m *mockStore) Close() error   { return nil }
 func (m *mockStore) Migrate() error { return nil }
 

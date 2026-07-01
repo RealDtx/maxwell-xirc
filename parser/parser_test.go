@@ -91,6 +91,76 @@ func TestParser_ProcessesSearchResults(t *testing.T) {
 	}
 }
 
+// TestParser_IndexesSuccessfulSearchResult verifies that a successfully
+// parsed search result is also upserted into the persistent file index.
+func TestParser_IndexesSuccessfulSearchResult(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+
+	p.StartSearch(srv.ID, "#test", "movie", "", 0)
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "xdcc_bot",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+	time.Sleep(200 * time.Millisecond)
+
+	indexed, err := store.SearchIndexedFiles("movie", srv.ID, "#test", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	if len(indexed) != 1 {
+		t.Fatalf("expected 1 indexed file, got %d", len(indexed))
+	}
+	if indexed[0].Filename != "Some.Movie.2024.1080p.mkv" {
+		t.Errorf("expected indexed filename, got %q", indexed[0].Filename)
+	}
+	if indexed[0].HitCount != 1 {
+		t.Errorf("expected hit_count 1, got %d", indexed[0].HitCount)
+	}
+
+	// A second, later search that re-observes the same file should refresh
+	// the existing index entry (hit_count increments) rather than duplicate it.
+	p.StartSearch(srv.ID, "#test", "movie", "", 0)
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "xdcc_bot",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    35x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
+	time.Sleep(200 * time.Millisecond)
+
+	indexed, err = store.SearchIndexedFiles("movie", srv.ID, "#test", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles (second) failed: %v", err)
+	}
+	if len(indexed) != 1 {
+		t.Fatalf("expected upsert to dedupe into 1 indexed file, got %d", len(indexed))
+	}
+	if indexed[0].HitCount != 2 {
+		t.Errorf("expected hit_count 2 after re-observing the file, got %d", indexed[0].HitCount)
+	}
+}
+
 // TestParser_UnparsedChat_NotStored verifies that unmatched regular chat
 // messages are not stored as search results.
 func TestParser_UnparsedChat_NotStored(t *testing.T) {

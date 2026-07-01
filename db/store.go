@@ -59,6 +59,24 @@ type Store interface {
 	CreateSavedSearch(s *SavedSearch) error
 	DeleteSavedSearch(id int64) error
 
+	// Indexed Files (self-collected search index)
+	// UpsertIndexedFile inserts or refreshes a persistent catalog entry.
+	// Existing entries (matched by server_id+channel+bot_nick+filename) have
+	// hit_count incremented and pack/size/downloads/last_seen_at refreshed;
+	// otherwise a new row is created with hit_count=1.
+	UpsertIndexedFile(f *IndexedFile) error
+	// SearchIndexedFiles performs an offline, case-insensitive AND-of-words
+	// substring search over the persistent file index, ordered by
+	// last_seen_at DESC. serverID=0 searches all servers; channel=""
+	// searches all channels for the given server(s).
+	SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]IndexedFile, error)
+	// GetIndexStats returns the indexed file count, optionally scoped to a
+	// single server (serverID=0 means all servers).
+	GetIndexStats(serverID int64) (*IndexStats, error)
+	// ClearIndex deletes indexed files, optionally scoped to a single server
+	// (serverID=0 means all servers).
+	ClearIndex(serverID int64) error
+
 	// Parse Patterns
 	GetParsePatterns() ([]ParsePattern, error)
 	GetAllParsePatterns() ([]ParsePattern, error)

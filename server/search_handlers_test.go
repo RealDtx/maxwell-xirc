@@ -517,3 +517,95 @@ func TestLearnPatternSaveAndReprocess(t *testing.T) {
 		t.Fatalf("expected pack_number=989, got %#v", results[0].PackNumber)
 	}
 }
+
+func TestHandleIndexSearch(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	s := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(s)
+
+	if err := store.UpsertIndexedFile(&db.IndexedFile{
+		ServerID: s.ID, Channel: "#test", BotNick: "bot1", Filename: "Some.Movie.2024.mkv", RawLine: "raw",
+	}); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/index/search?query=movie&server_id="+strconv.FormatInt(s.ID, 10)+"&channel=%23test", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var results []db.IndexedFile
+	if err := json.NewDecoder(w.Body).Decode(&results); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(results) != 1 || results[0].Filename != "Some.Movie.2024.mkv" {
+		t.Fatalf("expected 1 matching indexed file, got %+v", results)
+	}
+}
+
+func TestHandleIndexSearch_MissingQuery(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	req := httptest.NewRequest("GET", "/api/index/search", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleIndexStats(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	s := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(s)
+	store.UpsertIndexedFile(&db.IndexedFile{ServerID: s.ID, Channel: "#test", BotNick: "bot1", Filename: "a.mkv", RawLine: "raw"})
+	store.UpsertIndexedFile(&db.IndexedFile{ServerID: s.ID, Channel: "#test", BotNick: "bot1", Filename: "b.mkv", RawLine: "raw"})
+
+	req := httptest.NewRequest("GET", "/api/index/stats", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var stats db.IndexStats
+	if err := json.NewDecoder(w.Body).Decode(&stats); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if stats.TotalFiles != 2 {
+		t.Fatalf("expected 2 total files, got %d", stats.TotalFiles)
+	}
+}
+
+func TestHandleClearIndex(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	s := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(s)
+	store.UpsertIndexedFile(&db.IndexedFile{ServerID: s.ID, Channel: "#test", BotNick: "bot1", Filename: "a.mkv", RawLine: "raw"})
+
+	req := httptest.NewRequest("POST", "/api/index/clear", strings.NewReader(`{"server_id":`+strconv.FormatInt(s.ID, 10)+`}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 0 {
+		t.Fatalf("expected index to be cleared, got %d remaining", stats.TotalFiles)
+	}
+}

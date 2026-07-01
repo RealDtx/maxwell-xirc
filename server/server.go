@@ -72,6 +72,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/search/patterns/import", s.handleImportPatterns)
 	s.mux.HandleFunc("/api/search/patterns/", s.handleParsePatternByID)
 
+	// Index search endpoints (self-collected, offline search catalog)
+	s.mux.HandleFunc("/api/index/search", s.handleIndexSearch)
+	s.mux.HandleFunc("/api/index/stats", s.handleIndexStats)
+	s.mux.HandleFunc("/api/index/clear", s.handleClearIndex)
+
 	// Download endpoints
 	s.mux.HandleFunc("/api/downloads", s.handleGetDownloads)
 	s.mux.HandleFunc("/api/downloads/request", s.handleRequestDownload)

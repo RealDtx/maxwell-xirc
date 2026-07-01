@@ -387,6 +387,23 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		log.Printf("failed to store search result: %v", err)
 	}
 
+	// Feed the persistent, cross-search file index (best-effort). A filename
+	// is required to index — if the matched pattern didn't map one, skip.
+	if sr.Filename != nil && *sr.Filename != "" {
+		if err := p.store.UpsertIndexedFile(&db.IndexedFile{
+			ServerID:       ev.ServerID,
+			Channel:        session.Channel,
+			BotNick:        sr.BotNick,
+			PackNumber:     sr.PackNumber,
+			Filename:       *sr.Filename,
+			Filesize:       sr.Filesize,
+			DownloadsCount: sr.DownloadsCount,
+			RawLine:        sr.RawLine,
+		}); err != nil {
+			log.Printf("failed to upsert indexed file: %v", err)
+		}
+	}
+
 	// Publish parsed result event for WebSocket
 	p.bus.Publish(irc.Event{
 		Type:     irc.EventSearchResult,

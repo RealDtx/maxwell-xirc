@@ -155,6 +155,24 @@ func mysqlMigrationStatements() []string {
 		`ALTER TABLE parse_patterns ADD COLUMN channel VARCHAR(255) NOT NULL DEFAULT ''`,
 
 		`ALTER TABLE downloads ADD COLUMN auto_extract BOOLEAN NOT NULL DEFAULT TRUE`,
+
+		`CREATE TABLE IF NOT EXISTS indexed_files (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			server_id BIGINT NOT NULL,
+			channel VARCHAR(255) NOT NULL,
+			bot_nick VARCHAR(255) NOT NULL,
+			pack_number INT,
+			filename VARCHAR(500) NOT NULL,
+			filesize VARCHAR(50),
+			downloads_count INT,
+			raw_line TEXT NOT NULL,
+			hit_count INT NOT NULL DEFAULT 1,
+			first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (server_id) REFERENCES servers(id),
+			UNIQUE KEY idx_indexed_files_unique (server_id, channel(50), bot_nick(50), filename(191)),
+			KEY idx_indexed_files_filename (filename(191))
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	}
 }
 
@@ -619,6 +637,96 @@ func (s *MySQLStore) MarkSearchResultParsed(id int64, botNick string, packNumber
 		WHERE id=?`,
 		botNick, packNumber, filename, filesize, downloadsCount, id,
 	)
+	return err
+}
+
+// --- Indexed Files (self-collected search index) ---
+
+func (s *MySQLStore) UpsertIndexedFile(f *IndexedFile) error {
+	now := time.Now().UTC()
+	_, err := s.db.Exec(
+		`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			pack_number=VALUES(pack_number),
+			filesize=VALUES(filesize),
+			downloads_count=VALUES(downloads_count),
+			raw_line=VALUES(raw_line),
+			hit_count=hit_count+1,
+			last_seen_at=VALUES(last_seen_at)`,
+		f.ServerID, f.Channel, f.BotNick, f.PackNumber, f.Filename, f.Filesize,
+		f.DownloadsCount, f.RawLine, now, now,
+	)
+	return err
+}
+
+func (s *MySQLStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]IndexedFile, error) {
+	words := strings.Fields(strings.ToLower(query))
+	conds := make([]string, 0, len(words)+2)
+	args := make([]interface{}, 0, len(words)+3)
+	for _, w := range words {
+		conds = append(conds, "LOWER(filename) LIKE ?")
+		args = append(args, "%"+w+"%")
+	}
+	if serverID != 0 {
+		conds = append(conds, "server_id=?")
+		args = append(args, serverID)
+	}
+	if channel != "" {
+		conds = append(conds, "channel=?")
+		args = append(args, channel)
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
+	args = append(args, limit)
+
+	rows, err := s.db.Query(
+		`SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at
+		FROM indexed_files `+where+`
+		ORDER BY last_seen_at DESC LIMIT ?`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []IndexedFile{}
+	for rows.Next() {
+		var f IndexedFile
+		if err := rows.Scan(&f.ID, &f.ServerID, &f.Channel, &f.BotNick, &f.PackNumber,
+			&f.Filename, &f.Filesize, &f.DownloadsCount, &f.RawLine, &f.HitCount,
+			&f.FirstSeenAt, &f.LastSeenAt); err != nil {
+			return nil, err
+		}
+		results = append(results, f)
+	}
+	return results, rows.Err()
+}
+
+func (s *MySQLStore) GetIndexStats(serverID int64) (*IndexStats, error) {
+	var stats IndexStats
+	var err error
+	if serverID != 0 {
+		err = s.db.QueryRow("SELECT COUNT(*) FROM indexed_files WHERE server_id=?", serverID).Scan(&stats.TotalFiles)
+	} else {
+		err = s.db.QueryRow("SELECT COUNT(*) FROM indexed_files").Scan(&stats.TotalFiles)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+func (s *MySQLStore) ClearIndex(serverID int64) error {
+	var err error
+	if serverID != 0 {
+		_, err = s.db.Exec("DELETE FROM indexed_files WHERE server_id=?", serverID)
+	} else {
+		_, err = s.db.Exec("DELETE FROM indexed_files")
+	}
 	return err
 }
 
