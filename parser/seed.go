@@ -84,6 +84,28 @@ func BuiltinPatterns() []BuiltinPattern {
 			FieldMapping: `{"filesize":1,"filename":2,"downloads_count":3,"bot_nick":4,"pack_number":5}`,
 			Priority:     82,
 		},
+		// MG relayed search-result format (optional "pred ... ago" segment):
+		// ( #CHANNEL )-( filename )-( TAG x SizeU )-...-( /msg BotNick xdcc send #N )
+		{
+			Name:         "paren-relay-xdcc",
+			Regex:        `(?i)^\(\s*#\S+\s*\)-\(\s*(.+?)\s*\)-\(\s*\S+\s+x\s+([0-9][0-9.]*\s*[KMGTP]?B?)\s*\).*?/msg\s+(\S+)\s+xdcc\s+send\s+#?(\d+)`,
+			FieldMapping: `{"filename":1,"filesize":2,"bot_nick":3,"pack_number":4}`,
+			Priority:     78,
+		},
+		// New-pack announcement with size: added - [SizeU] - filename - /MSG BotNick XDCC SEND N
+		{
+			Name:         "added-size-dash-xdcc",
+			Regex:        `(?i)^added\s+-\s+\[([^\]]+)\]\s+-\s+(.+?)\s+-\s+/msg\s+(\S+)\s+XDCC\s+SEND\s+(\d+)`,
+			FieldMapping: `{"filesize":1,"filename":2,"bot_nick":3,"pack_number":4}`,
+			Priority:     77,
+		},
+		// New-pack announcement (EWG): Added - filename - /MSG BotNick XDCC SEND N
+		{
+			Name:         "added-dash-xdcc",
+			Regex:        `(?i)^added\s+-\s+(.+?)\s+-\s+/msg\s+(\S+)\s+XDCC\s+SEND\s+(\d+)`,
+			FieldMapping: `{"filename":1,"bot_nick":2,"pack_number":3}`,
+			Priority:     76,
+		},
 	}
 }
 

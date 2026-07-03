@@ -200,6 +200,23 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		log.Printf("failed to get download %d: %v", pending.DownloadID, err)
 		return
 	}
+	// Reconcile the file index with reality: the bot's offer is authoritative
+	// for what this pack actually contains. The upsert also evicts any stale
+	// entry that mapped this bot+pack to a different (expected) filename.
+	if dl.PackNumber > 0 {
+		if err := e.store.UpsertIndexedFile(&db.IndexedFile{
+			ServerID:   dl.ServerID,
+			Channel:    dl.Channel,
+			BotNick:    ev.Nick,
+			PackNumber: &dl.PackNumber,
+			Filename:   offer.Filename,
+			Filesize:   humanSizePtr(offer.Size),
+			RawLine:    msg,
+		}); err != nil {
+			log.Printf("failed to reconcile index for %s pack %d: %v", ev.Nick, dl.PackNumber, err)
+		}
+	}
+
 	dl.Filename = offer.Filename
 	dl.Filesize = offer.Size
 	dl.Status = "downloading"
@@ -552,9 +569,57 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	})
 }
 
+// humanSizePtr formats a byte count as a short human-readable size string
+// (matching the "1.4G" style bots use in advertisements).
+func humanSizePtr(bytes int64) *string {
+	units := []string{"B", "K", "M", "G", "T"}
+	v := float64(bytes)
+	i := 0
+	for v >= 1024 && i < len(units)-1 {
+		v /= 1024
+		i++
+	}
+	s := fmt.Sprintf("%.1f%s", v, units[i])
+	return &s
+}
+
 func (e *Engine) checkBotHintMessage(serverID int64, botNick, message string) {
-	hints := []string{"passive", "firewall", "can't connect", "dcc rejected", "unable to connect"}
 	msgLower := strings.ToLower(message)
+
+	// The bot says the requested pack doesn't exist — the index entry that led
+	// here is stale. Fail the download and evict the bot+pack from the index.
+	for _, hint := range []string{"invalid pack", "no such pack", "pack does not exist"} {
+		if !strings.Contains(msgLower, hint) {
+			continue
+		}
+		e.mu.Lock()
+		key := pendingKey(serverID, botNick)
+		pending := e.pendingByBot[key]
+		if pending != nil {
+			delete(e.pendingByBot, key)
+		}
+		e.mu.Unlock()
+		if pending == nil {
+			return
+		}
+		e.queue.MarkFailed(pending.DownloadID, fmt.Sprintf("Bot %s: %s", botNick, message))
+		if dl, err := e.store.GetDownload(pending.DownloadID); err == nil && dl.PackNumber > 0 {
+			if err := e.store.EvictStaleIndexedFiles(dl.ServerID, botNick, dl.PackNumber, ""); err != nil {
+				log.Printf("failed to evict stale index entry for %s pack %d: %v", botNick, dl.PackNumber, err)
+			}
+		}
+		e.bus.Publish(irc.Event{
+			Type:     irc.EventNotification,
+			ServerID: serverID,
+			Data: map[string]string{
+				"severity": "warning",
+				"message":  fmt.Sprintf("Bot %s says: %s — removed stale index entry", botNick, message),
+			},
+		})
+		return
+	}
+
+	hints := []string{"passive", "firewall", "can't connect", "dcc rejected", "unable to connect"}
 	for _, hint := range hints {
 		if strings.Contains(msgLower, hint) {
 			pending := e.GetPendingRequest(serverID, botNick)

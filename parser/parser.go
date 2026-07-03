@@ -58,6 +58,19 @@ type Parser struct {
 	sessionCounter       int64                     // monotonic counter for session ordering
 	botPatternCache      map[string]int64          // key: "serverID:channel:botNick", value: patternID
 	degradationThreshold int
+
+	// dlChannels caches, per server, the set of realm download channels
+	// (lowercased) so the hot message path doesn't hit the DB for every line.
+	dlChannels map[int64]*dlChannelCache
+}
+
+// dlChannelCacheTTL bounds how stale the download-channel set can get after a
+// realm is edited. ponytail: TTL poll instead of realm-change invalidation.
+const dlChannelCacheTTL = time.Minute
+
+type dlChannelCache struct {
+	channels  map[string]bool
+	fetchedAt time.Time
 }
 
 func New(store db.Store, bus *irc.EventBus) *Parser {
@@ -68,6 +81,7 @@ func New(store db.Store, bus *irc.EventBus) *Parser {
 		activeSessions:       make(map[string]*searchSession),
 		botPatternCache:      make(map[string]int64),
 		degradationThreshold: 50,
+		dlChannels:           make(map[int64]*dlChannelCache),
 	}
 }
 
@@ -191,6 +205,14 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	if msgType != "privmsg" && msgType != "notice" {
 		debug.Debugf("parser: dropping type=%s server=%d channel=%s nick=%s", msgType, ev.ServerID, ev.Channel, ev.Nick)
 		return
+	}
+
+	// Passive indexing: bots continuously advertise their packs on the realm
+	// download channels (e.g. "#299 0x [491M] Some.File.mkv"). Feed every
+	// parseable advertisement into the persistent file index, independent of
+	// any search session. Falls through so live searches still work.
+	if p.isDownloadChannel(ev.ServerID, ev.Channel) {
+		p.indexBroadcast(ev, message)
 	}
 
 	// Check if there's an active search session for this channel
@@ -412,6 +434,74 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		Nick:     ev.Nick,
 		Data:     sr,
 	})
+}
+
+// isDownloadChannel reports whether channel is a realm download channel of
+// the given server. Backed by a TTL cache so the per-message cost is a map
+// lookup, not a DB query.
+func (p *Parser) isDownloadChannel(serverID int64, channel string) bool {
+	if channel == "" || (channel[0] != '#' && channel[0] != '&') {
+		return false
+	}
+
+	p.mu.RLock()
+	c := p.dlChannels[serverID]
+	p.mu.RUnlock()
+
+	if c == nil || time.Since(c.fetchedAt) > dlChannelCacheTTL {
+		channels := map[string]bool{}
+		realms, err := p.store.GetRealms(serverID)
+		if err != nil {
+			log.Printf("failed to load realms for download-channel index: %v", err)
+			// Cache the empty set anyway so a broken DB doesn't get hammered.
+		} else {
+			for _, r := range realms {
+				if r.Enabled && r.DownloadChannel != "" {
+					channels[strings.ToLower(r.DownloadChannel)] = true
+				}
+			}
+		}
+		c = &dlChannelCache{channels: channels, fetchedAt: time.Now()}
+		p.mu.Lock()
+		p.dlChannels[serverID] = c
+		p.mu.Unlock()
+	}
+
+	return c.channels[strings.ToLower(channel)]
+}
+
+// indexBroadcast parses a download-channel advertisement line and upserts it
+// into the persistent file index. Lines that don't parse to a pack number and
+// filename (bandwidth notices, slot announcements, chat) are ignored.
+func (p *Parser) indexBroadcast(ev irc.Event, message string) {
+	patterns, err := p.store.GetParsePatternsForChannel(ev.ServerID, ev.Channel)
+	if err != nil {
+		log.Printf("failed to load parse patterns for broadcast indexing: %v", err)
+		return
+	}
+
+	result, _, err := MatchLine(message, patterns)
+	if err != nil || result.PackNumber == nil || result.Filename == nil || *result.Filename == "" {
+		return
+	}
+
+	botNick := ev.Nick
+	if result.BotNick != nil && *result.BotNick != "" {
+		botNick = *result.BotNick
+	}
+
+	if err := p.store.UpsertIndexedFile(&db.IndexedFile{
+		ServerID:       ev.ServerID,
+		Channel:        ev.Channel,
+		BotNick:        botNick,
+		PackNumber:     result.PackNumber,
+		Filename:       *result.Filename,
+		Filesize:       result.Filesize,
+		DownloadsCount: result.DownloadsCount,
+		RawLine:        message,
+	}); err != nil {
+		log.Printf("failed to index broadcast from %s: %v", botNick, err)
+	}
 }
 
 func (p *Parser) updatePatternStats(patternID int64, matched bool) {

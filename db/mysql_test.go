@@ -337,3 +337,36 @@ func TestMySQLStore_DeleteServer_CascadesToRelatedData(t *testing.T) {
 		t.Errorf("expected search_results to be cleaned up, got %d remaining", len(results))
 	}
 }
+
+func TestMySQLStore_UpsertIndexedFile_EvictsRotatedPack(t *testing.T) {
+	store := newTestMySQLStore(t)
+	defer store.Close()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	pack := 7
+	old := &IndexedFile{ServerID: srv.ID, Channel: "#chan", BotNick: "xdcc", PackNumber: &pack, Filename: "Old.Content.mkv", RawLine: "raw"}
+	if err := store.UpsertIndexedFile(old); err != nil {
+		t.Fatalf("first UpsertIndexedFile failed: %v", err)
+	}
+	fresh := &IndexedFile{ServerID: srv.ID, Channel: "#other", BotNick: "xdcc", PackNumber: &pack, Filename: "New.Content.mkv", RawLine: "raw2"}
+	if err := store.UpsertIndexedFile(fresh); err != nil {
+		t.Fatalf("second UpsertIndexedFile failed: %v", err)
+	}
+
+	stats, _ := store.GetIndexStats(srv.ID)
+	if stats.TotalFiles != 1 {
+		t.Fatalf("expected rotated pack to evict old entry (1 row), got %d", stats.TotalFiles)
+	}
+
+	if err := store.EvictStaleIndexedFiles(srv.ID, "xdcc", pack, ""); err != nil {
+		t.Fatalf("EvictStaleIndexedFiles failed: %v", err)
+	}
+	stats, _ = store.GetIndexStats(srv.ID)
+	if stats.TotalFiles != 0 {
+		t.Fatalf("expected bot+pack fully evicted, got %d rows", stats.TotalFiles)
+	}
+}

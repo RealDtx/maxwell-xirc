@@ -63,8 +63,14 @@ type Store interface {
 	// UpsertIndexedFile inserts or refreshes a persistent catalog entry.
 	// Existing entries (matched by server_id+channel+bot_nick+filename) have
 	// hit_count incremented and pack/size/downloads/last_seen_at refreshed;
-	// otherwise a new row is created with hit_count=1.
+	// otherwise a new row is created with hit_count=1. Entries for the same
+	// server+bot+pack that carry a different filename are evicted first —
+	// pack numbers rotate, so the latest advertisement wins.
 	UpsertIndexedFile(f *IndexedFile) error
+	// EvictStaleIndexedFiles deletes index entries for the given server+bot+pack
+	// whose filename differs from keepFilename. keepFilename="" removes the
+	// bot+pack entirely (e.g. after the bot reported an invalid pack number).
+	EvictStaleIndexedFiles(serverID int64, botNick string, packNumber int, keepFilename string) error
 	// SearchIndexedFiles performs an offline, case-insensitive AND-of-words
 	// substring search over the persistent file index, ordered by
 	// last_seen_at DESC. serverID=0 searches all servers; channel=""

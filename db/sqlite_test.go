@@ -1327,3 +1327,59 @@ func TestSQLiteStore_DeleteServer_CascadesToRelatedData(t *testing.T) {
 	}
 }
 
+
+func TestSQLiteStore_UpsertIndexedFile_EvictsRotatedPack(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	pack := 7
+	old := &IndexedFile{ServerID: srv.ID, Channel: "#chan", BotNick: "xdcc", PackNumber: &pack, Filename: "Old.Content.mkv", RawLine: "raw"}
+	if err := store.UpsertIndexedFile(old); err != nil {
+		t.Fatalf("first UpsertIndexedFile failed: %v", err)
+	}
+
+	// The bot re-uses pack #7 for new content — the old entry must be evicted,
+	// even when advertised on a different channel of the same server.
+	fresh := &IndexedFile{ServerID: srv.ID, Channel: "#other", BotNick: "xdcc", PackNumber: &pack, Filename: "New.Content.mkv", RawLine: "raw2"}
+	if err := store.UpsertIndexedFile(fresh); err != nil {
+		t.Fatalf("second UpsertIndexedFile failed: %v", err)
+	}
+
+	stats, _ := store.GetIndexStats(srv.ID)
+	if stats.TotalFiles != 1 {
+		t.Fatalf("expected rotated pack to evict old entry (1 row), got %d", stats.TotalFiles)
+	}
+	results, _ := store.SearchIndexedFiles("content", 0, "", 10)
+	if len(results) != 1 || results[0].Filename != "New.Content.mkv" {
+		t.Fatalf("expected only New.Content.mkv to remain, got %+v", results)
+	}
+
+	// A different bot's pack #7 must NOT be affected.
+	otherBot := &IndexedFile{ServerID: srv.ID, Channel: "#chan", BotNick: "xdcc2", PackNumber: &pack, Filename: "Other.Bot.File.mkv", RawLine: "raw3"}
+	if err := store.UpsertIndexedFile(otherBot); err != nil {
+		t.Fatalf("third UpsertIndexedFile failed: %v", err)
+	}
+	stats, _ = store.GetIndexStats(srv.ID)
+	if stats.TotalFiles != 2 {
+		t.Fatalf("expected 2 rows (one per bot), got %d", stats.TotalFiles)
+	}
+
+	// EvictStaleIndexedFiles with keepFilename="" removes the bot+pack entirely
+	// (bot reported invalid pack).
+	if err := store.EvictStaleIndexedFiles(srv.ID, "xdcc", pack, ""); err != nil {
+		t.Fatalf("EvictStaleIndexedFiles failed: %v", err)
+	}
+	results, _ = store.SearchIndexedFiles("content", 0, "", 10)
+	if len(results) != 0 {
+		t.Fatalf("expected xdcc pack 7 gone after eviction, got %+v", results)
+	}
+	results, _ = store.SearchIndexedFiles("other bot", 0, "", 10)
+	if len(results) != 1 {
+		t.Fatalf("expected other bot's entry to survive, got %d", len(results))
+	}
+}

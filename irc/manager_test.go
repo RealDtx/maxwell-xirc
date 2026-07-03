@@ -89,6 +89,9 @@ func (m *mockStore) MarkSearchResultParsed(id int64, botNick string, packNumber 
 	return nil
 }
 func (m *mockStore) UpsertIndexedFile(f *db.IndexedFile) error { return nil }
+func (m *mockStore) EvictStaleIndexedFiles(serverID int64, botNick string, packNumber int, keepFilename string) error {
+	return nil
+}
 func (m *mockStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]db.IndexedFile, error) {
 	return nil, nil
 }

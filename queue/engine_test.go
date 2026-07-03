@@ -51,7 +51,7 @@ func TestEngine_HandlesDCCOffer(t *testing.T) {
 
 	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false)
+	dl, err := engine.queue.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -111,12 +111,12 @@ func TestEngine_QueueProcessing(t *testing.T) {
 	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
 
 	// Add downloads to queue
-	dl1, err := engine.queue.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false)
+	dl1, err := engine.queue.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	dl2, err := engine.queue.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false)
+	dl2, err := engine.queue.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestEngine_Start_RequeuesInterruptedDownloads(t *testing.T) {
 	}
 	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false)
+	dl, err := engine.queue.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestEngine_Dispatch_NoConnection(t *testing.T) {
 	}
 	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotNick", 123, "file.txt", 1000, false)
+	dl, err := engine.queue.Add(1, "#channel", "BotNick", 123, "file.txt", 1000, false, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestEngine_HandleMessage_MarksDownloadingBeforeTransfer(t *testing.T) {
 	}
 	engine := NewEngine(recStore, bus, ircMgr, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotNick", 5, "queued-name.mkv", 1, false)
+	dl, err := engine.queue.Add(1, "#channel", "BotNick", 5, "queued-name.mkv", 1, false, false)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -296,5 +296,90 @@ func TestEngine_HandleMessage_MarksDownloadingBeforeTransfer(t *testing.T) {
 	}
 	if downloadingSize != 2048 {
 		t.Fatalf("expected filesize from offer, got %d", downloadingSize)
+	}
+}
+
+func TestEngine_ReconcilesIndexOnOfferAndInvalidPack(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	dir, err := ioutil.TempDir("", "engine-reconcile-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	srv := &db.Server{Name: "s", Host: "a.com", Port: 6667, Nickname: "me", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	bus := irc.NewEventBus()
+	storageCfg := &config.StorageConfig{
+		DownloadsDir: filepath.Join(dir, "downloads"),
+		TempDir:      filepath.Join(dir, "temp"),
+		MinFreeSpace: "1000TB",
+	}
+	engine := NewEngine(store, bus, irc.NewManager(store, bus), storageCfg, 2)
+
+	// Index believes pack 5 is Expected.mkv; the bot actually offers Actual.mkv.
+	pack := 5
+	store.UpsertIndexedFile(&db.IndexedFile{ServerID: srv.ID, Channel: "#chan", BotNick: "BotNick", PackNumber: &pack, Filename: "Expected.mkv", RawLine: "ad"})
+
+	dl, err := engine.queue.Add(srv.ID, "#chan", "BotNick", pack, "Expected.mkv", 1, false, false)
+	if err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	engine.RegisterPendingRequest(dl.ID, srv.ID, "BotNick")
+	engine.handleMessage(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Nick:     "BotNick",
+		Data: map[string]string{
+			"type":    "ctcp",
+			"message": `DCC SEND "Actual.mkv" 3232235777 4500 2048`,
+		},
+	})
+
+	files, err := store.SearchIndexedFiles("actual", srv.ID, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	if len(files) != 1 || files[0].Filename != "Actual.mkv" {
+		t.Fatalf("expected index reconciled to Actual.mkv, got %+v", files)
+	}
+	if stale, _ := store.SearchIndexedFiles("expected", srv.ID, "", 10); len(stale) != 0 {
+		t.Fatalf("expected stale Expected.mkv entry evicted, got %+v", stale)
+	}
+
+	// Bot reports the pack as invalid → download fails, index entry evicted.
+	dl2, err := engine.queue.Add(srv.ID, "#chan", "BotNick", pack, "Actual.mkv", 1, false, false)
+	if err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	engine.RegisterPendingRequest(dl2.ID, srv.ID, "BotNick")
+	engine.handleMessage(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Nick:     "BotNick",
+		Data: map[string]string{
+			"type":    "notice",
+			"message": "** Invalid Pack Number, Try Again **",
+		},
+	})
+
+	got, err := store.GetDownload(dl2.ID)
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("expected download failed after invalid pack, got %q", got.Status)
+	}
+	files, _ = store.SearchIndexedFiles("actual", srv.ID, "", 10)
+	if len(files) != 0 {
+		t.Fatalf("expected index entry evicted after invalid pack, got %+v", files)
+	}
+	if engine.GetPendingRequest(srv.ID, "BotNick") != nil {
+		t.Fatal("expected pending request cleared after invalid pack")
 	}
 }

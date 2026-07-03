@@ -776,3 +776,82 @@ t.Errorf("messageMatchesQuery(%q, %q) = %v, want %v", tt.msg, tt.query, got, tt.
 }
 }
 }
+
+func TestParser_PassiveIndexingOnDownloadChannel(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	SeedPatterns(store)
+
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
+
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+	store.CreateRealm(&db.Realm{ServerID: srv.ID, Name: "#mg-chat", DownloadChannel: "#MovieGods", Enabled: true})
+
+	// Real-world broadcast lines (no search session active).
+	lines := []struct {
+		nick, msg string
+	}{
+		// MG style with mIRC bold codes
+		{"[MG]-HDTV|EU|S|Oldman", "\x02#1322\x02 0x [1.4G] Fallout.2024.S02E04.German.DL.EAC3.1080p.AMZN.WEB.H265-ZeroTwo.mkv"},
+		// EWG style with color code prefix
+		{"[EWG]Rich-01", "\x0303#307\x03  16x [1.3G] Guns Up 2025 1080p WEB-DL HEVC x265 5.1 BONE.mkv"},
+		// UPDATED prefix variant
+		{"[MG]-HDTV|EU|S|FantasyVIII", "** UPDATED ** \x02#234\x02 0x [826M] Die.Rosenheim.Cops.S18E08.German.720p.WebHD.H264-RWF.mkv"},
+		// Noise lines that must NOT be indexed
+		{"[EWG]-[STR8UP]-2", "** Bandwidth Usage ** Current: 0.0kB/s, Record: 4318.7kB/s"},
+		{"[MG]-4k-Movies|POS", "Total Offered: 553GB  Total Transferred: 2.1EB"},
+	}
+	for _, l := range lines {
+		bus.Publish(irc.Event{
+			Type:     irc.EventIRCMessage,
+			ServerID: srv.ID,
+			Channel:  "#moviegods", // case differs from configured #MovieGods
+			Nick:     l.nick,
+			Data:     map[string]string{"type": "privmsg", "message": l.msg},
+		})
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	stats, err := store.GetIndexStats(srv.ID)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 3 {
+		t.Fatalf("expected 3 indexed files, got %d", stats.TotalFiles)
+	}
+
+	files, err := store.SearchIndexedFiles("fallout german", srv.ID, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 match for 'fallout german', got %d", len(files))
+	}
+	f := files[0]
+	if f.BotNick != "[MG]-HDTV|EU|S|Oldman" || f.PackNumber == nil || *f.PackNumber != 1322 {
+		t.Errorf("unexpected indexed file: bot=%q pack=%v", f.BotNick, f.PackNumber)
+	}
+	if f.Filesize == nil || *f.Filesize != "1.4G" {
+		t.Errorf("unexpected filesize: %v", f.Filesize)
+	}
+
+	// Messages on a non-download channel must not be indexed without a session.
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#mg-chat",
+		Nick:     "SomeBot",
+		Data:     map[string]string{"type": "privmsg", "message": "#99 5x [1.0G] Chatter.File.mkv"},
+	})
+	time.Sleep(200 * time.Millisecond)
+	stats, _ = store.GetIndexStats(srv.ID)
+	if stats.TotalFiles != 3 {
+		t.Fatalf("expected still 3 indexed files after non-download-channel message, got %d", stats.TotalFiles)
+	}
+}

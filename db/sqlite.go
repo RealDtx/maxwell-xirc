@@ -542,7 +542,22 @@ func (s *SQLiteStore) MarkSearchResultParsed(id int64, botNick string, packNumbe
 
 // --- Indexed Files (self-collected search index) ---
 
+func (s *SQLiteStore) EvictStaleIndexedFiles(serverID int64, botNick string, packNumber int, keepFilename string) error {
+	_, err := s.db.Exec(
+		`DELETE FROM indexed_files WHERE server_id=? AND bot_nick=? AND pack_number=? AND filename<>?`,
+		serverID, botNick, packNumber, keepFilename,
+	)
+	return err
+}
+
 func (s *SQLiteStore) UpsertIndexedFile(f *IndexedFile) error {
+	// Pack numbers rotate: the same bot re-uses #N for new content. Drop any
+	// entry still claiming this bot+pack under an older filename.
+	if f.PackNumber != nil {
+		if err := s.EvictStaleIndexedFiles(f.ServerID, f.BotNick, *f.PackNumber, f.Filename); err != nil {
+			return err
+		}
+	}
 	now := time.Now().UTC().Format(rfc3339Fixed)
 	_, err := s.db.Exec(
 		`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at)

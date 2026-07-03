@@ -177,6 +177,9 @@ func mysqlMigrationStatements() []string {
 		`CREATE INDEX idx_search_results_scope ON search_results(server_id, channel, parsed)`,
 		`CREATE INDEX idx_search_results_created_at ON search_results(created_at)`,
 
+		// Supports stale-entry eviction by bot+pack on every broadcast upsert.
+		`CREATE INDEX idx_indexed_files_bot_pack ON indexed_files(server_id, bot_nick(50), pack_number)`,
+
 		// FULLTEXT index for offline catalog search (requires MySQL 5.6+ /
 		// MariaDB 10.0.5+ InnoDB fulltext support). Note: MySQL's default
 		// fulltext stopword list and ft_min_word_len/innodb_ft_min_token_size
@@ -683,7 +686,22 @@ func (s *MySQLStore) MarkSearchResultParsed(id int64, botNick string, packNumber
 
 // --- Indexed Files (self-collected search index) ---
 
+func (s *MySQLStore) EvictStaleIndexedFiles(serverID int64, botNick string, packNumber int, keepFilename string) error {
+	_, err := s.db.Exec(
+		`DELETE FROM indexed_files WHERE server_id=? AND bot_nick=? AND pack_number=? AND filename<>?`,
+		serverID, botNick, packNumber, keepFilename,
+	)
+	return err
+}
+
 func (s *MySQLStore) UpsertIndexedFile(f *IndexedFile) error {
+	// Pack numbers rotate: the same bot re-uses #N for new content. Drop any
+	// entry still claiming this bot+pack under an older filename.
+	if f.PackNumber != nil {
+		if err := s.EvictStaleIndexedFiles(f.ServerID, f.BotNick, *f.PackNumber, f.Filename); err != nil {
+			return err
+		}
+	}
 	now := time.Now().UTC()
 	_, err := s.db.Exec(
 		`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at)
