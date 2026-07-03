@@ -3,6 +3,7 @@ package db
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 // MySQL tests require a running MariaDB instance.
@@ -31,7 +32,7 @@ func newTestMySQLStore(t *testing.T) *MySQLStore {
 		t.Fatalf("failed to run migrations: %v", err)
 	}
 	// Clean tables for test isolation
-	for _, table := range []string{"file_routing_rules", "post_hooks", "parse_patterns", "saved_searches", "search_results", "downloads", "realms", "servers"} {
+	for _, table := range []string{"file_routing_rules", "post_hooks", "parse_patterns", "saved_searches", "indexed_files", "search_results", "downloads", "realms", "servers"} {
 		store.db.Exec("DELETE FROM " + table)
 	}
 	return store
@@ -160,5 +161,179 @@ func TestMySQLStore_FileRoutingRules(t *testing.T) {
 	}
 	if rules[0].Priority != 100 {
 		t.Errorf("expected first rule priority 100, got %d", rules[0].Priority)
+	}
+}
+
+func TestMySQLStore_IndexedFiles_UpsertAndSearch(t *testing.T) {
+	store := newTestMySQLStore(t)
+	defer store.Close()
+
+	srv1 := &Server{Name: "srv1", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	srv2 := &Server{Name: "srv2", Host: "b.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv1); err != nil {
+		t.Fatalf("CreateServer srv1 failed: %v", err)
+	}
+	if err := store.CreateServer(srv2); err != nil {
+		t.Fatalf("CreateServer srv2 failed: %v", err)
+	}
+
+	pack := 1
+	size := "1G"
+	if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv1.ID, Channel: "#c", BotNick: "b", PackNumber: &pack, Filename: "The.Matrix.1999.mkv", Filesize: &size, RawLine: "r"}); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+	if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv2.ID, Channel: "#c2", BotNick: "b2", Filename: "Some.Other.Show.mkv", RawLine: "r2"}); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+
+	// Re-observe the first file with a new pack number — should update in
+	// place (hit_count increments) rather than duplicate.
+	pack2 := 2
+	if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv1.ID, Channel: "#c", BotNick: "b", PackNumber: &pack2, Filename: "The.Matrix.1999.mkv", RawLine: "r"}); err != nil {
+		t.Fatalf("second UpsertIndexedFile failed: %v", err)
+	}
+
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 2 {
+		t.Fatalf("expected 2 total indexed files, got %d", stats.TotalFiles)
+	}
+
+	results, err := store.SearchIndexedFiles("matrix", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	if len(results) != 1 || results[0].Filename != "The.Matrix.1999.mkv" {
+		t.Fatalf("expected 1 match for 'matrix', got %+v", results)
+	}
+	if results[0].HitCount != 2 {
+		t.Errorf("expected hit_count 2 after re-observing, got %d", results[0].HitCount)
+	}
+	if results[0].PackNumber == nil || *results[0].PackNumber != 2 {
+		t.Errorf("expected pack_number to refresh to 2, got %v", results[0].PackNumber)
+	}
+
+	// Prefix matching: "matr" should still find "Matrix".
+	prefixResults, err := store.SearchIndexedFiles("matr", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles (prefix) failed: %v", err)
+	}
+	if len(prefixResults) != 1 {
+		t.Fatalf("expected prefix query 'matr' to match, got %d results", len(prefixResults))
+	}
+
+	// Scoped to srv2 only.
+	scoped, err := store.SearchIndexedFiles("show", srv2.ID, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles (scoped) failed: %v", err)
+	}
+	if len(scoped) != 1 || scoped[0].Filename != "Some.Other.Show.mkv" {
+		t.Fatalf("expected 1 scoped match from srv2, got %+v", scoped)
+	}
+
+	// A query with boolean-mode special characters must not error.
+	if _, err := store.SearchIndexedFiles(`matr"ix+`, 0, "", 10); err != nil {
+		t.Fatalf("SearchIndexedFiles with special characters errored: %v", err)
+	}
+}
+
+func TestMySQLStore_EnforceIndexCap(t *testing.T) {
+	store := newTestMySQLStore(t)
+	defer store.Close()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	for _, name := range []string{"a.mkv", "b.mkv", "c.mkv", "d.mkv", "e.mkv"} {
+		if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv.ID, Channel: "#c", BotNick: "b", Filename: name, RawLine: "r"}); err != nil {
+			t.Fatalf("UpsertIndexedFile(%s) failed: %v", name, err)
+		}
+		time.Sleep(1100 * time.Millisecond) // MySQL DATETIME has 1-second resolution by default
+	}
+
+	evicted, err := store.EnforceIndexCap(3)
+	if err != nil {
+		t.Fatalf("EnforceIndexCap failed: %v", err)
+	}
+	if evicted != 2 {
+		t.Fatalf("expected 2 rows evicted, got %d", evicted)
+	}
+
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 3 {
+		t.Fatalf("expected 3 remaining files, got %d", stats.TotalFiles)
+	}
+}
+
+func TestMySQLStore_PruneSearchResults(t *testing.T) {
+	store := newTestMySQLStore(t)
+	defer store.Close()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+	if err := store.CreateSearchResult(&SearchResult{ServerID: srv.ID, Channel: "#c", BotNick: "b", RawLine: "raw", SearchQuery: "q", Parsed: false}); err != nil {
+		t.Fatalf("CreateSearchResult failed: %v", err)
+	}
+
+	// Cutoff in the future so the freshly-created row counts as older-than-cutoff.
+	deleted, err := store.PruneSearchResults(time.Now().Add(1 * time.Hour))
+	if err != nil {
+		t.Fatalf("PruneSearchResults failed: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("expected 1 row pruned, got %d", deleted)
+	}
+}
+
+func TestMySQLStore_DeleteServer_CascadesToRelatedData(t *testing.T) {
+	store := newTestMySQLStore(t)
+	defer store.Close()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+	if err := store.CreateSearchResult(&SearchResult{ServerID: srv.ID, Channel: "#c", BotNick: "b", RawLine: "raw", SearchQuery: "q", Parsed: false}); err != nil {
+		t.Fatalf("CreateSearchResult failed: %v", err)
+	}
+	if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv.ID, Channel: "#c", BotNick: "b", Filename: "a.mkv", RawLine: "r"}); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+	if err := store.CreateSavedSearch(&SavedSearch{Name: "n", ServerID: srv.ID, Channel: "#c", Query: "q"}); err != nil {
+		t.Fatalf("CreateSavedSearch failed: %v", err)
+	}
+	if err := store.CreateDownload(&Download{ServerID: srv.ID, Channel: "#c", BotNick: "b", PackNumber: 1, Filename: "f"}); err != nil {
+		t.Fatalf("CreateDownload failed: %v", err)
+	}
+
+	if err := store.DeleteServer(srv.ID); err != nil {
+		t.Fatalf("DeleteServer failed: %v", err)
+	}
+
+	if _, err := store.GetServer(srv.ID); err == nil {
+		t.Error("expected error getting deleted server")
+	}
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 0 {
+		t.Errorf("expected indexed_files to be cleaned up, got %d remaining", stats.TotalFiles)
+	}
+	results, err := store.GetAllSearchResults("q", nil)
+	if err != nil {
+		t.Fatalf("GetAllSearchResults failed: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected search_results to be cleaned up, got %d remaining", len(results))
 	}
 }

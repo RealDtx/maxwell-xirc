@@ -30,3 +30,10 @@ downloads:
 notifications:
   quiet_hours_start: ""
   quiet_hours_end: ""
+
+# Background job that prunes stale search_results rows and caps the
+# self-collected file index so both stay bounded over time.
+maintenance:
+  search_result_retention_days: 14
+  index_max_files: 200000
+  interval_hours: 6

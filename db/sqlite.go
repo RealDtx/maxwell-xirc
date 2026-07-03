@@ -51,7 +51,36 @@ func (s *SQLiteStore) Close() error {
 }
 
 func (s *SQLiteStore) Migrate() error {
-	return runMigrations(s.db)
+	if err := runMigrations(s.db); err != nil {
+		return err
+	}
+	return s.backfillIndexedFilesFTS()
+}
+
+// backfillIndexedFilesFTS populates the indexed_files_fts index for rows
+// that existed before the FTS5 table was introduced (or after a triggerless
+// bulk insert). It uses the docsize shadow table to detect a truly empty
+// index — querying the FTS5 table itself without MATCH transparently reads
+// through to the content table via content_rowid, so it always looks
+// "non-empty" even when the actual search index has never been built.
+func (s *SQLiteStore) backfillIndexedFilesFTS() error {
+	var docCount int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM indexed_files_fts_docsize").Scan(&docCount); err != nil {
+		// Shadow table missing is not fatal — just skip backfill.
+		return nil
+	}
+	if docCount > 0 {
+		return nil
+	}
+	var contentCount int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM indexed_files").Scan(&contentCount); err != nil {
+		return err
+	}
+	if contentCount == 0 {
+		return nil
+	}
+	_, err := s.db.Exec(`INSERT INTO indexed_files_fts(indexed_files_fts) VALUES('rebuild')`)
+	return err
 }
 
 // --- Servers ---
@@ -132,9 +161,35 @@ func (s *SQLiteStore) UpdateServer(srv *Server) error {
 	return err
 }
 
+// DeleteServer removes a server and all data scoped to it. Only realms
+// cascade at the database level (ON DELETE CASCADE); downloads,
+// search_results, saved_searches, indexed_files, and server-scoped parse
+// patterns have no DB-level cascade (to avoid a risky SQLite table rebuild
+// on existing installs), so they're deleted explicitly in a transaction
+// before the server row itself is removed.
 func (s *SQLiteStore) DeleteServer(id int64) error {
-	_, err := s.db.Exec("DELETE FROM servers WHERE id=?", id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmts := []string{
+		"DELETE FROM downloads WHERE server_id=?",
+		"DELETE FROM search_results WHERE server_id=?",
+		"DELETE FROM saved_searches WHERE server_id=?",
+		"DELETE FROM indexed_files WHERE server_id=?",
+		"DELETE FROM parse_patterns WHERE server_id=?",
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt, id); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec("DELETE FROM servers WHERE id=?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // --- Realms ---
@@ -505,32 +560,49 @@ func (s *SQLiteStore) UpsertIndexedFile(f *IndexedFile) error {
 	return err
 }
 
-func (s *SQLiteStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]IndexedFile, error) {
+// buildFTS5MatchQuery turns a user query into an FTS5 MATCH expression that
+// requires every word to match as a prefix (implicit AND between terms).
+// Each word is quoted as an FTS5 string literal (embedded quotes doubled) so
+// arbitrary input can never be interpreted as FTS5 query syntax.
+func buildFTS5MatchQuery(query string) string {
 	words := strings.Fields(strings.ToLower(query))
-	conds := make([]string, 0, len(words)+2)
-	args := make([]interface{}, 0, len(words)+3)
+	terms := make([]string, 0, len(words))
 	for _, w := range words {
-		conds = append(conds, "LOWER(filename) LIKE ?")
-		args = append(args, "%"+w+"%")
+		escaped := strings.ReplaceAll(w, `"`, `""`)
+		terms = append(terms, `"`+escaped+`"*`)
 	}
+	return strings.Join(terms, " ")
+}
+
+func (s *SQLiteStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]IndexedFile, error) {
+	matchQuery := buildFTS5MatchQuery(query)
+	if matchQuery == "" {
+		return []IndexedFile{}, nil
+	}
+
+	conds := make([]string, 0, 2)
+	args := make([]interface{}, 0, 4)
+	args = append(args, matchQuery)
 	if serverID != 0 {
-		conds = append(conds, "server_id=?")
+		conds = append(conds, "f.server_id=?")
 		args = append(args, serverID)
 	}
 	if channel != "" {
-		conds = append(conds, "channel=?")
+		conds = append(conds, "f.channel=?")
 		args = append(args, channel)
 	}
-	where := ""
+	extra := ""
 	if len(conds) > 0 {
-		where = "WHERE " + strings.Join(conds, " AND ")
+		extra = "AND " + strings.Join(conds, " AND ")
 	}
 	args = append(args, limit)
 
 	rows, err := s.db.Query(
-		`SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at
-		FROM indexed_files `+where+`
-		ORDER BY last_seen_at DESC LIMIT ?`,
+		`SELECT f.id, f.server_id, f.channel, f.bot_nick, f.pack_number, f.filename, f.filesize, f.downloads_count, f.raw_line, f.hit_count, f.first_seen_at, f.last_seen_at
+		FROM indexed_files_fts fts
+		JOIN indexed_files f ON f.id = fts.rowid
+		WHERE indexed_files_fts MATCH ? `+extra+`
+		ORDER BY f.last_seen_at DESC LIMIT ?`,
 		args...,
 	)
 	if err != nil {
@@ -573,6 +645,47 @@ func (s *SQLiteStore) ClearIndex(serverID int64) error {
 		_, err = s.db.Exec("DELETE FROM indexed_files")
 	}
 	return err
+}
+
+// PruneSearchResults is a time-based safety net for the ephemeral
+// search_results cache (which is normally cleared per-channel on the next
+// search, but channels that stop being searched would otherwise accumulate
+// rows forever).
+func (s *SQLiteStore) PruneSearchResults(olderThan time.Time) (int64, error) {
+	result, err := s.db.Exec(
+		"DELETE FROM search_results WHERE created_at < ?",
+		olderThan.UTC().Format(rfc3339Fixed),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// EnforceIndexCap evicts the least-recently-seen indexed_files rows until
+// the total is at or below maxFiles.
+func (s *SQLiteStore) EnforceIndexCap(maxFiles int64) (int64, error) {
+	if maxFiles <= 0 {
+		return 0, nil
+	}
+	var count int64
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM indexed_files").Scan(&count); err != nil {
+		return 0, err
+	}
+	excess := count - maxFiles
+	if excess <= 0 {
+		return 0, nil
+	}
+	result, err := s.db.Exec(
+		`DELETE FROM indexed_files WHERE id IN (
+			SELECT id FROM indexed_files ORDER BY last_seen_at ASC LIMIT ?
+		)`,
+		excess,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // --- Saved Searches ---

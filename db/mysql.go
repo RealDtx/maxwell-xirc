@@ -173,6 +173,16 @@ func mysqlMigrationStatements() []string {
 			UNIQUE KEY idx_indexed_files_unique (server_id, channel(50), bot_nick(50), filename(191)),
 			KEY idx_indexed_files_filename (filename(191))
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`CREATE INDEX idx_search_results_scope ON search_results(server_id, channel, parsed)`,
+		`CREATE INDEX idx_search_results_created_at ON search_results(created_at)`,
+
+		// FULLTEXT index for offline catalog search (requires MySQL 5.6+ /
+		// MariaDB 10.0.5+ InnoDB fulltext support). Note: MySQL's default
+		// fulltext stopword list and ft_min_word_len/innodb_ft_min_token_size
+		// settings mean very short or common words (e.g. "the") may not be
+		// indexed — acceptable for searching distinctive filenames/titles.
+		`ALTER TABLE indexed_files ADD FULLTEXT INDEX idx_indexed_files_filename_ft (filename)`,
 	}
 }
 
@@ -218,6 +228,12 @@ func (s *MySQLStore) Migrate() error {
 			// Table already exists — CREATE TABLE without IF NOT EXISTS guard,
 			// or a rename target that already exists.
 			if strings.Contains(msg, "already exists") || strings.Contains(msg, "Already exists") {
+				continue
+			}
+			// Duplicate key/index name — CREATE INDEX has no IF NOT EXISTS
+			// guard in standard MySQL, so reruns on an already-migrated DB
+			// hit this instead.
+			if strings.Contains(msg, "Duplicate key name") {
 				continue
 			}
 			return fmt.Errorf("migration failed: %w\nSQL: %s", err, stmt)
@@ -306,9 +322,34 @@ func (s *MySQLStore) UpdateServer(srv *Server) error {
 	return err
 }
 
+// DeleteServer removes a server and all data scoped to it. Only realms
+// cascade at the database level (ON DELETE CASCADE); downloads,
+// search_results, saved_searches, indexed_files, and server-scoped parse
+// patterns have no DB-level cascade, so they're deleted explicitly in a
+// transaction before the server row itself is removed.
 func (s *MySQLStore) DeleteServer(id int64) error {
-	_, err := s.db.Exec("DELETE FROM servers WHERE id=?", id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmts := []string{
+		"DELETE FROM downloads WHERE server_id=?",
+		"DELETE FROM search_results WHERE server_id=?",
+		"DELETE FROM saved_searches WHERE server_id=?",
+		"DELETE FROM indexed_files WHERE server_id=?",
+		"DELETE FROM parse_patterns WHERE server_id=?",
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt, id); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec("DELETE FROM servers WHERE id=?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // --- Realms ---
@@ -660,14 +701,39 @@ func (s *MySQLStore) UpsertIndexedFile(f *IndexedFile) error {
 	return err
 }
 
-func (s *MySQLStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]IndexedFile, error) {
+// buildMySQLBooleanQuery turns a user query into a MySQL boolean-mode
+// fulltext expression that requires every word to match as a prefix
+// (leading "+" = required, trailing "*" = prefix truncation). Boolean-mode
+// operator characters are stripped from each word first so arbitrary input
+// can never be interpreted as query syntax.
+func buildMySQLBooleanQuery(query string) string {
 	words := strings.Fields(strings.ToLower(query))
-	conds := make([]string, 0, len(words)+2)
-	args := make([]interface{}, 0, len(words)+3)
+	terms := make([]string, 0, len(words))
 	for _, w := range words {
-		conds = append(conds, "LOWER(filename) LIKE ?")
-		args = append(args, "%"+w+"%")
+		cleaned := strings.Map(func(r rune) rune {
+			switch r {
+			case '+', '-', '<', '>', '(', ')', '~', '*', '"', '@':
+				return -1
+			}
+			return r
+		}, w)
+		if cleaned == "" {
+			continue
+		}
+		terms = append(terms, "+"+cleaned+"*")
 	}
+	return strings.Join(terms, " ")
+}
+
+func (s *MySQLStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]IndexedFile, error) {
+	booleanQuery := buildMySQLBooleanQuery(query)
+	if booleanQuery == "" {
+		return []IndexedFile{}, nil
+	}
+
+	conds := make([]string, 0, 2)
+	args := make([]interface{}, 0, 4)
+	args = append(args, booleanQuery)
 	if serverID != 0 {
 		conds = append(conds, "server_id=?")
 		args = append(args, serverID)
@@ -676,15 +742,16 @@ func (s *MySQLStore) SearchIndexedFiles(query string, serverID int64, channel st
 		conds = append(conds, "channel=?")
 		args = append(args, channel)
 	}
-	where := ""
+	extra := ""
 	if len(conds) > 0 {
-		where = "WHERE " + strings.Join(conds, " AND ")
+		extra = "AND " + strings.Join(conds, " AND ")
 	}
 	args = append(args, limit)
 
 	rows, err := s.db.Query(
 		`SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at
-		FROM indexed_files `+where+`
+		FROM indexed_files
+		WHERE MATCH(filename) AGAINST(? IN BOOLEAN MODE) `+extra+`
 		ORDER BY last_seen_at DESC LIMIT ?`,
 		args...,
 	)
@@ -728,6 +795,46 @@ func (s *MySQLStore) ClearIndex(serverID int64) error {
 		_, err = s.db.Exec("DELETE FROM indexed_files")
 	}
 	return err
+}
+
+// PruneSearchResults is a time-based safety net for the ephemeral
+// search_results cache (which is normally cleared per-channel on the next
+// search, but channels that stop being searched would otherwise accumulate
+// rows forever).
+func (s *MySQLStore) PruneSearchResults(olderThan time.Time) (int64, error) {
+	result, err := s.db.Exec("DELETE FROM search_results WHERE created_at < ?", olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// EnforceIndexCap evicts the least-recently-seen indexed_files rows until
+// the total is at or below maxFiles. The subquery is wrapped in a derived
+// table (`AS t`) because MySQL forbids selecting from the same table a
+// DELETE targets directly in a subquery.
+func (s *MySQLStore) EnforceIndexCap(maxFiles int64) (int64, error) {
+	if maxFiles <= 0 {
+		return 0, nil
+	}
+	var count int64
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM indexed_files").Scan(&count); err != nil {
+		return 0, err
+	}
+	excess := count - maxFiles
+	if excess <= 0 {
+		return 0, nil
+	}
+	result, err := s.db.Exec(
+		`DELETE FROM indexed_files WHERE id IN (
+			SELECT id FROM (SELECT id FROM indexed_files ORDER BY last_seen_at ASC LIMIT ?) AS t
+		)`,
+		excess,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // --- Saved Searches ---

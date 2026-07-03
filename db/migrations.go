@@ -166,6 +166,31 @@ func migrationStatements() []string {
 			UNIQUE (server_id, channel, bot_nick, filename)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_indexed_files_filename ON indexed_files(filename)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_search_results_scope ON search_results(server_id, channel, parsed)`,
+		`CREATE INDEX IF NOT EXISTS idx_search_results_created_at ON search_results(created_at)`,
+
+		// FTS5 full-text index over indexed_files.filename, kept in sync via
+		// triggers so application code never has to remember to dual-write.
+		// external content ("content='indexed_files'") avoids duplicating the
+		// filename text on disk.
+		`CREATE VIRTUAL TABLE IF NOT EXISTS indexed_files_fts USING fts5(filename, content='indexed_files', content_rowid='id')`,
+		`CREATE TRIGGER IF NOT EXISTS indexed_files_ai AFTER INSERT ON indexed_files BEGIN
+			INSERT INTO indexed_files_fts(rowid, filename) VALUES (new.id, new.filename);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS indexed_files_ad AFTER DELETE ON indexed_files BEGIN
+			INSERT INTO indexed_files_fts(indexed_files_fts, rowid, filename) VALUES('delete', old.id, old.filename);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS indexed_files_au AFTER UPDATE ON indexed_files BEGIN
+			INSERT INTO indexed_files_fts(indexed_files_fts, rowid, filename) VALUES('delete', old.id, old.filename);
+			INSERT INTO indexed_files_fts(rowid, filename) VALUES (new.id, new.filename);
+		END`,
+		// One-time backfill for rows created before the FTS table existed
+		// is handled in SQLiteStore.Migrate() via the FTS5 'rebuild' command
+		// (see backfillIndexedFilesFTS) — a plain INSERT...SELECT guarded by
+		// "does the FTS table have rows" doesn't work here because querying
+		// an external-content FTS5 table without MATCH transparently passes
+		// through to the content table, so it always looks non-empty.
 	}
 }
 

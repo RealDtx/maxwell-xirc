@@ -60,6 +60,15 @@ type PatternConfig struct {
 	Tags         []string       `yaml:"tags"`
 }
 
+// MaintenanceConfig controls the background job that prunes stale
+// search_results rows and caps the self-collected file index so both stay
+// bounded instead of growing forever.
+type MaintenanceConfig struct {
+	SearchResultRetentionDays int `yaml:"search_result_retention_days"`
+	IndexMaxFiles             int `yaml:"index_max_files"`
+	IntervalHours             int `yaml:"interval_hours"`
+}
+
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	Database      DatabaseConfig      `yaml:"database"`
@@ -68,6 +77,7 @@ type Config struct {
 	Downloads     DownloadsConfig     `yaml:"downloads"`
 	Notifications NotificationsConfig `yaml:"notifications"`
 	Patterns      []PatternConfig     `yaml:"patterns"`
+	Maintenance   MaintenanceConfig   `yaml:"maintenance"`
 }
 
 func defaults() Config {
@@ -92,6 +102,11 @@ func defaults() Config {
 		},
 		Downloads: DownloadsConfig{
 			MaxConcurrent: 3,
+		},
+		Maintenance: MaintenanceConfig{
+			SearchResultRetentionDays: 14,
+			IndexMaxFiles:             200000,
+			IntervalHours:             6,
 		},
 	}
 }

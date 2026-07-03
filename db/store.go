@@ -76,6 +76,17 @@ type Store interface {
 	// ClearIndex deletes indexed files, optionally scoped to a single server
 	// (serverID=0 means all servers).
 	ClearIndex(serverID int64) error
+	// PruneSearchResults deletes search_results rows older than olderThan.
+	// This is a time-based safety net: results are normally cleared per
+	// channel when a new search starts, but channels that stop being
+	// searched would otherwise accumulate rows forever. Returns the number
+	// of rows deleted.
+	PruneSearchResults(olderThan time.Time) (int64, error)
+	// EnforceIndexCap caps the persistent file index at maxFiles rows,
+	// evicting the least-recently-seen entries first (ORDER BY last_seen_at
+	// ASC) until the total is at or below the cap. maxFiles<=0 disables
+	// enforcement. Returns the number of rows evicted.
+	EnforceIndexCap(maxFiles int64) (int64, error)
 
 	// Parse Patterns
 	GetParsePatterns() ([]ParsePattern, error)

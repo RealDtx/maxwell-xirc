@@ -94,6 +94,8 @@ func (m *mockStore) SearchIndexedFiles(query string, serverID int64, channel str
 }
 func (m *mockStore) GetIndexStats(serverID int64) (*db.IndexStats, error) { return &db.IndexStats{}, nil }
 func (m *mockStore) ClearIndex(serverID int64) error                     { return nil }
+func (m *mockStore) PruneSearchResults(olderThan time.Time) (int64, error) { return 0, nil }
+func (m *mockStore) EnforceIndexCap(maxFiles int64) (int64, error)         { return 0, nil }
 func (m *mockStore) Close() error   { return nil }
 func (m *mockStore) Migrate() error { return nil }
 

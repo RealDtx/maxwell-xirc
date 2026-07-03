@@ -21,6 +21,7 @@ import (
 	"github.com/RealDtx/maxwell-irc/internal/debug"
 	"github.com/RealDtx/maxwell-irc/internal/exitcodes"
 	ircpkg "github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/maintenance"
 	"github.com/RealDtx/maxwell-irc/notify"
 	"github.com/RealDtx/maxwell-irc/parser"
 	"github.com/RealDtx/maxwell-irc/queue"
@@ -249,6 +250,9 @@ func main() {
 	eng := queue.NewEngine(store, bus, ircMgr, &cfg.Storage, cfg.Downloads.MaxConcurrent)
 	eng.Start()
 
+	maint := maintenance.New(store, cfg.Maintenance)
+	maint.Start()
+
 	hub := wsPkg.NewHub(bus)
 	hub.Start()
 
@@ -276,6 +280,7 @@ func main() {
 		ircMgr.Shutdown()
 		hub.Stop()
 		eng.Stop()
+		maint.Stop()
 	}()
 
 	log.Printf("maxwell-irc starting on %s", addr)

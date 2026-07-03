@@ -1042,3 +1042,288 @@ func TestSQLiteStore_ClearIndex(t *testing.T) {
 		t.Fatalf("expected 0 remaining indexed files, got %d", stats.TotalFiles)
 	}
 }
+
+// TestSQLiteStore_SearchIndexedFiles_PrefixMatching verifies FTS5 prefix
+// matching: a partial word like "matr" should still find "Matrix", and
+// punctuation-heavy filenames should tokenize sensibly.
+func TestSQLiteStore_SearchIndexedFiles_PrefixMatching(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+	if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv.ID, Channel: "#c", BotNick: "b", Filename: "The.Matrix.1999.mkv", RawLine: "r"}); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+
+	results, err := store.SearchIndexedFiles("matr", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles (prefix) failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected prefix query 'matr' to match Matrix, got %d results", len(results))
+	}
+
+	// A query containing FTS5-special characters (quotes) must not error out
+	// or be interpreted as query syntax.
+	if _, err := store.SearchIndexedFiles(`matr"ix`, 0, "", 10); err != nil {
+		t.Fatalf("SearchIndexedFiles with quote character errored: %v", err)
+	}
+}
+
+// TestSQLiteStore_FTS5Backfill_ExistingRowsBecomeSearchable simulates
+// upgrading an installation that already has indexed_files rows from before
+// the FTS5 index existed: Migrate() must backfill them so they're
+// immediately searchable, not just newly-inserted rows.
+func TestSQLiteStore_FTS5Backfill_ExistingRowsBecomeSearchable(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	// Insert directly via raw SQL, bypassing UpsertIndexedFile (and therefore
+	// the AFTER INSERT trigger), to simulate a row that predates the FTS5
+	// migration.
+	if _, err := store.db.Exec(
+		`INSERT INTO indexed_files (server_id, channel, bot_nick, filename, raw_line, hit_count) VALUES (?, ?, ?, ?, ?, 1)`,
+		srv.ID, "#c", "b", "Legacy.Pre.Fts.File.mkv", "raw",
+	); err != nil {
+		t.Fatalf("raw insert failed: %v", err)
+	}
+	// Drop the FTS table+triggers to simulate a DB that never had them, then
+	// re-run Migrate() to recreate and backfill them.
+	if _, err := store.db.Exec(`DROP TRIGGER IF EXISTS indexed_files_ai`); err != nil {
+		t.Fatalf("drop trigger failed: %v", err)
+	}
+	if _, err := store.db.Exec(`DROP TRIGGER IF EXISTS indexed_files_ad`); err != nil {
+		t.Fatalf("drop trigger failed: %v", err)
+	}
+	if _, err := store.db.Exec(`DROP TRIGGER IF EXISTS indexed_files_au`); err != nil {
+		t.Fatalf("drop trigger failed: %v", err)
+	}
+	if _, err := store.db.Exec(`DROP TABLE IF EXISTS indexed_files_fts`); err != nil {
+		t.Fatalf("drop fts table failed: %v", err)
+	}
+
+	if err := store.Migrate(); err != nil {
+		t.Fatalf("re-running Migrate() failed: %v", err)
+	}
+
+	results, err := store.SearchIndexedFiles("legacy", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	if len(results) != 1 || results[0].Filename != "Legacy.Pre.Fts.File.mkv" {
+		t.Fatalf("expected backfilled legacy row to be searchable, got %+v", results)
+	}
+}
+
+func TestSQLiteStore_PruneSearchResults(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+	if err := store.CreateSearchResult(&SearchResult{ServerID: srv.ID, Channel: "#c", BotNick: "b", RawLine: "raw", SearchQuery: "q", Parsed: false}); err != nil {
+		t.Fatalf("CreateSearchResult failed: %v", err)
+	}
+
+	// A cutoff safely in the past should prune nothing.
+	deleted, err := store.PruneSearchResults(time.Now().Add(-24 * time.Hour))
+	if err != nil {
+		t.Fatalf("PruneSearchResults (past cutoff) failed: %v", err)
+	}
+	if deleted != 0 {
+		t.Fatalf("expected 0 rows pruned with a past cutoff, got %d", deleted)
+	}
+
+	// A cutoff in the future means the freshly-created row counts as
+	// older-than-cutoff, exercising the same comparison a real 14-day-old
+	// row would eventually satisfy.
+	deleted, err = store.PruneSearchResults(time.Now().Add(1 * time.Hour))
+	if err != nil {
+		t.Fatalf("PruneSearchResults (future cutoff) failed: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("expected 1 row pruned, got %d", deleted)
+	}
+
+	remaining, err := store.GetAllUnparsedSince(time.Now().Add(-24 * time.Hour))
+	if err != nil {
+		t.Fatalf("GetAllUnparsedSince failed: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("expected pruned row to be gone, got %d remaining", len(remaining))
+	}
+}
+
+func TestSQLiteStore_EnforceIndexCap(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	for _, name := range []string{"a.mkv", "b.mkv", "c.mkv", "d.mkv", "e.mkv"} {
+		if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv.ID, Channel: "#c", BotNick: "b", Filename: name, RawLine: "r"}); err != nil {
+			t.Fatalf("UpsertIndexedFile(%s) failed: %v", name, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// A cap higher than the current count should evict nothing.
+	evicted, err := store.EnforceIndexCap(10)
+	if err != nil {
+		t.Fatalf("EnforceIndexCap(10) failed: %v", err)
+	}
+	if evicted != 0 {
+		t.Fatalf("expected 0 evicted when cap exceeds count, got %d", evicted)
+	}
+
+	// A cap of 0 disables enforcement entirely.
+	evicted, err = store.EnforceIndexCap(0)
+	if err != nil {
+		t.Fatalf("EnforceIndexCap(0) failed: %v", err)
+	}
+	if evicted != 0 {
+		t.Fatalf("expected 0 evicted when cap is disabled, got %d", evicted)
+	}
+
+	evicted, err = store.EnforceIndexCap(3)
+	if err != nil {
+		t.Fatalf("EnforceIndexCap(3) failed: %v", err)
+	}
+	if evicted != 2 {
+		t.Fatalf("expected 2 rows evicted, got %d", evicted)
+	}
+
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 3 {
+		t.Fatalf("expected 3 remaining files, got %d", stats.TotalFiles)
+	}
+
+	remaining, err := store.SearchIndexedFiles("mkv", 0, "", 10)
+	if err != nil {
+		t.Fatalf("SearchIndexedFiles failed: %v", err)
+	}
+	for _, r := range remaining {
+		if r.Filename == "a.mkv" || r.Filename == "b.mkv" {
+			t.Errorf("expected %s to be evicted as least-recently-seen, but it remains", r.Filename)
+		}
+	}
+}
+
+func TestSQLiteStore_DeleteServer_CascadesToRelatedData(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+	if err := store.CreateSearchResult(&SearchResult{ServerID: srv.ID, Channel: "#c", BotNick: "b", RawLine: "raw", SearchQuery: "q", Parsed: false}); err != nil {
+		t.Fatalf("CreateSearchResult failed: %v", err)
+	}
+	if err := store.UpsertIndexedFile(&IndexedFile{ServerID: srv.ID, Channel: "#c", BotNick: "b", Filename: "a.mkv", RawLine: "r"}); err != nil {
+		t.Fatalf("UpsertIndexedFile failed: %v", err)
+	}
+	if err := store.CreateSavedSearch(&SavedSearch{Name: "n", ServerID: srv.ID, Channel: "#c", Query: "q"}); err != nil {
+		t.Fatalf("CreateSavedSearch failed: %v", err)
+	}
+	dl := &Download{ServerID: srv.ID, Channel: "#c", BotNick: "b", PackNumber: 1, Filename: "f"}
+	if err := store.CreateDownload(dl); err != nil {
+		t.Fatalf("CreateDownload failed: %v", err)
+	}
+	// A server-scoped parse pattern should be cleaned up too; a global one
+	// (ServerID nil) must survive.
+	if err := store.CreateParsePattern(&ParsePattern{Name: "scoped", Regex: "x", FieldMapping: "{}", ServerID: &srv.ID, Channel: "#c"}); err != nil {
+		t.Fatalf("CreateParsePattern (scoped) failed: %v", err)
+	}
+	if err := store.CreateParsePattern(&ParsePattern{Name: "global", Regex: "y", FieldMapping: "{}"}); err != nil {
+		t.Fatalf("CreateParsePattern (global) failed: %v", err)
+	}
+	realm := &Realm{ServerID: srv.ID, Name: "#c"}
+	if err := store.CreateRealm(realm); err != nil {
+		t.Fatalf("CreateRealm failed: %v", err)
+	}
+
+	if err := store.DeleteServer(srv.ID); err != nil {
+		t.Fatalf("DeleteServer failed: %v", err)
+	}
+
+	if _, err := store.GetServer(srv.ID); err == nil {
+		t.Error("expected error getting deleted server")
+	}
+
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 0 {
+		t.Errorf("expected indexed_files to be cleaned up, got %d remaining", stats.TotalFiles)
+	}
+
+	searchResults, err := store.GetAllSearchResults("q", nil)
+	if err != nil {
+		t.Fatalf("GetAllSearchResults failed: %v", err)
+	}
+	if len(searchResults) != 0 {
+		t.Errorf("expected search_results to be cleaned up, got %d remaining", len(searchResults))
+	}
+
+	saved, err := store.GetSavedSearches()
+	if err != nil {
+		t.Fatalf("GetSavedSearches failed: %v", err)
+	}
+	if len(saved) != 0 {
+		t.Errorf("expected saved_searches to be cleaned up, got %d remaining", len(saved))
+	}
+
+	downloads, err := store.GetDownloads("")
+	if err != nil {
+		t.Fatalf("GetDownloads failed: %v", err)
+	}
+	if len(downloads) != 0 {
+		t.Errorf("expected downloads to be cleaned up, got %d remaining", len(downloads))
+	}
+
+	patterns, err := store.GetAllParsePatterns()
+	if err != nil {
+		t.Fatalf("GetAllParsePatterns failed: %v", err)
+	}
+	for _, p := range patterns {
+		if p.Name == "scoped" {
+			t.Error("expected server-scoped parse pattern to be cleaned up")
+		}
+	}
+	foundGlobal := false
+	for _, p := range patterns {
+		if p.Name == "global" {
+			foundGlobal = true
+		}
+	}
+	if !foundGlobal {
+		t.Error("expected global parse pattern to survive server deletion")
+	}
+
+	realms, err := store.GetRealms(srv.ID)
+	if err != nil {
+		t.Fatalf("GetRealms failed: %v", err)
+	}
+	if len(realms) != 0 {
+		t.Errorf("expected realms to cascade-delete at the DB level, got %d remaining", len(realms))
+	}
+}
+
