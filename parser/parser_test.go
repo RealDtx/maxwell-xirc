@@ -296,60 +296,6 @@ func TestParser_BotPatternCache(t *testing.T) {
 	}
 }
 
-func TestParser_PatternDegradation(t *testing.T) {
-	store, cleanup := newTestStore(t)
-	defer cleanup()
-
-	// Create a single pattern that won't match anything
-	store.CreateParsePattern(&db.ParsePattern{
-		Name:         "never-matches",
-		Regex:        `IMPOSSIBLE_PATTERN_THAT_NEVER_MATCHES`,
-		FieldMapping: `{"pack_number":1}`,
-		Priority:     100,
-		Enabled:      true,
-	})
-
-	bus := irc.NewEventBus()
-	p := New(store, bus)
-	p.SetDegradationThreshold(5) // Low threshold for testing
-	p.Start()
-	defer p.Stop()
-
-	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-	store.CreateServer(srv)
-
-	p.StartSearch(srv.ID, "#test", "degrade", "", 0)
-
-	// Send enough messages to trigger degradation
-	for i := 0; i < 6; i++ {
-		bus.Publish(irc.Event{
-			Type:     irc.EventIRCMessage,
-			ServerID: srv.ID,
-			Channel:  "#test",
-			Nick:     "bot",
-			Data: map[string]string{
-				"type":    "privmsg",
-				"message": "#1 [1G] some.file.mkv",
-			},
-		})
-	}
-
-	time.Sleep(300 * time.Millisecond)
-
-	// The pattern should have accumulated fail counts
-	patterns, _ := store.GetParsePatterns()
-	// GetParsePatterns filters out auto_disabled, so if degradation worked,
-	// we might have fewer patterns
-	for _, pat := range patterns {
-		if pat.Name == "never-matches" && pat.AutoDisabled {
-			return // Success
-		}
-	}
-	// Pattern might have been filtered from results since auto_disabled
-	// Check by creating a fresh query that includes disabled
-	// For now, this is sufficient — the pattern accumulated failures
-}
-
 // TestParser_CatchesResultFromDifferentChannel verifies that bot responses arriving
 // on a different channel than the search session are still captured.
 func TestParser_CatchesResultFromDifferentChannel(t *testing.T) {
@@ -685,96 +631,96 @@ func TestParser_AutoDetect_SavesFirstBot(t *testing.T) {
 }
 
 func TestParser_QueryRelevanceFilter_RejectsIrrelevant(t *testing.T) {
-store, cleanup := newTestStore(t)
-defer cleanup()
+	store, cleanup := newTestStore(t)
+	defer cleanup()
 
-SeedPatterns(store)
+	SeedPatterns(store)
 
-bus := irc.NewEventBus()
-p := New(store, bus)
-p.Start()
-defer p.Stop()
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
 
-srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-store.CreateServer(srv)
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
 
-// No configured bot — relevance filter is active in this state
-p.StartSearch(srv.ID, "#test", "movie", "", 0)
+	// No configured bot — relevance filter is active in this state
+	p.StartSearch(srv.ID, "#test", "movie", "", 0)
 
-// Bot sends a parseable line that does NOT match "movie" (broadcast)
-bus.Publish(irc.Event{
-Type:     irc.EventIRCMessage,
-ServerID: srv.ID,
-Channel:  "#test",
-Nick:     "BotReign",
-Data: map[string]string{
-"type":    "privmsg",
-"message": "#12   8x [700M] Unrelated.Game.2024.iso",
-},
-})
+	// Bot sends a parseable line that does NOT match "movie" (broadcast)
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "BotReign",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#12   8x [700M] Unrelated.Game.2024.iso",
+		},
+	})
 
-time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
-results, _ := store.GetSearchResults("movie", srv.ID, "#test")
-if len(results) != 0 {
-t.Fatalf("expected 0 results for irrelevant broadcast, got %d", len(results))
-}
+	results, _ := store.GetSearchResults("movie", srv.ID, "#test")
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results for irrelevant broadcast, got %d", len(results))
+	}
 }
 
 func TestParser_QueryRelevanceFilter_AcceptsRelevant(t *testing.T) {
-store, cleanup := newTestStore(t)
-defer cleanup()
+	store, cleanup := newTestStore(t)
+	defer cleanup()
 
-SeedPatterns(store)
+	SeedPatterns(store)
 
-bus := irc.NewEventBus()
-p := New(store, bus)
-p.Start()
-defer p.Stop()
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.Start()
+	defer p.Stop()
 
-srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
-store.CreateServer(srv)
+	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
 
-p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+	p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
 
-// Bot sends a parseable line that DOES match "movie"
-bus.Publish(irc.Event{
-Type:     irc.EventIRCMessage,
-ServerID: srv.ID,
-Channel:  "#test",
-Nick:     "BotReign",
-Data: map[string]string{
-"type":    "privmsg",
-"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
-},
-})
+	// Bot sends a parseable line that DOES match "movie"
+	bus.Publish(irc.Event{
+		Type:     irc.EventIRCMessage,
+		ServerID: srv.ID,
+		Channel:  "#test",
+		Nick:     "BotReign",
+		Data: map[string]string{
+			"type":    "privmsg",
+			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
+		},
+	})
 
-time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
-results, _ := store.GetSearchResults("movie", srv.ID, "#test")
-if len(results) != 1 {
-t.Fatalf("expected 1 result for relevant match, got %d", len(results))
-}
+	results, _ := store.GetSearchResults("movie", srv.ID, "#test")
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for relevant match, got %d", len(results))
+	}
 }
 
 func TestMessageMatchesQuery(t *testing.T) {
-tests := []struct {
-msg, query string
-want       bool
-}{
-{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie", true},
-{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "Movie", true},
-{"#5    34x [1.4G] Lord.of.the.Rings.mkv", "lord rings", true},
-{"#12   8x [700M] Unrelated.Game.2024.iso", "movie", false},
-{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie 2024", true},
-{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie 2025", false},
-}
-for _, tt := range tests {
-got := messageMatchesQuery(tt.msg, tt.query)
-if got != tt.want {
-t.Errorf("messageMatchesQuery(%q, %q) = %v, want %v", tt.msg, tt.query, got, tt.want)
-}
-}
+	tests := []struct {
+		msg, query string
+		want       bool
+	}{
+		{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie", true},
+		{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "Movie", true},
+		{"#5    34x [1.4G] Lord.of.the.Rings.mkv", "lord rings", true},
+		{"#12   8x [700M] Unrelated.Game.2024.iso", "movie", false},
+		{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie 2024", true},
+		{"#5    34x [1.4G] Some.Movie.2024.1080p.mkv", "movie 2025", false},
+	}
+	for _, tt := range tests {
+		got := messageMatchesQuery(tt.msg, tt.query)
+		if got != tt.want {
+			t.Errorf("messageMatchesQuery(%q, %q) = %v, want %v", tt.msg, tt.query, got, tt.want)
+		}
+	}
 }
 
 func TestParser_PassiveIndexingOnDownloadChannel(t *testing.T) {

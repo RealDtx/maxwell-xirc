@@ -49,23 +49,29 @@ type searchSession struct {
 const autoDetectThreshold = 2
 
 type Parser struct {
-	store                db.Store
-	bus                  *irc.EventBus
-	eventCh              <-chan irc.Event
-	stopCh               chan struct{}
-	mu                   sync.RWMutex
-	activeSessions       map[string]*searchSession // key: "serverID:channel"
-	sessionCounter       int64                     // monotonic counter for session ordering
-	botPatternCache      map[string]int64          // key: "serverID:channel:botNick", value: patternID
-	degradationThreshold int
+	store           db.Store
+	bus             *irc.EventBus
+	eventCh         <-chan irc.Event
+	stopCh          chan struct{}
+	mu              sync.RWMutex
+	activeSessions  map[string]*searchSession // key: "serverID:channel"
+	sessionCounter  int64                     // monotonic counter for session ordering
+	botPatternCache map[string]int64          // key: "serverID:channel:botNick", value: patternID
 
 	// dlChannels caches, per server, the set of realm download channels
 	// (lowercased) so the hot message path doesn't hit the DB for every line.
 	dlChannels map[int64]*dlChannelCache
+
+	// broadcastPatterns caches parse patterns per download channel for the
+	// passive-indexing path, which runs on every broadcast line forever. The
+	// interactive search path stays uncached so freshly trained patterns
+	// apply immediately.
+	broadcastPatterns map[string]*patternCache
 }
 
-// dlChannelCacheTTL bounds how stale the download-channel set can get after a
-// realm is edited. ponytail: TTL poll instead of realm-change invalidation.
+// dlChannelCacheTTL bounds how stale the download-channel set (and the
+// broadcast pattern set) can get after realms or patterns are edited.
+// ponytail: TTL poll instead of change invalidation.
 const dlChannelCacheTTL = time.Minute
 
 type dlChannelCache struct {
@@ -73,20 +79,21 @@ type dlChannelCache struct {
 	fetchedAt time.Time
 }
 
-func New(store db.Store, bus *irc.EventBus) *Parser {
-	return &Parser{
-		store:                store,
-		bus:                  bus,
-		stopCh:               make(chan struct{}),
-		activeSessions:       make(map[string]*searchSession),
-		botPatternCache:      make(map[string]int64),
-		degradationThreshold: 50,
-		dlChannels:           make(map[int64]*dlChannelCache),
-	}
+type patternCache struct {
+	patterns  []db.ParsePattern
+	fetchedAt time.Time
 }
 
-func (p *Parser) SetDegradationThreshold(n int) {
-	p.degradationThreshold = n
+func New(store db.Store, bus *irc.EventBus) *Parser {
+	return &Parser{
+		store:             store,
+		bus:               bus,
+		stopCh:            make(chan struct{}),
+		activeSessions:    make(map[string]*searchSession),
+		botPatternCache:   make(map[string]int64),
+		dlChannels:        make(map[int64]*dlChannelCache),
+		broadcastPatterns: make(map[string]*patternCache),
+	}
 }
 
 func (p *Parser) Start() {
@@ -376,7 +383,9 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		p.mu.Unlock()
 
 		// Update pattern match count (success only — no auto-disable on failure)
-		p.updatePatternStats(matchedPatternID, true)
+		if err := p.store.RecordPatternMatch(matchedPatternID); err != nil {
+			log.Printf("WARN: failed to record pattern match for id=%d: %v", matchedPatternID, err)
+		}
 	}
 
 	if result == nil {
@@ -470,11 +479,32 @@ func (p *Parser) isDownloadChannel(serverID int64, channel string) bool {
 	return c.channels[strings.ToLower(channel)]
 }
 
+// broadcastPatternsFor returns the parse patterns for a download channel,
+// cached with a TTL so the per-line cost is a map lookup.
+func (p *Parser) broadcastPatternsFor(serverID int64, channel string) ([]db.ParsePattern, error) {
+	key := sessionKey(serverID, channel)
+	p.mu.RLock()
+	c := p.broadcastPatterns[key]
+	p.mu.RUnlock()
+	if c != nil && time.Since(c.fetchedAt) <= dlChannelCacheTTL {
+		return c.patterns, nil
+	}
+
+	patterns, err := p.store.GetParsePatternsForChannel(serverID, channel)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	p.broadcastPatterns[key] = &patternCache{patterns: patterns, fetchedAt: time.Now()}
+	p.mu.Unlock()
+	return patterns, nil
+}
+
 // indexBroadcast parses a download-channel advertisement line and upserts it
 // into the persistent file index. Lines that don't parse to a pack number and
 // filename (bandwidth notices, slot announcements, chat) are ignored.
 func (p *Parser) indexBroadcast(ev irc.Event, message string) {
-	patterns, err := p.store.GetParsePatternsForChannel(ev.ServerID, ev.Channel)
+	patterns, err := p.broadcastPatternsFor(ev.ServerID, ev.Channel)
 	if err != nil {
 		log.Printf("failed to load parse patterns for broadcast indexing: %v", err)
 		return
@@ -501,43 +531,5 @@ func (p *Parser) indexBroadcast(ev irc.Event, message string) {
 		RawLine:        message,
 	}); err != nil {
 		log.Printf("failed to index broadcast from %s: %v", botNick, err)
-	}
-}
-
-func (p *Parser) updatePatternStats(patternID int64, matched bool) {
-	patterns, err := p.store.GetParsePatterns()
-	if err != nil {
-		return
-	}
-
-	for _, pat := range patterns {
-		if pat.ID != patternID {
-			continue
-		}
-
-		if matched {
-			pat.MatchCount++
-			pat.FailCount = 0
-			now := time.Now()
-			pat.LastMatchedAt = &now
-		} else {
-			pat.FailCount++
-			if pat.FailCount >= p.degradationThreshold {
-				pat.AutoDisabled = true
-				log.Printf("auto-disabled pattern %q (id=%d): %d consecutive failures", pat.Name, pat.ID, pat.FailCount)
-				p.bus.Publish(irc.Event{
-					Type: irc.EventNotification,
-					Data: map[string]string{
-						"severity": "warning",
-						"message":  fmt.Sprintf("Parse pattern %q auto-disabled after %d failures", pat.Name, pat.FailCount),
-					},
-				})
-			}
-		}
-
-		if err := p.store.UpdateParsePattern(&pat); err != nil {
-			log.Printf("WARN: failed to persist pattern stats for %q: %v", pat.Name, err)
-		}
-		break
 	}
 }

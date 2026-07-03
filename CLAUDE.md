@@ -19,4 +19,5 @@
 
 - The maxwell-irc server runs on port **8085**.
 - Do **not** start the server automatically — the user starts it manually (it connects to external IRC servers).
-- DB: `./data/maxwell-irc.db` (SQLite)
+- DB: `./data/xirc.db` (SQLite, per `config.yaml`). Running the binary without `config.yaml` falls back to the default `./data/maxwell-irc.db` — if a stray file of that name appears, something ran without the config.
+- Channel message logs: `./data/logs/<serverID>/#channel.log` — useful for validating parse patterns against real traffic.

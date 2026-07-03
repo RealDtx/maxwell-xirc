@@ -31,21 +31,21 @@ type ChannelPair struct {
 }
 
 type Connection struct {
-	mu                          sync.RWMutex
-	server                      *db.Server
-	realms                      []db.Realm
-	bus                         *EventBus
-	client                      IRCClient
-	status                      ConnectionStatus
-	stopCh                      chan struct{}
-	stopOnce                    sync.Once
-	connectedAt                 *time.Time
-	reconnectCount              int
-	lagMs                       int64
-	namesMu                     sync.Mutex
-	namesPending                map[string]chan []string // channel name -> result chan
-	pingDone                    chan struct{}
-	onDownloadChannelDetected   func(channel, detected string)
+	mu                        sync.RWMutex
+	server                    *db.Server
+	realms                    []db.Realm
+	bus                       *EventBus
+	client                    IRCClient
+	status                    ConnectionStatus
+	stopCh                    chan struct{}
+	stopOnce                  sync.Once
+	connectedAt               *time.Time
+	reconnectCount            int
+	lagMs                     int64
+	namesMu                   sync.Mutex
+	namesPending              map[string]chan []string // channel name -> result chan
+	pingDone                  chan struct{}
+	onDownloadChannelDetected func(channel, detected string)
 }
 
 // ConnectionStatusEvent is the Data payload for EventConnectionStatus events.

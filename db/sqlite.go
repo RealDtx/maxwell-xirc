@@ -829,6 +829,14 @@ func (s *SQLiteStore) CreateParsePattern(p *ParsePattern) error {
 	return nil
 }
 
+func (s *SQLiteStore) RecordPatternMatch(patternID int64) error {
+	_, err := s.db.Exec(
+		`UPDATE parse_patterns SET match_count=match_count+1, fail_count=0, last_matched_at=? WHERE id=?`,
+		time.Now().UTC(), patternID,
+	)
+	return err
+}
+
 func (s *SQLiteStore) UpdateParsePattern(p *ParsePattern) error {
 	_, err := s.db.Exec(
 		`UPDATE parse_patterns SET name=?, regex=?, field_mapping=?, priority=?, enabled=?, match_count=?, fail_count=?, last_matched_at=?, auto_disabled=?, tags=?, server_id=?, channel=? WHERE id=?`,

@@ -22,7 +22,14 @@ type PendingRequest struct {
 	DownloadID int64
 	ServerID   int64
 	BotNick    string
+	CreatedAt  time.Time
 }
+
+// pendingRequestTimeout is how long a dispatched XDCC request may wait for a
+// DCC SEND before the download is failed and the pending slot freed. Bots
+// legitimately queue requests when their slots are full, so this is generous.
+// ponytail: fixed 1h; make configurable if a realm's bots queue longer.
+const pendingRequestTimeout = time.Hour
 
 type Engine struct {
 	mu                 sync.RWMutex
@@ -96,8 +103,40 @@ func (e *Engine) RegisterPendingRequest(downloadID, serverID int64, botNick stri
 		DownloadID: downloadID,
 		ServerID:   serverID,
 		BotNick:    botNick,
+		CreatedAt:  time.Now(),
 	}
 	e.mu.Unlock()
+}
+
+// expirePendingRequests fails downloads whose XDCC request never got a DCC
+// SEND within pendingRequestTimeout, freeing the per-bot pending slot.
+func (e *Engine) expirePendingRequests() {
+	now := time.Now()
+	var expired []*PendingRequest
+	e.mu.Lock()
+	for key, pending := range e.pendingByBot {
+		if now.Sub(pending.CreatedAt) > pendingRequestTimeout {
+			delete(e.pendingByBot, key)
+			expired = append(expired, pending)
+		}
+	}
+	e.mu.Unlock()
+
+	for _, pending := range expired {
+		msg := fmt.Sprintf("no response from bot %s within %s", pending.BotNick, pendingRequestTimeout)
+		log.Printf("expiring pending XDCC request for download %d: %s", pending.DownloadID, msg)
+		if err := e.queue.MarkFailed(pending.DownloadID, msg); err != nil {
+			log.Printf("failed to mark download %d failed: %v", pending.DownloadID, err)
+		}
+		e.bus.Publish(irc.Event{
+			Type:     irc.EventNotification,
+			ServerID: pending.ServerID,
+			Data: map[string]string{
+				"severity": "warning",
+				"message":  fmt.Sprintf("Download timed out: %s", msg),
+			},
+		})
+	}
 }
 
 func (e *Engine) GetPendingRequest(serverID int64, botNick string) *PendingRequest {
@@ -129,10 +168,14 @@ func (e *Engine) Dispatch(dl *db.Download) error {
 }
 
 func (e *Engine) loop() {
+	sweep := time.NewTicker(time.Minute)
+	defer sweep.Stop()
 	for {
 		select {
 		case <-e.stopCh:
 			return
+		case <-sweep.C:
+			e.expirePendingRequests()
 		case ev, ok := <-e.eventCh:
 			if !ok {
 				return
@@ -622,7 +665,15 @@ func (e *Engine) checkBotHintMessage(serverID int64, botNick, message string) {
 	hints := []string{"passive", "firewall", "can't connect", "dcc rejected", "unable to connect"}
 	for _, hint := range hints {
 		if strings.Contains(msgLower, hint) {
-			pending := e.GetPendingRequest(serverID, botNick)
+			// Consume the pending slot — needs_action is terminal until the
+			// user intervenes, so don't leave it to the expiry sweeper.
+			e.mu.Lock()
+			key := pendingKey(serverID, botNick)
+			pending := e.pendingByBot[key]
+			if pending != nil {
+				delete(e.pendingByBot, key)
+			}
+			e.mu.Unlock()
 			if pending != nil {
 				e.queue.MarkNeedsAction(pending.DownloadID,
 					fmt.Sprintf("Bot message: %s", message))

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/RealDtx/maxwell-irc/config"
 	"github.com/RealDtx/maxwell-irc/db"
@@ -381,5 +382,48 @@ func TestEngine_ReconcilesIndexOnOfferAndInvalidPack(t *testing.T) {
 	}
 	if engine.GetPendingRequest(srv.ID, "BotNick") != nil {
 		t.Fatal("expected pending request cleared after invalid pack")
+	}
+}
+
+func TestEngine_ExpirePendingRequests(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+
+	bus := irc.NewEventBus()
+	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{}, 2)
+
+	stale, err := engine.queue.Add(1, "#chan", "SilentBot", 1, "never.mkv", 1, false, false)
+	if err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	fresh, err := engine.queue.Add(1, "#chan", "LiveBot", 2, "soon.mkv", 1, false, false)
+	if err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	engine.RegisterPendingRequest(stale.ID, 1, "SilentBot")
+	engine.RegisterPendingRequest(fresh.ID, 1, "LiveBot")
+
+	// Backdate the stale request past the timeout.
+	engine.mu.Lock()
+	engine.pendingByBot[pendingKey(1, "SilentBot")].CreatedAt = time.Now().Add(-pendingRequestTimeout - time.Minute)
+	engine.mu.Unlock()
+
+	engine.expirePendingRequests()
+
+	if engine.GetPendingRequest(1, "SilentBot") != nil {
+		t.Fatal("expected stale pending request to be removed")
+	}
+	if engine.GetPendingRequest(1, "LiveBot") == nil {
+		t.Fatal("expected fresh pending request to survive")
+	}
+	got, err := store.GetDownload(stale.ID)
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if got.Status != "failed" {
+		t.Fatalf("expected stale download failed, got %q", got.Status)
+	}
+	if freshDl, _ := store.GetDownload(fresh.ID); freshDl.Status == "failed" {
+		t.Fatal("fresh download must not be failed")
 	}
 }

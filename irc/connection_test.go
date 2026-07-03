@@ -17,18 +17,18 @@ type testIRCClient struct {
 	onRaw        func(line string)
 }
 
-func (c *testIRCClient) Connect() error                               { return nil }
-func (c *testIRCClient) Close()                                       {}
-func (c *testIRCClient) Join(channel, key string)                     {}
-func (c *testIRCClient) Part(channel string)                          {}
-func (c *testIRCClient) Privmsg(target, message string)               {}
-func (c *testIRCClient) Nick() string                                 { return "testbot" }
+func (c *testIRCClient) Connect() error                                  { return nil }
+func (c *testIRCClient) Close()                                          {}
+func (c *testIRCClient) Join(channel, key string)                        {}
+func (c *testIRCClient) Part(channel string)                             {}
+func (c *testIRCClient) Privmsg(target, message string)                  {}
+func (c *testIRCClient) Nick() string                                    { return "testbot" }
 func (c *testIRCClient) OnMessage(fn func(nick, target, message string)) { c.onMessage = fn }
 func (c *testIRCClient) OnNotice(fn func(nick, target, message string))  { c.onNotice = fn }
-func (c *testIRCClient) OnConnect(fn func())                          { c.onConnect = fn }
-func (c *testIRCClient) OnDisconnect(fn func())                       { c.onDisconnect = fn }
-func (c *testIRCClient) OnRaw(fn func(line string))                   { c.onRaw = fn }
-func (c *testIRCClient) SendLine(line string)                         {}
+func (c *testIRCClient) OnConnect(fn func())                             { c.onConnect = fn }
+func (c *testIRCClient) OnDisconnect(fn func())                          { c.onDisconnect = fn }
+func (c *testIRCClient) OnRaw(fn func(line string))                      { c.onRaw = fn }
+func (c *testIRCClient) SendLine(line string)                            {}
 
 func TestNewConnection_SetsFields(t *testing.T) {
 	bus := NewEventBus()

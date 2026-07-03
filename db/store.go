@@ -99,6 +99,9 @@ type Store interface {
 	GetAllParsePatterns() ([]ParsePattern, error)
 	// GetParsePatternsForChannel returns global patterns plus any scoped to the given server+channel.
 	GetParsePatternsForChannel(serverID int64, channel string) ([]ParsePattern, error)
+	// RecordPatternMatch increments a pattern's match counter and stamps
+	// last_matched_at in a single targeted update (hot path during searches).
+	RecordPatternMatch(patternID int64) error
 	UpdateParsePattern(p *ParsePattern) error
 	CreateParsePattern(p *ParsePattern) error
 

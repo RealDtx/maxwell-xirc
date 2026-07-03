@@ -34,10 +34,10 @@ type RawClient struct {
 	onDisconnect func()
 	onRaw        func(line string)
 
-	mu         sync.Mutex
-	conn       net.Conn
-	done       chan struct{}
-	closeOnce  sync.Once
+	mu        sync.Mutex
+	conn      net.Conn
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // RawClientConfig holds connection parameters.
@@ -67,12 +67,12 @@ func NewRawClient(cfg RawClientConfig) *RawClient {
 	}
 }
 
-func (c *RawClient) OnMessage(fn func(string, string, string))    { c.onMessage = fn }
-func (c *RawClient) OnNotice(fn func(string, string, string))     { c.onNotice = fn }
-func (c *RawClient) OnConnect(fn func())                          { c.onConnect = fn }
-func (c *RawClient) OnDisconnect(fn func())                       { c.onDisconnect = fn }
-func (c *RawClient) OnRaw(fn func(string))                        { c.onRaw = fn }
-func (c *RawClient) Nick() string                                 { return c.nick }
+func (c *RawClient) OnMessage(fn func(string, string, string)) { c.onMessage = fn }
+func (c *RawClient) OnNotice(fn func(string, string, string))  { c.onNotice = fn }
+func (c *RawClient) OnConnect(fn func())                       { c.onConnect = fn }
+func (c *RawClient) OnDisconnect(fn func())                    { c.onDisconnect = fn }
+func (c *RawClient) OnRaw(fn func(string))                     { c.onRaw = fn }
+func (c *RawClient) Nick() string                              { return c.nick }
 
 func (c *RawClient) dial() (net.Conn, error) {
 	if c.useTLS {
@@ -266,7 +266,7 @@ func (c *RawClient) SendLine(line string) {
 		return
 	}
 	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	fmt.Fprintf(conn, "%s\r\n", line) //nolint:errcheck
+	fmt.Fprintf(conn, "%s\r\n", line)  //nolint:errcheck
 	conn.SetWriteDeadline(time.Time{}) // clear deadline
 }
 

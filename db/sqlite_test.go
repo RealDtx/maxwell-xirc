@@ -1327,7 +1327,6 @@ func TestSQLiteStore_DeleteServer_CascadesToRelatedData(t *testing.T) {
 	}
 }
 
-
 func TestSQLiteStore_UpsertIndexedFile_EvictsRotatedPack(t *testing.T) {
 	store, cleanup := newTestSQLiteStore(t)
 	defer cleanup()

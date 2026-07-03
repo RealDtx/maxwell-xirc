@@ -29,13 +29,13 @@ func (m *mockStore) CreateServer(s *db.Server) error {
 	m.servers = append(m.servers, *s)
 	return nil
 }
-func (m *mockStore) UpdateServer(s *db.Server) error              { return nil }
-func (m *mockStore) DeleteServer(id int64) error                  { return nil }
-func (m *mockStore) GetRealms(serverID int64) ([]db.Realm, error) { return m.realms[serverID], nil }
-func (m *mockStore) GetRealm(id int64) (*db.Realm, error)         { return nil, nil }
-func (m *mockStore) CreateRealm(r *db.Realm) error                { return nil }
-func (m *mockStore) UpdateRealm(r *db.Realm) error                { return nil }
-func (m *mockStore) DeleteRealm(id int64) error                   { return nil }
+func (m *mockStore) UpdateServer(s *db.Server) error                     { return nil }
+func (m *mockStore) DeleteServer(id int64) error                         { return nil }
+func (m *mockStore) GetRealms(serverID int64) ([]db.Realm, error)        { return m.realms[serverID], nil }
+func (m *mockStore) GetRealm(id int64) (*db.Realm, error)                { return nil, nil }
+func (m *mockStore) CreateRealm(r *db.Realm) error                       { return nil }
+func (m *mockStore) UpdateRealm(r *db.Realm) error                       { return nil }
+func (m *mockStore) DeleteRealm(id int64) error                          { return nil }
 func (m *mockStore) UpdateRealmSearchBot(id int64, botNick string) error { return nil }
 func (m *mockStore) GetDownloads(status string) ([]db.Download, error) {
 	return nil, nil
@@ -53,18 +53,21 @@ func (m *mockStore) GetSearchResults(q string, sid int64, r string) ([]db.Search
 func (m *mockStore) GetAllSearchResults(q string, since *time.Time) ([]db.SearchResult, error) {
 	return nil, nil
 }
-func (m *mockStore) CreateSearchResult(r *db.SearchResult) error             { return nil }
+func (m *mockStore) CreateSearchResult(r *db.SearchResult) error { return nil }
 func (m *mockStore) DeleteSearchResults(serverID int64, channel string) error {
 	return nil
 }
-func (m *mockStore) GetSavedSearches() ([]db.SavedSearch, error)             { return nil, nil }
-func (m *mockStore) CreateSavedSearch(s *db.SavedSearch) error               { return nil }
-func (m *mockStore) DeleteSavedSearch(id int64) error                        { return nil }
-func (m *mockStore) GetParsePatterns() ([]db.ParsePattern, error)                                         { return nil, nil }
-func (m *mockStore) GetAllParsePatterns() ([]db.ParsePattern, error)                                      { return nil, nil }
-func (m *mockStore) GetParsePatternsForChannel(_ int64, _ string) ([]db.ParsePattern, error)              { return nil, nil }
-func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error                                          { return nil }
-func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error                                          { return nil }
+func (m *mockStore) GetSavedSearches() ([]db.SavedSearch, error)     { return nil, nil }
+func (m *mockStore) CreateSavedSearch(s *db.SavedSearch) error       { return nil }
+func (m *mockStore) DeleteSavedSearch(id int64) error                { return nil }
+func (m *mockStore) GetParsePatterns() ([]db.ParsePattern, error)    { return nil, nil }
+func (m *mockStore) GetAllParsePatterns() ([]db.ParsePattern, error) { return nil, nil }
+func (m *mockStore) GetParsePatternsForChannel(_ int64, _ string) ([]db.ParsePattern, error) {
+	return nil, nil
+}
+func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error { return nil }
+func (m *mockStore) RecordPatternMatch(patternID int64) error    { return nil }
+func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error { return nil }
 func (m *mockStore) GetPostHooks(scope string, scopeID *int64) ([]db.PostHook, error) {
 	return nil, nil
 }
@@ -95,12 +98,14 @@ func (m *mockStore) EvictStaleIndexedFiles(serverID int64, botNick string, packN
 func (m *mockStore) SearchIndexedFiles(query string, serverID int64, channel string, limit int) ([]db.IndexedFile, error) {
 	return nil, nil
 }
-func (m *mockStore) GetIndexStats(serverID int64) (*db.IndexStats, error) { return &db.IndexStats{}, nil }
-func (m *mockStore) ClearIndex(serverID int64) error                     { return nil }
+func (m *mockStore) GetIndexStats(serverID int64) (*db.IndexStats, error) {
+	return &db.IndexStats{}, nil
+}
+func (m *mockStore) ClearIndex(serverID int64) error                       { return nil }
 func (m *mockStore) PruneSearchResults(olderThan time.Time) (int64, error) { return 0, nil }
 func (m *mockStore) EnforceIndexCap(maxFiles int64) (int64, error)         { return 0, nil }
-func (m *mockStore) Close() error   { return nil }
-func (m *mockStore) Migrate() error { return nil }
+func (m *mockStore) Close() error                                          { return nil }
+func (m *mockStore) Migrate() error                                        { return nil }
 
 func TestManager_New(t *testing.T) {
 	store := &mockStore{
