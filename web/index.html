@@ -823,6 +823,9 @@
                         <div class="tab" :class="{ active: downloadFilter === 'completed' }" @click="downloadFilter = 'completed'">Completed</div>
                         <div class="tab" :class="{ active: downloadFilter === 'failed' }" @click="downloadFilter = 'failed'">Failed</div>
                     </div>
+                    <div class="search-bar" style="padding:6px 12px;border-bottom:1px solid var(--border);">
+                        <input type="text" x-model="downloadSearch" placeholder="Filter by filename or bot...">
+                    </div>
                     <!-- Bulk actions toolbar -->
                     <div style="display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
                         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);cursor:pointer;">
@@ -852,11 +855,12 @@
                                     <tr>
                                         <th style="width:28px;"></th>
                                         <th>Status</th>
-                                        <th>Filename</th>
-                                        <th>Bot</th>
-                                        <th>Size</th>
-                                        <th>Progress</th>
-                                        <th>Speed / Info</th>
+                                        <th @click="dlSortBy('filename')" x-text="'Filename' + dlSortIndicator('filename')"></th>
+                                        <th @click="dlSortBy('bot_nick')" x-text="'Bot' + dlSortIndicator('bot_nick')"></th>
+                                        <th @click="dlSortBy('filesize')" x-text="'Size' + dlSortIndicator('filesize')"></th>
+                                        <th @click="dlSortBy('progress')" x-text="'Progress' + dlSortIndicator('progress')"></th>
+                                        <th @click="dlSortBy('speed')" x-text="'Speed / Info' + dlSortIndicator('speed')"></th>
+                                        <th @click="dlSortBy('created_at')" x-text="'Date' + dlSortIndicator('created_at')"></th>
                                         <th>Time</th>
                                         <th></th>
                                     </tr>
@@ -900,6 +904,7 @@
                                                 </template>
                                             </td>
                                             <td x-text="dlSpeedInfo(dl)"></td>
+                                            <td x-text="fmtDate(dl.created_at)"></td>
                                             <td :title="dlTimeTooltip(dl)" x-text="dlTimeInfo(dl)"></td>
                                             <td style="white-space:nowrap;">
                                                 <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
