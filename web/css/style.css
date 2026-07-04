@@ -139,6 +139,7 @@ body {
     cursor: pointer;
     font-size: 13px;
     color: var(--text-primary);
+    background: var(--bg-tertiary);
 }
 .btn-primary { background: var(--accent); }
 .btn-primary:hover { background: var(--accent-hover); }
