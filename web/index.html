@@ -352,7 +352,7 @@
                                                     <button class="btn btn-sm"
                                                             :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!r.parsed || isDownloadPending(r)"
+                                                            :disabled="!canDownload(r) || isDownloadPending(r)"
                                                             x-text="downloadPackLabel(r)"></button>
                                                 </td>
                                             </tr>
@@ -397,7 +397,7 @@
                                                                 <button class="btn btn-sm"
                                                                         :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                                         @click="downloadPack(r)"
-                                                                        :disabled="!r.parsed || isDownloadPending(r)"
+                                                                        :disabled="!canDownload(r) || isDownloadPending(r)"
                                                                         x-text="downloadPackLabel(r)"></button>
                                                             </td>
                                                         </tr>
@@ -555,7 +555,7 @@
                                                         <button
                                                             :class="'btn btn-sm ' + (isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary')"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!r.parsed || isDownloadPending(r)"
+                                                            :disabled="!canDownload(r) || isDownloadPending(r)"
                                                             x-text="downloadPackLabel(r)"></button>
                                                     </td>
                                                 </tr>
@@ -715,7 +715,7 @@
                                                         <button
                                                             :class="'btn btn-sm ' + (isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary')"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!r.parsed || isDownloadPending(r)"
+                                                            :disabled="!canDownload(r) || isDownloadPending(r)"
                                                             x-text="downloadPackLabel(r)"></button>
                                                     </td>
                                                 </tr>

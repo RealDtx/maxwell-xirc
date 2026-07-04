@@ -969,6 +969,13 @@ document.addEventListener('alpine:init', () => {
             this._searchDisplayLimit += 200;
         },
 
+        canDownload(row) {
+            // Downloadable = we know whom to ask and which pack. Live search
+            // rows signal this via `parsed`; index rows have no such field,
+            // so check the actual prerequisites.
+            return !!(row.bot_nick && row.pack_number != null);
+        },
+
         downloadPack(row) {
             const key = (row.server_id || this.activeServer) + ':' + (row.bot_nick || '') + ':' + (row.pack_number || '');
             this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queuing' });
