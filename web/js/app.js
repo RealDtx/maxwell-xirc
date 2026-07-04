@@ -64,6 +64,8 @@ document.addEventListener('alpine:init', () => {
         searchViewMode: localStorage.getItem('mxirc_searchViewMode') || 'merged',
         downloads: [],
         downloadFilter: 'all',
+        downloadSearch: '',
+        dlSort: { col: 'created_at', dir: 'desc' },
         ircMessages: {},
         _msgVersion: 0,  // bumped whenever ircMessages or serverMessages change; forces x-for re-eval
         ircInput: '',
@@ -1200,10 +1202,60 @@ document.addEventListener('alpine:init', () => {
 
         // --- Downloads ---
 
+        dlSortBy(col) {
+            if (this.dlSort.col === col) {
+                this.dlSort.dir = this.dlSort.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.dlSort = { col: col, dir: 'asc' };
+            }
+        },
+
+        dlSortIndicator(col) {
+            if (this.dlSort.col !== col) return '';
+            return this.dlSort.dir === 'asc' ? ' ▲' : ' ▼';
+        },
+
+        dlSortValue(dl, col) {
+            if (col === 'filesize') return dl.filesize || dl.total_size || 0;
+            if (col === 'progress') return this.downloadProgress(dl);
+            if (col === 'speed') {
+                if (dl.status === 'downloading') return dl.speed || 0;
+                if (dl.status === 'completed') return dl.average_speed || 0;
+                return 0;
+            }
+            return dl[col] == null ? '' : dl[col];
+        },
+
         filteredDownloads() {
-            if (this.downloadFilter === 'all') return this.downloads;
-            if (this.downloadFilter === 'failed') return this.downloads.filter(d => d.status === 'failed' || d.status === 'needs_action');
-            return this.downloads.filter(d => d.status === this.downloadFilter);
+            var arr = this.downloads;
+            if (this.downloadFilter === 'failed') {
+                arr = arr.filter(d => d.status === 'failed' || d.status === 'needs_action');
+            } else if (this.downloadFilter !== 'all') {
+                arr = arr.filter(d => d.status === this.downloadFilter);
+            }
+            var q = this.downloadSearch.trim().toLowerCase();
+            if (q) {
+                arr = arr.filter(d =>
+                    (d.filename || '').toLowerCase().includes(q) ||
+                    (d.bot_nick || '').toLowerCase().includes(q)
+                );
+            }
+            var col = this.dlSort.col;
+            var dir = this.dlSort.dir;
+            arr = arr.slice().sort((a, b) => {
+                var av = this.dlSortValue(a, col);
+                var bv = this.dlSortValue(b, col);
+                var cmp;
+                if (typeof av === 'number' && typeof bv === 'number') {
+                    cmp = av - bv;
+                } else {
+                    av = String(av).toLowerCase();
+                    bv = String(bv).toLowerCase();
+                    cmp = av < bv ? -1 : av > bv ? 1 : 0;
+                }
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            return arr;
         },
 
         async loadDownloads() {
