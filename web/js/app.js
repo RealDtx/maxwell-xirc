@@ -174,7 +174,7 @@ document.addEventListener('alpine:init', () => {
 
         // Search mode: 'live' hits IRC bots; 'index' searches the persistent,
         // self-collected catalog built from past live searches (instant, offline).
-        searchMode: 'live',
+        searchMode: 'index',
         indexStats: { total_files: 0 },
 
         // Disk stats
@@ -892,18 +892,22 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        sortBy(col) {
-            if (this.searchSort.col === col) {
-                this.searchSort.dir = this.searchSort.dir === 'asc' ? 'desc' : 'asc';
+        _sortToggle(sort, col) {
+            if (sort.col === col) {
+                sort.dir = sort.dir === 'asc' ? 'desc' : 'asc';
             } else {
-                this.searchSort = { col: col, dir: 'asc' };
+                sort.col = col;
+                sort.dir = 'asc';
             }
         },
 
-        sortIndicator(col) {
-            if (this.searchSort.col !== col) return '';
-            return this.searchSort.dir === 'asc' ? ' ▲' : ' ▼';
+        _sortArrow(sort, col) {
+            if (sort.col !== col) return '';
+            return sort.dir === 'asc' ? ' ▲' : ' ▼';
         },
+
+        sortBy(col) { this._sortToggle(this.searchSort, col); },
+        sortIndicator(col) { return this._sortArrow(this.searchSort, col); },
 
         displaySearchRows() {
             var col = this.searchSort.col;
@@ -1202,20 +1206,11 @@ document.addEventListener('alpine:init', () => {
 
         // --- Downloads ---
 
-        dlSortBy(col) {
-            if (this.dlSort.col === col) {
-                this.dlSort.dir = this.dlSort.dir === 'asc' ? 'desc' : 'asc';
-            } else {
-                this.dlSort = { col: col, dir: 'asc' };
-            }
-        },
-
-        dlSortIndicator(col) {
-            if (this.dlSort.col !== col) return '';
-            return this.dlSort.dir === 'asc' ? ' ▲' : ' ▼';
-        },
+        dlSortBy(col) { this._sortToggle(this.dlSort, col); },
+        dlSortIndicator(col) { return this._sortArrow(this.dlSort, col); },
 
         dlSortValue(dl, col) {
+            if (col === 'created_at') return Date.parse(dl.created_at) || 0;
             if (col === 'filesize') return dl.filesize || dl.total_size || 0;
             if (col === 'progress') return this.downloadProgress(dl);
             if (col === 'speed') {
@@ -1240,6 +1235,13 @@ document.addEventListener('alpine:init', () => {
                     (d.bot_nick || '').toLowerCase().includes(q)
                 );
             }
+            return arr;
+        },
+
+        // ponytail: sort split from filteredDownloads so the x-if/toggle callers
+        // that only need membership don't pay the n log n sort each render
+        sortedDownloads() {
+            var arr = this.filteredDownloads();
             var col = this.dlSort.col;
             var dir = this.dlSort.dir;
             arr = arr.slice().sort((a, b) => {
@@ -1285,8 +1287,13 @@ document.addEventListener('alpine:init', () => {
         },
 
         downloadProgress(dl) {
-            if (!dl.total_size) return 0;
-            return Math.round((dl.bytes_received / dl.total_size) * 100);
+            if (dl.status === 'completed') return 100;
+            // total_size/bytes_received only exist after a WS progress event;
+            // API rows carry filesize/downloaded_bytes instead.
+            var total = dl.total_size || dl.filesize;
+            if (!total) return 0;
+            var got = dl.bytes_received != null ? dl.bytes_received : (dl.downloaded_bytes || 0);
+            return Math.round((got / total) * 100);
         },
 
         isArchive(filename) {
@@ -2249,6 +2256,7 @@ document.addEventListener('alpine:init', () => {
 
             // Load disk stats and refresh every 30 seconds
             await this.loadDiskStats();
+            this.loadIndexStats();
             var self = this;
             setInterval(function() { self.loadDiskStats(); }, 30000);
 

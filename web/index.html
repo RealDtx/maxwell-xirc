@@ -143,7 +143,7 @@
         <!-- Disk usage bar -->
         <div>
             <div class="disk-label"
-                 x-text="diskStats.length > 0 ? 'Disk ' + Math.round(diskStats[0].used_pct) + '%' : 'Disk'"></div>
+                 x-text="diskStats.length > 0 ? 'Disk ' + Math.round(diskStats[0].used_pct) + '% · ' + (diskStats[0].total_gb - diskStats[0].free_gb).toFixed(0) + '/' + diskStats[0].total_gb.toFixed(0) + ' GB' : 'Disk'"></div>
             <div class="disk-bar"
                  :title="diskStats.length > 0 ? diskStats[0].free_gb.toFixed(1) + ' GB free of ' + diskStats[0].total_gb.toFixed(1) + ' GB' : ''">
                 <div class="disk-bar-fill"
@@ -224,15 +224,15 @@
                         <div style="padding:10px 14px; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                             <div style="display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden;">
                                 <button class="btn btn-sm"
-                                        :class="searchMode === 'live' ? 'btn-primary' : ''"
-                                        style="border-radius:0;"
-                                        @click="setSearchMode('live')"
-                                        title="Send a live query to IRC search bots">Live</button>
-                                <button class="btn btn-sm"
                                         :class="searchMode === 'index' ? 'btn-primary' : ''"
                                         style="border-radius:0;"
                                         @click="setSearchMode('index')"
                                         title="Search the self-collected catalog instantly, offline">Index</button>
+                                <button class="btn btn-sm"
+                                        :class="searchMode === 'live' ? 'btn-primary' : ''"
+                                        style="border-radius:0;"
+                                        @click="setSearchMode('live')"
+                                        title="Send a live query to IRC search bots">Live</button>
                             </div>
                             <input type="text"
                                    x-model="searchQuery"
@@ -278,7 +278,7 @@
                             <div style="padding:2px 14px 8px; font-size:11px; color:var(--text-muted); display:flex; gap:8px; align-items:center;">
                                 <span x-text="(indexStats.total_files || 0) + ' file(s) indexed'"></span>
                                 <span>·</span>
-                                <button @click="clearSearchIndex()" style="background:none;border:none;color:var(--text-muted);text-decoration:underline;cursor:pointer;font-size:11px;padding:0;">Clear index</button>
+                                <button @click="clearSearchIndex()" class="btn btn-sm btn-danger" style="margin-left:auto;">Clear index</button>
                             </div>
                         </template>
                         <!-- Results -->
@@ -823,7 +823,7 @@
                         <div class="tab" :class="{ active: downloadFilter === 'completed' }" @click="downloadFilter = 'completed'">Completed</div>
                         <div class="tab" :class="{ active: downloadFilter === 'failed' }" @click="downloadFilter = 'failed'">Failed</div>
                     </div>
-                    <div class="search-bar" style="padding:6px 12px;border-bottom:1px solid var(--border);">
+                    <div class="search-bar" style="padding:6px 12px;margin-bottom:0;border-bottom:1px solid var(--border);">
                         <input type="text" x-model="downloadSearch" placeholder="Filter by filename or bot...">
                     </div>
                     <!-- Bulk actions toolbar -->
@@ -866,7 +866,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <template x-for="dl in filteredDownloads()" :key="dl.id">
+                                    <template x-for="dl in sortedDownloads()" :key="dl.id">
                                         <tr>
                                             <td>
                                                 <template x-if="dlIsClearable(dl)">
