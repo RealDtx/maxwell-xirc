@@ -140,6 +140,7 @@ document.addEventListener('alpine:init', () => {
         statsHistory: [],
         statsHistoryOffset: 0,
         statsLoading: false,
+        indexDetail: null,
 
         // Sidebar mobile
         sidebarOpen: false,
@@ -1630,13 +1631,15 @@ document.addEventListener('alpine:init', () => {
         async loadStats() {
             this.statsLoading = true;
             try {
-                const [summary, history] = await Promise.all([
+                const [summary, history, indexDetail] = await Promise.all([
                     api.getDownloadStats(),
                     api.getDownloadHistory(0, 50),
+                    api.getIndexStatsDetail(),
                 ]);
                 this.statsSummary = summary;
                 this.statsHistory = Array.isArray(history) ? history : [];
                 this.statsHistoryOffset = 50;
+                this.indexDetail = indexDetail;
             } catch(e) {
                 console.error('loadStats', e);
             } finally {

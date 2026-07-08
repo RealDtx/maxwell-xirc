@@ -103,6 +103,9 @@ const api = {
     clearIndex(serverId) {
         return this.post('/index/clear', { server_id: serverId || 0 });
     },
+    getIndexStatsDetail() {
+        return this.get('/index/stats/detail');
+    },
 
     // Downloads
     getDownloads(status)  { return this.get('/downloads' + (status ? '?status=' + status : '')); },

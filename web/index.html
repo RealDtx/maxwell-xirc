@@ -1559,6 +1559,74 @@
             <button @click="loadMoreHistory()"
                     x-show="statsHistory.length > 0 && statsHistory.length === statsHistoryOffset"
                     class="btn-secondary mt-3">Load more</button>
+
+            <!-- Search index stats -->
+            <h3 class="mt-3 mb-2">Search Index</h3>
+            <template x-if="indexDetail && indexDetail.channels.length === 0">
+                <div class="text-muted text-sm">Index is empty.</div>
+            </template>
+            <template x-if="indexDetail && indexDetail.channels.length > 0">
+                <div>
+                    <div style="overflow-x:auto;">
+                        <table class="w-full text-sm mb-4">
+                            <thead>
+                                <tr class="text-muted border-b">
+                                    <th class="text-left pb-2 pr-3">Server</th>
+                                    <th class="text-left pb-2 pr-3">Channel</th>
+                                    <th class="text-left pb-2 pr-3">Bots</th>
+                                    <th class="text-left pb-2 pr-3">Files</th>
+                                    <th class="text-left pb-2 pr-3">Advertised</th>
+                                    <th class="text-left pb-2">Last activity</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="c in indexDetail.channels" :key="c.server_id + c.channel">
+                                    <tr class="border-b hover-row">
+                                        <td class="py-1 pr-3 text-xs" x-text="getServerName(c.server_id)"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="c.channel"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="c.bots"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="c.files"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="formatSize(c.advertised_bytes)"></td>
+                                        <td class="py-1 text-muted text-xs" x-text="formatDate(c.last_seen_at)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-muted border-b">
+                                    <th class="text-left pb-2 pr-3">Server</th>
+                                    <th class="text-left pb-2 pr-3">Channel</th>
+                                    <th class="text-left pb-2 pr-3">Bot</th>
+                                    <th class="text-left pb-2 pr-3">Files</th>
+                                    <th class="text-left pb-2 pr-3">Advertised</th>
+                                    <th class="text-left pb-2 pr-3">Transfers</th>
+                                    <th class="text-left pb-2 pr-3">Avg speed</th>
+                                    <th class="text-left pb-2 pr-3">Peak speed</th>
+                                    <th class="text-left pb-2">Last seen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="b in indexDetail.bots" :key="b.server_id + b.channel + b.bot_nick">
+                                    <tr class="border-b hover-row">
+                                        <td class="py-1 pr-3 text-xs" x-text="getServerName(b.server_id)"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="b.channel"></td>
+                                        <td class="py-1 pr-3 text-xs font-mono" x-text="b.bot_nick"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="b.files"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="formatSize(b.advertised_bytes)"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="b.transfers || '—'"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="formatSpeed(b.avg_speed)"></td>
+                                        <td class="py-1 pr-3 text-xs" x-text="formatSpeed(b.peak_speed)"></td>
+                                        <td class="py-1 text-muted text-xs" x-text="formatDate(b.last_seen_at)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </template>
         </div>
 
         <!-- Home / Dashboard view -->
