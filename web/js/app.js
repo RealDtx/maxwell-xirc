@@ -1631,20 +1631,21 @@ document.addEventListener('alpine:init', () => {
         async loadStats() {
             this.statsLoading = true;
             try {
-                const [summary, history, indexDetail] = await Promise.all([
+                const [summary, history] = await Promise.all([
                     api.getDownloadStats(),
                     api.getDownloadHistory(0, 50),
-                    api.getIndexStatsDetail(),
                 ]);
                 this.statsSummary = summary;
                 this.statsHistory = Array.isArray(history) ? history : [];
                 this.statsHistoryOffset = 50;
-                this.indexDetail = indexDetail;
             } catch(e) {
                 console.error('loadStats', e);
             } finally {
                 this.statsLoading = false;
             }
+            api.getIndexStatsDetail()
+                .then(d => { this.indexDetail = d; })
+                .catch(e => { console.error('loadIndexStatsDetail', e); });
         },
 
         async loadMoreHistory() {

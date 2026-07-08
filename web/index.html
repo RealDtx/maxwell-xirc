@@ -1580,7 +1580,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <template x-for="c in indexDetail.channels" :key="c.server_id + c.channel">
+                                <template x-for="c in indexDetail.channels" :key="c.server_id + '/' + c.channel">
                                     <tr class="border-b hover-row">
                                         <td class="py-1 pr-3 text-xs" x-text="getServerName(c.server_id)"></td>
                                         <td class="py-1 pr-3 text-xs" x-text="c.channel"></td>
@@ -1609,7 +1609,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <template x-for="b in indexDetail.bots" :key="b.server_id + b.channel + b.bot_nick">
+                                <template x-for="b in indexDetail.bots" :key="b.server_id + '/' + b.channel + '/' + b.bot_nick">
                                     <tr class="border-b hover-row">
                                         <td class="py-1 pr-3 text-xs" x-text="getServerName(b.server_id)"></td>
                                         <td class="py-1 pr-3 text-xs" x-text="b.channel"></td>

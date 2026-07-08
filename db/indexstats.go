@@ -93,6 +93,8 @@ func rollupIndexStats(files []indexFileAggRow, transfers []botTransferAggRow) *I
 		}
 	}
 
+	// Transfer stats are keyed on (server, channel, bot); a download recorded under a
+	// different channel than the one the bot is indexed under intentionally shows no bandwidth here.
 	for _, tr := range transfers {
 		if b := bots[botKey{tr.ServerID, tr.Channel, tr.BotNick}]; b != nil {
 			b.Transfers = tr.Transfers
