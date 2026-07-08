@@ -180,6 +180,10 @@ func mysqlMigrationStatements() []string {
 		// Supports stale-entry eviction by bot+pack on every broadcast upsert.
 		`CREATE INDEX idx_indexed_files_bot_pack ON indexed_files(server_id, bot_nick(50), pack_number)`,
 
+		// Speeds up the index-stats aggregation; prefix lengths keep the key
+		// within InnoDB limits, still avoids the full-table sort.
+		`CREATE INDEX idx_indexed_files_agg ON indexed_files(server_id, channel(50), bot_nick(50), filesize(20), last_seen_at)`,
+
 		// FULLTEXT index for offline catalog search (requires MySQL 5.6+ /
 		// MariaDB 10.0.5+ InnoDB fulltext support). Note: MySQL's default
 		// fulltext stopword list and ft_min_word_len/innodb_ft_min_token_size

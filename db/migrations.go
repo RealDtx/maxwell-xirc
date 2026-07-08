@@ -168,6 +168,10 @@ func migrationStatements() []string {
 		`CREATE INDEX IF NOT EXISTS idx_indexed_files_filename ON indexed_files(filename)`,
 		// Supports stale-entry eviction by bot+pack on every broadcast upsert.
 		`CREATE INDEX IF NOT EXISTS idx_indexed_files_bot_pack ON indexed_files(server_id, bot_nick, pack_number)`,
+		// Covering index for the index-stats aggregation (GROUP BY server,
+		// channel, bot, filesize + MAX(last_seen_at)) — index-only scan
+		// instead of full scan + temp sort (~10s -> ~1s at 200K rows on a Pi).
+		`CREATE INDEX IF NOT EXISTS idx_indexed_files_agg ON indexed_files(server_id, channel, bot_nick, filesize, last_seen_at)`,
 
 		`CREATE INDEX IF NOT EXISTS idx_search_results_scope ON search_results(server_id, channel, parsed)`,
 		`CREATE INDEX IF NOT EXISTS idx_search_results_created_at ON search_results(created_at)`,
