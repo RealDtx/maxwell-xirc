@@ -75,6 +75,7 @@ func (s *Server) routes() {
 	// Index search endpoints (self-collected, offline search catalog)
 	s.mux.HandleFunc("/api/index/search", s.handleIndexSearch)
 	s.mux.HandleFunc("/api/index/stats", s.handleIndexStats)
+	s.mux.HandleFunc("/api/index/stats/detail", s.handleIndexStatsDetail)
 	s.mux.HandleFunc("/api/index/clear", s.handleClearIndex)
 
 	// Download endpoints

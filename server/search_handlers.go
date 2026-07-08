@@ -683,6 +683,23 @@ func (s *Server) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// handleIndexStatsDetail handles GET /api/index/stats/detail — per-channel
+// and per-bot aggregates over the persistent index, plus bandwidth observed
+// during completed downloads. Global across servers.
+func (s *Server) handleIndexStatsDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	detail, err := s.store.GetIndexStatsDetail()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
 // handleClearIndex handles POST /api/index/clear — deletes indexed files,
 // optionally scoped to one server (server_id absent or 0 clears all servers).
 func (s *Server) handleClearIndex(w http.ResponseWriter, r *http.Request) {
