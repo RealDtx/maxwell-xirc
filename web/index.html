@@ -276,7 +276,7 @@
                         </div>
                         <template x-if="searchMode === 'index'">
                             <div style="padding:2px 14px 8px; font-size:11px; color:var(--text-muted); display:flex; gap:8px; align-items:center;">
-                                <span x-text="(indexStats.total_files || 0) + ' file(s) indexed'"></span>
+                                <span x-text="(indexStats.total_files || 0) + ' file(s) · ' + (indexStats.total_bots || 0) + ' bot(s) · ' + (indexStats.total_channels || 0) + ' channel(s)'"></span>
                                 <span>·</span>
                                 <button @click="clearSearchIndex()" class="btn btn-sm btn-danger" style="margin-left:auto;">Clear index</button>
                             </div>
