@@ -37,6 +37,11 @@ func ParseSize(s string) (int64, error) {
 		{"GB", 1 << 30},
 		{"MB", 1 << 20},
 		{"KB", 1 << 10},
+		// Single-letter forms as used in XDCC ads ("1.4G", "700M").
+		{"T", 1 << 40},
+		{"G", 1 << 30},
+		{"M", 1 << 20},
+		{"K", 1 << 10},
 	}
 
 	for _, m := range multipliers {

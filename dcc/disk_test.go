@@ -99,3 +99,30 @@ func TestCheckDiskSpace_NonexistentDir(t *testing.T) {
 	}
 	_ = os.Remove("/nonexistent")
 }
+
+func TestParseSize_SingleLetterSuffixes(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+	}{
+		{"1.4G", 1503238553},                // 1.4 * (1<<30)
+		{"700M", 700 * (1 << 20)},
+		{"2T", 2 * (1 << 40)},
+		{"512K", 512 * (1 << 10)},
+		{"1.4g", 1503238553},                // 1.4 * (1<<30)
+		{"1GB", 1 << 30}, // two-letter form still works
+	}
+	for _, c := range cases {
+		got, err := ParseSize(c.in)
+		if err != nil {
+			t.Errorf("ParseSize(%q) error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("ParseSize(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+	if _, err := ParseSize(""); err == nil {
+		t.Error("ParseSize(\"\") should still error")
+	}
+}
