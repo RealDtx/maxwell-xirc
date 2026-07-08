@@ -70,16 +70,9 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send the XDCC request to the bot.
-	if dispatchErr := s.engine.Dispatch(dl); dispatchErr != nil {
-		log.Printf("download %d queued but dispatch failed: %v", dl.ID, dispatchErr)
-		// Return 201 with a warning so the UI can show a toast
-		writeJSON(w, http.StatusCreated, map[string]interface{}{
-			"download":         dl,
-			"dispatch_warning": dispatchErr.Error(),
-		})
-		return
-	}
+	// Dispatch via the queue pump so max_concurrent and the one-request-per-bot
+	// rule are respected; the download stays "queued" until a slot is free.
+	s.engine.TryDispatchQueued()
 
 	writeJSON(w, http.StatusCreated, dl)
 }
@@ -112,6 +105,7 @@ func (s *Server) handleCancelDownload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.engine.TryDispatchQueued() // cancelling may have freed a slot
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
@@ -143,6 +137,7 @@ func (s *Server) handleRetryDownload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.engine.TryDispatchQueued() // start the retried download if a slot is free
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
 }

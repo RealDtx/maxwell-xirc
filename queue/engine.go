@@ -42,6 +42,8 @@ type Engine struct {
 	eventCh            <-chan irc.Event
 	stopCh             chan struct{}
 	pendingByBot       map[string]*PendingRequest // key: "serverID:botNick"
+	maxConcurrent      int
+	pumpMu             sync.Mutex // serializes TryDispatchQueued
 	transferMu         sync.Mutex
 	activeTransfers    map[int64]*dcc.Transfer
 	cancelledTransfers map[int64]bool
@@ -51,6 +53,7 @@ type Engine struct {
 func NewEngine(store db.Store, bus *irc.EventBus, ircMgr *irc.Manager, storageCfg *config.StorageConfig, maxConcurrent int) *Engine {
 	return &Engine{
 		queue:              New(store, maxConcurrent),
+		maxConcurrent:      maxConcurrent,
 		store:              store,
 		bus:                bus,
 		ircMgr:             ircMgr,
@@ -167,6 +170,76 @@ func (e *Engine) Dispatch(dl *db.Download) error {
 	return nil
 }
 
+// selectDispatchable returns the queued downloads to dispatch now, oldest
+// first. Capacity is maxConcurrent minus inFlight (active transfers plus
+// pending XDCC requests), and each bot gets at most one in-flight request.
+// queued is expected newest-first (as GetDownloads returns it); busy is
+// keyed by pendingKey(serverID, botNick) and is extended in place.
+func selectDispatchable(queued []db.Download, busy map[string]bool, inFlight, maxConcurrent int) []*db.Download {
+	var out []*db.Download
+	for i := len(queued) - 1; i >= 0 && inFlight < maxConcurrent; i-- {
+		dl := queued[i]
+		key := pendingKey(dl.ServerID, dl.BotNick)
+		if busy[key] {
+			continue
+		}
+		busy[key] = true
+		inFlight++
+		out = append(out, &dl)
+	}
+	return out
+}
+
+// TryDispatchQueued sends XDCC requests for queued downloads while capacity
+// allows. It is called whenever a slot may have freed (transfer finished,
+// download cancelled/retried/requested) and from the minute sweep as a
+// safety net. Downloads whose dispatch fails (e.g. IRC not connected) stay
+// "queued" and are retried by the next pump.
+func (e *Engine) TryDispatchQueued() {
+	if e.ircMgr == nil {
+		return
+	}
+	e.pumpMu.Lock()
+	defer e.pumpMu.Unlock()
+
+	e.mu.Lock()
+	busy := make(map[string]bool, len(e.pendingByBot))
+	for key := range e.pendingByBot {
+		busy[key] = true
+	}
+	e.mu.Unlock()
+	inFlight := len(busy)
+
+	active, err := e.store.GetDownloads("downloading")
+	if err != nil {
+		log.Printf("queue pump: listing active downloads: %v", err)
+		return
+	}
+	for _, dl := range active {
+		key := pendingKey(dl.ServerID, dl.BotNick)
+		if !busy[key] {
+			busy[key] = true
+			inFlight++
+		}
+	}
+	if inFlight >= e.maxConcurrent {
+		return
+	}
+
+	queued, err := e.store.GetDownloads("queued")
+	if err != nil {
+		log.Printf("queue pump: listing queued downloads: %v", err)
+		return
+	}
+
+	for _, dl := range selectDispatchable(queued, busy, inFlight, e.maxConcurrent) {
+		if err := e.Dispatch(dl); err != nil {
+			log.Printf("queue pump: dispatch download %d (%s pack %d): %v",
+				dl.ID, dl.BotNick, dl.PackNumber, err)
+		}
+	}
+}
+
 func (e *Engine) loop() {
 	sweep := time.NewTicker(time.Minute)
 	defer sweep.Stop()
@@ -176,6 +249,9 @@ func (e *Engine) loop() {
 			return
 		case <-sweep.C:
 			e.expirePendingRequests()
+			// Safety-net pump: catches slots freed by paths without an
+			// explicit pump call and downloads queued while IRC was down.
+			e.TryDispatchQueued()
 		case ev, ok := <-e.eventCh:
 			if !ok {
 				return
@@ -348,6 +424,9 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		delete(e.cancelledTransfers, downloadID)
 		delete(e.activeDestPaths, filepath.Base(destPath))
 		e.transferMu.Unlock()
+		// This transfer freed a slot (completed, failed, or cancelled) —
+		// start the next queued download if any.
+		e.TryDispatchQueued()
 	}()
 
 	// Progress reporting goroutine
