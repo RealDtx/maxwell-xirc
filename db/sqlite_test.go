@@ -1382,3 +1382,39 @@ func TestSQLiteStore_UpsertIndexedFile_EvictsRotatedPack(t *testing.T) {
 		t.Fatalf("expected other bot's entry to survive, got %d", len(results))
 	}
 }
+
+func TestSQLiteStore_GetIndexStats_BotAndChannelCounts(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	size := "1.4G"
+	seed := []IndexedFile{
+		{ServerID: srv.ID, Channel: "#a", BotNick: "bot1", Filename: "f1.mkv", Filesize: &size, RawLine: "r"},
+		{ServerID: srv.ID, Channel: "#a", BotNick: "bot2", Filename: "f2.mkv", Filesize: &size, RawLine: "r"},
+		{ServerID: srv.ID, Channel: "#b", BotNick: "bot1", Filename: "f3.mkv", Filesize: &size, RawLine: "r"},
+	}
+	for i := range seed {
+		if err := store.UpsertIndexedFile(&seed[i]); err != nil {
+			t.Fatalf("UpsertIndexedFile failed: %v", err)
+		}
+	}
+
+	stats, err := store.GetIndexStats(0)
+	if err != nil {
+		t.Fatalf("GetIndexStats failed: %v", err)
+	}
+	if stats.TotalFiles != 3 {
+		t.Errorf("TotalFiles = %d, want 3", stats.TotalFiles)
+	}
+	if stats.TotalBots != 2 {
+		t.Errorf("TotalBots = %d, want 2", stats.TotalBots)
+	}
+	if stats.TotalChannels != 2 {
+		t.Errorf("TotalChannels = %d, want 2", stats.TotalChannels)
+	}
+}

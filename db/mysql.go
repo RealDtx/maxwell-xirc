@@ -794,10 +794,11 @@ func (s *MySQLStore) SearchIndexedFiles(query string, serverID int64, channel st
 func (s *MySQLStore) GetIndexStats(serverID int64) (*IndexStats, error) {
 	var stats IndexStats
 	var err error
+	const q = "SELECT COUNT(*), COUNT(DISTINCT bot_nick), COUNT(DISTINCT channel) FROM indexed_files"
 	if serverID != 0 {
-		err = s.db.QueryRow("SELECT COUNT(*) FROM indexed_files WHERE server_id=?", serverID).Scan(&stats.TotalFiles)
+		err = s.db.QueryRow(q+" WHERE server_id=?", serverID).Scan(&stats.TotalFiles, &stats.TotalBots, &stats.TotalChannels)
 	} else {
-		err = s.db.QueryRow("SELECT COUNT(*) FROM indexed_files").Scan(&stats.TotalFiles)
+		err = s.db.QueryRow(q).Scan(&stats.TotalFiles, &stats.TotalBots, &stats.TotalChannels)
 	}
 	if err != nil {
 		return nil, err

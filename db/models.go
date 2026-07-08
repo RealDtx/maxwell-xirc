@@ -148,7 +148,9 @@ type IndexedFile struct {
 }
 
 type IndexStats struct {
-	TotalFiles int64 `json:"total_files"`
+	TotalFiles    int64 `json:"total_files"`
+	TotalBots     int64 `json:"total_bots"`
+	TotalChannels int64 `json:"total_channels"`
 }
 
 type FileRoutingRule struct {

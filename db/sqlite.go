@@ -641,10 +641,11 @@ func (s *SQLiteStore) SearchIndexedFiles(query string, serverID int64, channel s
 func (s *SQLiteStore) GetIndexStats(serverID int64) (*IndexStats, error) {
 	var stats IndexStats
 	var err error
+	const q = "SELECT COUNT(*), COUNT(DISTINCT bot_nick), COUNT(DISTINCT channel) FROM indexed_files"
 	if serverID != 0 {
-		err = s.db.QueryRow("SELECT COUNT(*) FROM indexed_files WHERE server_id=?", serverID).Scan(&stats.TotalFiles)
+		err = s.db.QueryRow(q+" WHERE server_id=?", serverID).Scan(&stats.TotalFiles, &stats.TotalBots, &stats.TotalChannels)
 	} else {
-		err = s.db.QueryRow("SELECT COUNT(*) FROM indexed_files").Scan(&stats.TotalFiles)
+		err = s.db.QueryRow(q).Scan(&stats.TotalFiles, &stats.TotalBots, &stats.TotalChannels)
 	}
 	if err != nil {
 		return nil, err
