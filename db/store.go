@@ -82,6 +82,10 @@ type Store interface {
 	// ClearIndex deletes indexed files, optionally scoped to a single server
 	// (serverID=0 means all servers).
 	ClearIndex(serverID int64) error
+	// GetIndexStatsDetail returns per-channel and per-bot aggregates over
+	// the persistent index, enriched with bandwidth observed during
+	// completed downloads. Global (all servers); rows carry server_id.
+	GetIndexStatsDetail() (*IndexStatsDetail, error)
 	// PruneSearchResults deletes search_results rows older than olderThan.
 	// This is a time-based safety net: results are normally cleared per
 	// channel when a new search starts, but channels that stop being

@@ -816,6 +816,10 @@ func (s *MySQLStore) ClearIndex(serverID int64) error {
 	return err
 }
 
+func (s *MySQLStore) GetIndexStatsDetail() (*IndexStatsDetail, error) {
+	return queryIndexStatsDetail(s.db)
+}
+
 // PruneSearchResults is a time-based safety net for the ephemeral
 // search_results cache (which is normally cleared per-channel on the next
 // search, but channels that stop being searched would otherwise accumulate

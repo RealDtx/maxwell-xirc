@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"sort"
 
 	"github.com/RealDtx/maxwell-irc/dcc"
@@ -136,4 +137,46 @@ func rollupIndexStats(files []indexFileAggRow, transfers []botTransferAggRow) *I
 		return d.Channels[i].Channel < d.Channels[j].Channel
 	})
 	return d
+}
+
+// queryIndexStatsDetail runs the two aggregate queries and rolls them up.
+// The SQL is identical for SQLite and MySQL, so both stores share it.
+func queryIndexStatsDetail(dbc *sql.DB) (*IndexStatsDetail, error) {
+	rows, err := dbc.Query(`SELECT server_id, channel, bot_nick, COALESCE(filesize,''), COUNT(*), MAX(last_seen_at)
+		FROM indexed_files GROUP BY server_id, channel, bot_nick, filesize`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var files []indexFileAggRow
+	for rows.Next() {
+		var r indexFileAggRow
+		if err := rows.Scan(&r.ServerID, &r.Channel, &r.BotNick, &r.Filesize, &r.Count, &r.LastSeen); err != nil {
+			return nil, err
+		}
+		files = append(files, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	dlRows, err := dbc.Query(`SELECT server_id, channel, bot_nick, COUNT(*), COALESCE(AVG(average_speed),0), COALESCE(MAX(peak_speed),0)
+		FROM downloads WHERE status='completed' GROUP BY server_id, channel, bot_nick`)
+	if err != nil {
+		return nil, err
+	}
+	defer dlRows.Close()
+	var transfers []botTransferAggRow
+	for dlRows.Next() {
+		var r botTransferAggRow
+		if err := dlRows.Scan(&r.ServerID, &r.Channel, &r.BotNick, &r.Transfers, &r.AvgSpeed, &r.PeakSpeed); err != nil {
+			return nil, err
+		}
+		transfers = append(transfers, r)
+	}
+	if err := dlRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return rollupIndexStats(files, transfers), nil
 }

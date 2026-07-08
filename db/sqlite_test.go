@@ -1418,3 +1418,61 @@ func TestSQLiteStore_GetIndexStats_BotAndChannelCounts(t *testing.T) {
 		t.Errorf("TotalChannels = %d, want 2", stats.TotalChannels)
 	}
 }
+
+func TestSQLiteStore_GetIndexStatsDetail(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+
+	srv := &Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatalf("CreateServer failed: %v", err)
+	}
+
+	size := "1G"
+	seed := []IndexedFile{
+		{ServerID: srv.ID, Channel: "#a", BotNick: "bot1", Filename: "f1.mkv", Filesize: &size, RawLine: "r"},
+		{ServerID: srv.ID, Channel: "#a", BotNick: "bot1", Filename: "f2.mkv", Filesize: &size, RawLine: "r"},
+		{ServerID: srv.ID, Channel: "#a", BotNick: "bot2", Filename: "f3.mkv", RawLine: "r"}, // no size
+	}
+	for i := range seed {
+		if err := store.UpsertIndexedFile(&seed[i]); err != nil {
+			t.Fatalf("UpsertIndexedFile failed: %v", err)
+		}
+	}
+
+	dl := &Download{ServerID: srv.ID, Channel: "#a", BotNick: "bot1", PackNumber: 1, Filename: "f1.mkv", Status: "queued"}
+	if err := store.CreateDownload(dl); err != nil {
+		t.Fatalf("CreateDownload failed: %v", err)
+	}
+	if _, err := store.db.Exec(
+		"UPDATE downloads SET status='completed', average_speed=1000, peak_speed=2000 WHERE id=?", dl.ID); err != nil {
+		t.Fatalf("failed to mark download completed: %v", err)
+	}
+
+	d, err := store.GetIndexStatsDetail()
+	if err != nil {
+		t.Fatalf("GetIndexStatsDetail failed: %v", err)
+	}
+
+	if len(d.Channels) != 1 || d.Channels[0].Bots != 2 || d.Channels[0].Files != 3 {
+		t.Fatalf("Channels = %+v, want one #a row with 2 bots / 3 files", d.Channels)
+	}
+	if d.Channels[0].AdvertisedBytes != 2*(1<<30) {
+		t.Errorf("AdvertisedBytes = %d, want %d", d.Channels[0].AdvertisedBytes, 2*(1<<30))
+	}
+	if d.Channels[0].LastSeenAt == "" {
+		t.Error("channel LastSeenAt is empty")
+	}
+
+	if len(d.Bots) != 2 {
+		t.Fatalf("len(Bots) = %d, want 2", len(d.Bots))
+	}
+	// Sorted by files desc: bot1 (2 files) first.
+	if d.Bots[0].BotNick != "bot1" || d.Bots[0].Transfers != 1 ||
+		d.Bots[0].AvgSpeed != 1000 || d.Bots[0].PeakSpeed != 2000 {
+		t.Errorf("Bots[0] = %+v, want bot1 with 1 transfer @ 1000/2000", d.Bots[0])
+	}
+	if d.Bots[1].BotNick != "bot2" || d.Bots[1].Transfers != 0 {
+		t.Errorf("Bots[1] = %+v, want bot2 with no transfers", d.Bots[1])
+	}
+}
