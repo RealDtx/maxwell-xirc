@@ -49,7 +49,7 @@ func TestQueue_AddDownload(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl, err := q.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false, false, true)
+	dl, err := q.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -86,9 +86,9 @@ func TestQueue_NextReturnsOldestQueued(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotA", 3, "file3.txt", 4096, false, false, true)
+	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true, 3)
+	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048, false, false, true, 3)
+	_, _ = q.Add(1, "#channel", "BotA", 3, "file3.txt", 4096, false, false, true, 3)
 
 	next, err := q.NextAndMarkDownloading()
 	if err != nil {
@@ -108,9 +108,9 @@ func TestQueue_RespectsMaxConcurrent(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true)
-	dl3, _ := q.Add(1, "#channel", "BotC", 3, "file3.txt", 4096, false, false, true)
+	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true, 3)
+	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true, 3)
+	dl3, _ := q.Add(1, "#channel", "BotC", 3, "file3.txt", 4096, false, false, true, 3)
 
 	// Mark first two as downloading
 	_, _ = q.NextAndMarkDownloading()
@@ -148,9 +148,9 @@ func TestQueue_OnePerBot(t *testing.T) {
 	q := New(store, 10) // High concurrency limit
 
 	// Add three downloads from BotA
-	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048, false, false, true)
-	dl3, _ := q.Add(1, "#channel", "BotB", 3, "file3.txt", 4096, false, false, true)
+	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true, 3)
+	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048, false, false, true, 3)
+	dl3, _ := q.Add(1, "#channel", "BotB", 3, "file3.txt", 4096, false, false, true, 3)
 
 	// Mark first BotA download as downloading
 	_, _ = q.NextAndMarkDownloading()
@@ -174,7 +174,7 @@ func TestQueue_Cancel(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true, 3)
 
 	err := q.Cancel(dl.ID)
 	if err != nil {
@@ -193,7 +193,7 @@ func TestQueue_Retry(t *testing.T) {
 
 	q := New(store, 2)
 
-	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true, 3)
 	_, _ = q.NextAndMarkDownloading()
 	q.MarkFailed(dl.ID, "connection timeout")
 
@@ -226,8 +226,8 @@ func TestQueue_Reorder(t *testing.T) {
 
 	q := New(store, 3)
 
-	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	dl2, _ := q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true)
+	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true, 3)
+	dl2, _ := q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true, 3)
 
 	// MoveToFront dl2
 	err := q.MoveToFront(dl2.ID)
@@ -256,9 +256,9 @@ func TestQueue_MoveToFront_MultiplePromotions(t *testing.T) {
 	srv := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	dl1, _ := q.Add(srv.ID, "#t", "bot1", 1, "first.mkv", 100, false, false, true)
-	dl2, _ := q.Add(srv.ID, "#t", "bot2", 2, "second.mkv", 100, false, false, true)
-	dl3, _ := q.Add(srv.ID, "#t", "bot3", 3, "third.mkv", 100, false, false, true)
+	dl1, _ := q.Add(srv.ID, "#t", "bot1", 1, "first.mkv", 100, false, false, true, 3)
+	dl2, _ := q.Add(srv.ID, "#t", "bot2", 2, "second.mkv", 100, false, false, true, 3)
+	dl3, _ := q.Add(srv.ID, "#t", "bot3", 3, "third.mkv", 100, false, false, true, 3)
 
 	// Promote dl3 to front, then dl2 to front
 	// Expected order: dl2, dl3, dl1
@@ -287,7 +287,7 @@ func TestQueue_MarkNeedsAction(t *testing.T) {
 	defer cleanup()
 
 	q := New(store, 2)
-	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true, 3)
 
 	err := q.MarkNeedsAction(dl.ID, "manual captcha required")
 	if err != nil {
@@ -308,7 +308,7 @@ func TestQueue_UpdateProgress(t *testing.T) {
 	defer cleanup()
 
 	q := New(store, 2)
-	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true, 3)
 
 	err := q.UpdateProgress(dl.ID, 512, 200, 150)
 	if err != nil {
@@ -332,7 +332,7 @@ func TestQueue_UpdateDestinationPath(t *testing.T) {
 	defer cleanup()
 
 	q := New(store, 2)
-	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
+	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true, 3)
 
 	newPath := "/downloads/final/file.txt"
 	err := q.UpdateDestinationPath(dl.ID, newPath)
@@ -351,8 +351,8 @@ func TestQueue_RequeueInterrupted(t *testing.T) {
 	defer cleanup()
 
 	q := New(store, 3)
-	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true)
+	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true, 3)
+	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true, 3)
 
 	first, err := q.NextAndMarkDownloading()
 	if err != nil {
@@ -372,7 +372,7 @@ func TestQueue_RequeueInterrupted(t *testing.T) {
 
 	// A third download that finished its transfer but was interrupted during
 	// post-processing (routing/hooks/extraction) — the file itself is done.
-	third, _ := q.Add(1, "#channel", "BotC", 3, "file3.txt", 4096, false, false, true)
+	third, _ := q.Add(1, "#channel", "BotC", 3, "file3.txt", 4096, false, false, true, 3)
 	if err := q.MarkProcessing(third.ID, "/tmp/file3.txt"); err != nil {
 		t.Fatalf("MarkProcessing failed: %v", err)
 	}

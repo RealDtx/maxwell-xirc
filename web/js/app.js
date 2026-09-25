@@ -98,6 +98,7 @@ document.addEventListener('alpine:init', () => {
         appMode: localStorage.getItem('mxirc_mode') || 'simple',
         dateFormat: localStorage.getItem('mxirc_date_format') || 'DD-MM-YYYY HH:MM:SS',
         autoSubdir: localStorage.getItem('mxirc_auto_subdir') !== 'false',
+        subdirDepth: parseInt(localStorage.getItem('mxirc_subdir_depth') || '3', 10),
 
         // Channel configs map: channelKey -> download_channel
         _channelConfigs: {},
@@ -1011,6 +1012,7 @@ document.addEventListener('alpine:init', () => {
                 filesize: filesizeBytes,
                 stats_only: this.statsOnlyDefault,
                 auto_subdir: this.autoSubdir,
+                subdir_depth: this.subdirDepth,
             }).then(() => {
                 this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queued' });
                 this.loadDownloads();
@@ -1281,7 +1283,7 @@ document.addEventListener('alpine:init', () => {
             if (this._dlTargetsLoaded) return;
             this._dlTargetsLoaded = true;
             try {
-                const res = await api.getDownloadTargets();
+                const res = await api.getDownloadTargets(this.subdirDepth);
                 this.downloadTargets = Array.isArray(res) ? res : [];
             } catch (e) {
                 console.error('loadDownloadTargets error', e);
@@ -1304,6 +1306,13 @@ document.addEventListener('alpine:init', () => {
         toggleAutoExtract(dl, val) {
             dl.auto_extract = val;
             api.setAutoExtract(dl.id, val).catch(console.error);
+        },
+
+        setSubdirDepth(val) {
+            var n = Math.max(0, Math.min(5, parseInt(val, 10) || 0));
+            this.subdirDepth = n;
+            localStorage.setItem('mxirc_subdir_depth', n);
+            this._dlTargetsLoaded = false; // target list depends on depth
         },
 
         setTarget(dl, dir) {

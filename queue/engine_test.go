@@ -52,7 +52,7 @@ func TestEngine_HandlesDCCOffer(t *testing.T) {
 
 	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false, false, true)
+	dl, err := engine.queue.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -112,12 +112,12 @@ func TestEngine_QueueProcessing(t *testing.T) {
 	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
 
 	// Add downloads to queue
-	dl1, err := engine.queue.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
+	dl1, err := engine.queue.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	dl2, err := engine.queue.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true)
+	dl2, err := engine.queue.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestEngine_Start_RequeuesInterruptedDownloads(t *testing.T) {
 	}
 	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
+	dl, err := engine.queue.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestEngine_Dispatch_NoConnection(t *testing.T) {
 	}
 	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotNick", 123, "file.txt", 1000, false, false, true)
+	dl, err := engine.queue.Add(1, "#channel", "BotNick", 123, "file.txt", 1000, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestEngine_HandleMessage_MarksDownloadingBeforeTransfer(t *testing.T) {
 	}
 	engine := NewEngine(recStore, bus, ircMgr, storageCfg, 2)
 
-	dl, err := engine.queue.Add(1, "#channel", "BotNick", 5, "queued-name.mkv", 1, false, false, true)
+	dl, err := engine.queue.Add(1, "#channel", "BotNick", 5, "queued-name.mkv", 1, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestEngine_ReconcilesIndexOnOfferAndInvalidPack(t *testing.T) {
 	pack := 5
 	store.UpsertIndexedFile(&db.IndexedFile{ServerID: srv.ID, Channel: "#chan", BotNick: "BotNick", PackNumber: &pack, Filename: "Expected.mkv", RawLine: "ad"})
 
-	dl, err := engine.queue.Add(srv.ID, "#chan", "BotNick", pack, "Expected.mkv", 1, false, false, true)
+	dl, err := engine.queue.Add(srv.ID, "#chan", "BotNick", pack, "Expected.mkv", 1, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestEngine_ReconcilesIndexOnOfferAndInvalidPack(t *testing.T) {
 	}
 
 	// Bot reports the pack as invalid → download fails, index entry evicted.
-	dl2, err := engine.queue.Add(srv.ID, "#chan", "BotNick", pack, "Actual.mkv", 1, false, false, true)
+	dl2, err := engine.queue.Add(srv.ID, "#chan", "BotNick", pack, "Actual.mkv", 1, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -392,11 +392,11 @@ func TestEngine_ExpirePendingRequests(t *testing.T) {
 	bus := irc.NewEventBus()
 	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{}, 2)
 
-	stale, err := engine.queue.Add(1, "#chan", "SilentBot", 1, "never.mkv", 1, false, false, true)
+	stale, err := engine.queue.Add(1, "#chan", "SilentBot", 1, "never.mkv", 1, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
-	fresh, err := engine.queue.Add(1, "#chan", "LiveBot", 2, "soon.mkv", 1, false, false, true)
+	fresh, err := engine.queue.Add(1, "#chan", "LiveBot", 2, "soon.mkv", 1, false, false, true, 3)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}

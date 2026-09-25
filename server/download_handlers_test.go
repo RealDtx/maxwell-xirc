@@ -207,3 +207,55 @@ func TestGetDownloads_MethodNotAllowed(t *testing.T) {
 		t.Errorf("expected 405, got %d", w.Code)
 	}
 }
+
+func TestIsValidTargetDir(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	root, err := ioutil.TempDir("", "xirc-targets-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(root)
+	outside, err := ioutil.TempDir("", "xirc-outside-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(outside)
+
+	for _, d := range []string{"Series/Show/Season 1", ".hidden/x", "a/b/c/d/e/f"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateFileRoutingRule(&db.FileRoutingRule{Pattern: "*", DestinationDir: root, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		dir  string
+		want bool
+	}{
+		{root, true},
+		{filepath.Join(root, "Series/Show/Season 1"), true},
+		{filepath.Join(root, "Series/../Series/Show"), true},
+		{filepath.Join(root, "missing"), false},
+		{filepath.Join(root, ".hidden/x"), false},
+		{filepath.Join(root, "a/b/c/d/e/f"), false}, // deeper than MaxSubdirDepth
+		{filepath.Join(root, "escape"), false},      // symlink outside the root
+		{outside, false},
+		{filepath.Dir(root), false},
+	}
+	for _, tt := range tests {
+		got, err := srv.isValidTargetDir(filepath.Clean(tt.dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tt.want {
+			t.Errorf("isValidTargetDir(%q) = %v, want %v", tt.dir, got, tt.want)
+		}
+	}
+}

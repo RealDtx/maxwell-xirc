@@ -543,7 +543,7 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		} else if ruleDir := routing.MatchRule(offer.Filename, rules); ruleDir != "" {
 			destDir = ruleDir
 			if dlErr == nil && dl != nil && dl.AutoSubdir {
-				destDir = routing.InferSubdir(ruleDir, offer.Filename)
+				destDir = routing.InferSubdir(ruleDir, offer.Filename, dl.SubdirDepth)
 			}
 		}
 		if destDir != "" {

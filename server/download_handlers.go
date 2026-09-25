@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/routing"
 )
 
 func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +49,7 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		StatsOnly   bool   `json:"stats_only"`
 		AutoExtract *bool  `json:"auto_extract"`
 		AutoSubdir  *bool  `json:"auto_subdir"`
+		SubdirDepth *int   `json:"subdir_depth"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -70,8 +74,12 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 	if req.AutoSubdir != nil {
 		autoSubdir = *req.AutoSubdir
 	}
+	subdirDepth := routing.DefaultSubdirDepth
+	if req.SubdirDepth != nil {
+		subdirDepth = clampSubdirDepth(*req.SubdirDepth)
+	}
 
-	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly, autoExtract, autoSubdir)
+	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly, autoExtract, autoSubdir, subdirDepth)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -291,58 +299,106 @@ func (s *Server) handleSetAutoExtract(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"auto_extract": req.AutoExtract})
 }
 
-// downloadTargets returns, sorted, every distinct enabled routing
-// destination dir plus its immediate non-hidden subdirectories. This is the
-// trust boundary for handleSetDownloadTarget: only paths in this list may be
-// stored as a download's target_dir.
-func (s *Server) downloadTargets() ([]string, error) {
+func clampSubdirDepth(d int) int {
+	if d < 0 {
+		return 0
+	}
+	if d > routing.MaxSubdirDepth {
+		return routing.MaxSubdirDepth
+	}
+	return d
+}
+
+// enabledRoutingDirs returns the distinct destination dirs of enabled routing rules.
+func (s *Server) enabledRoutingDirs() ([]string, error) {
 	rules, err := s.store.GetAllFileRoutingRules()
 	if err != nil {
 		return nil, err
 	}
 	seen := make(map[string]bool)
-	var targets []string
+	var dirs []string
 	for _, rule := range rules {
-		if !rule.Enabled || rule.DestinationDir == "" || seen[rule.DestinationDir] {
-			continue
-		}
-		seen[rule.DestinationDir] = true
-		targets = append(targets, rule.DestinationDir)
-
-		entries, err := readDirEntries(rule.DestinationDir)
-		if err != nil {
-			continue // skip dirs that fail to read
-		}
-		for _, entry := range entries {
-			if !entry.IsDir {
-				continue
-			}
-			sub := filepath.Join(rule.DestinationDir, entry.Name)
-			if seen[sub] {
-				continue
-			}
-			seen[sub] = true
-			targets = append(targets, sub)
+		if rule.Enabled && rule.DestinationDir != "" && !seen[rule.DestinationDir] {
+			seen[rule.DestinationDir] = true
+			dirs = append(dirs, rule.DestinationDir)
 		}
 	}
-	sort.Strings(targets)
-	return targets, nil
+	return dirs, nil
 }
 
+// GET /api/downloads/targets?depth=3 — every enabled routing destination dir
+// plus its non-hidden subfolders down to depth levels, sorted.
 func (s *Server) handleGetDownloadTargets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	targets, err := s.downloadTargets()
+	depth := routing.DefaultSubdirDepth
+	if v, err := strconv.Atoi(r.URL.Query().Get("depth")); err == nil {
+		depth = clampSubdirDepth(v)
+	}
+	dirs, err := s.enabledRoutingDirs()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if targets == nil {
-		targets = []string{}
+	seen := make(map[string]bool)
+	targets := []string{}
+	for _, dir := range dirs {
+		for _, t := range append([]string{dir}, routing.ListSubdirs(dir, depth)...) {
+			if !seen[t] {
+				seen[t] = true
+				targets = append(targets, t)
+			}
+		}
 	}
+	sort.Strings(targets)
 	writeJSON(w, http.StatusOK, targets)
+}
+
+// isValidTargetDir is the trust boundary for handleSetDownloadTarget: dir must
+// be an existing directory at or below an enabled routing destination, at most
+// MaxSubdirDepth levels down, with no hidden path components.
+func (s *Server) isValidTargetDir(dir string) (bool, error) {
+	roots, err := s.enabledRoutingDirs()
+	if err != nil {
+		return false, err
+	}
+	// Resolve symlinks on both sides so a link can't point outside the roots.
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false, nil
+	}
+	for _, root := range roots {
+		root, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(root, dir)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		parts := strings.Split(rel, string(filepath.Separator))
+		if rel == "." {
+			parts = nil
+		}
+		if len(parts) > routing.MaxSubdirDepth {
+			continue
+		}
+		hidden := false
+		for _, p := range parts {
+			if strings.HasPrefix(p, ".") {
+				hidden = true
+			}
+		}
+		if hidden {
+			continue
+		}
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Server) handleSetDownloadTarget(w http.ResponseWriter, r *http.Request) {
@@ -366,20 +422,13 @@ func (s *Server) handleSetDownloadTarget(w http.ResponseWriter, r *http.Request)
 	targetDir := req.TargetDir
 	if targetDir != "" {
 		targetDir = filepath.Clean(targetDir)
-		targets, err := s.downloadTargets()
+		valid, err := s.isValidTargetDir(targetDir)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		valid := false
-		for _, t := range targets {
-			if t == targetDir {
-				valid = true
-				break
-			}
-		}
 		if !valid {
-			writeError(w, http.StatusBadRequest, "target_dir must be \"\" or match a known routing destination/subfolder")
+			writeError(w, http.StatusBadRequest, "target_dir must be \"\" or a folder below a routing destination")
 			return
 		}
 	}

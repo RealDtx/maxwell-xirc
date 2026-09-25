@@ -151,6 +151,7 @@ func migrationStatements() []string {
 
 		`ALTER TABLE downloads ADD COLUMN target_dir TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE downloads ADD COLUMN auto_subdir BOOLEAN NOT NULL DEFAULT TRUE`,
+		`ALTER TABLE downloads ADD COLUMN subdir_depth INTEGER NOT NULL DEFAULT 3`,
 
 		`CREATE TABLE IF NOT EXISTS indexed_files (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

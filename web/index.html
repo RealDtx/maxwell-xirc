@@ -1329,7 +1329,18 @@
                                     Auto-pick subfolder from filename
                                 </label>
                                 <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
-                                    When no folder is chosen, a subfolder of the routing destination whose name matches the start of the filename is used.
+                                    When no folder is chosen, the subfolder of the routing destination whose name matches the start of the filename is used
+                                    (e.g. <code>Series/Scrubs</code>), and inside it an existing season folder
+                                    (<code>Season 4</code>, <code>S04</code>, <code>Staffel 4</code>) matching the filename's <code>S04E…</code>.
+                                </p>
+                                <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;">
+                                    Folder levels to search
+                                    <input type="number" min="0" max="5" :value="subdirDepth"
+                                           @change="setSubdirDepth($event.target.value); $event.target.value = subdirDepth"
+                                           style="width:60px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;">
+                                </label>
+                                <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
+                                    How deep below each routing destination to look for matching folders and to list folders in the download target dropdown (0–5).
                                 </p>
                             </div>
                         </div>

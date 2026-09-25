@@ -6,7 +6,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/RealDtx/maxwell-irc/db"
@@ -72,34 +74,88 @@ func MoveFile(srcPath, destDir string) (string, error) {
 	return destPath, nil
 }
 
-// InferSubdir picks the immediate subdirectory of ruleDir whose name best
-// matches filename, so e.g. "Scrubs.2026.S01E02.mkv" lands in an existing
-// "Scrubs" subfolder instead of directly in ruleDir. Both names are
-// normalized (lowercased, [a-z0-9] only) and the subdir whose normalized
-// name is the longest prefix of the normalized filename wins; a minimum
-// normalized length of 3 avoids short false positives (e.g. "S1"). Hidden
-// directories are skipped. Falls back to ruleDir when the dir can't be read
-// or no subdir qualifies.
-// ponytail: prefix match only; fuzzy/series parsing if prefixes miss too often
-func InferSubdir(ruleDir, filename string) string {
-	entries, err := os.ReadDir(ruleDir)
-	if err != nil {
-		return ruleDir
+// DefaultSubdirDepth and MaxSubdirDepth bound how many folder levels below a
+// routing destination are listed as targets and searched by InferSubdir.
+const (
+	DefaultSubdirDepth = 3
+	MaxSubdirDepth     = 5
+)
+
+// ListSubdirs returns every non-hidden directory below root down to depth
+// levels, breadth-first (shallower dirs first). root itself is not included.
+func ListSubdirs(root string, depth int) []string {
+	var out []string
+	level := []string{root}
+	for d := 0; d < depth && len(level) > 0; d++ {
+		var next []string
+		for _, dir := range level {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					next = append(next, filepath.Join(dir, e.Name()))
+				}
+			}
+		}
+		out = append(out, next...)
+		level = next
 	}
+	return out
+}
+
+var (
+	// Season number in a release name: "S04E10", "S04.", "Season 4", "Staffel 4".
+	seasonInFilename = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(?:s|season|staffel)[ ._-]?(\d{1,3})(?:e\d|[^a-z0-9]|$)`)
+	// Season folder names: "S04", "S4", "Season 4", "Season.04", "Staffel 4".
+	seasonDirName = regexp.MustCompile(`(?i)^(?:s|season|staffel)[ ._-]*(\d{1,3})$`)
+)
+
+// InferSubdir picks the folder below ruleDir (up to depth levels) whose name
+// best matches filename, so "Scrubs.2026.S01E02.mkv" lands in an existing
+// ".../Series/Scrubs" folder, and further in its "Season 1"/"S01" subfolder
+// when one exists. Names are normalized (lowercased, [a-z0-9] only); the
+// folder whose normalized name is the longest prefix of the normalized
+// filename wins (shallower wins ties), with a minimum length of 3 to avoid
+// short false positives. Falls back to ruleDir when nothing matches.
+// ponytail: prefix match only; fuzzy/series parsing if prefixes miss too often
+func InferSubdir(ruleDir, filename string, depth int) string {
 	normFilename := normalizeSubdirName(filename)
 	best := ruleDir
 	bestLen := 2 // matched name must be longer than this (min length 3)
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		normName := normalizeSubdirName(e.Name())
+	for _, dir := range ListSubdirs(ruleDir, depth) {
+		normName := normalizeSubdirName(filepath.Base(dir))
 		if len(normName) > bestLen && strings.HasPrefix(normFilename, normName) {
-			best = filepath.Join(ruleDir, e.Name())
+			best = dir
 			bestLen = len(normName)
 		}
 	}
+	if best == ruleDir {
+		return ruleDir // no show folder, so don't guess a season folder either
+	}
+	if season := seasonSubdir(best, filename); season != "" {
+		return season
+	}
 	return best
+}
+
+// seasonSubdir returns the existing season folder inside showDir matching the
+// season number in filename, or "" if the filename has none or no folder matches.
+func seasonSubdir(showDir, filename string) string {
+	m := seasonInFilename.FindStringSubmatch(filename)
+	if m == nil {
+		return ""
+	}
+	want, _ := strconv.Atoi(m[1])
+	for _, dir := range ListSubdirs(showDir, 1) {
+		if dm := seasonDirName.FindStringSubmatch(filepath.Base(dir)); dm != nil {
+			if n, _ := strconv.Atoi(dm[1]); n == want {
+				return dir
+			}
+		}
+	}
+	return ""
 }
 
 func normalizeSubdirName(s string) string {
