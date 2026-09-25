@@ -66,6 +66,8 @@ document.addEventListener('alpine:init', () => {
         downloadFilter: 'all',
         downloadSearch: '',
         dlSort: { col: 'created_at', dir: 'desc' },
+        downloadTargets: [],
+        _dlTargetsLoaded: false,
         ircMessages: {},
         _msgVersion: 0,  // bumped whenever ircMessages or serverMessages change; forces x-for re-eval
         ircInput: '',
@@ -95,6 +97,7 @@ document.addEventListener('alpine:init', () => {
         // Mode
         appMode: localStorage.getItem('mxirc_mode') || 'simple',
         dateFormat: localStorage.getItem('mxirc_date_format') || 'DD-MM-YYYY HH:MM:SS',
+        autoSubdir: localStorage.getItem('mxirc_auto_subdir') !== 'false',
 
         // Channel configs map: channelKey -> download_channel
         _channelConfigs: {},
@@ -1007,6 +1010,7 @@ document.addEventListener('alpine:init', () => {
                 filename: row.filename || '',
                 filesize: filesizeBytes,
                 stats_only: this.statsOnlyDefault,
+                auto_subdir: this.autoSubdir,
             }).then(() => {
                 this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queued' });
                 this.loadDownloads();
@@ -1226,6 +1230,8 @@ document.addEventListener('alpine:init', () => {
             var arr = this.downloads;
             if (this.downloadFilter === 'failed') {
                 arr = arr.filter(d => d.status === 'failed' || d.status === 'needs_action');
+            } else if (this.downloadFilter === 'downloading') {
+                arr = arr.filter(d => d.status === 'downloading' || d.status === 'processing');
             } else if (this.downloadFilter !== 'all') {
                 arr = arr.filter(d => d.status === this.downloadFilter);
             }
@@ -1268,6 +1274,19 @@ document.addEventListener('alpine:init', () => {
             } catch (e) {
                 console.error('loadDownloads error', e);
             }
+            this.loadDownloadTargets();
+        },
+
+        async loadDownloadTargets() {
+            if (this._dlTargetsLoaded) return;
+            this._dlTargetsLoaded = true;
+            try {
+                const res = await api.getDownloadTargets();
+                this.downloadTargets = Array.isArray(res) ? res : [];
+            } catch (e) {
+                console.error('loadDownloadTargets error', e);
+                this._dlTargetsLoaded = false;
+            }
         },
 
         cancelDownload(id) {
@@ -1287,8 +1306,13 @@ document.addEventListener('alpine:init', () => {
             api.setAutoExtract(dl.id, val).catch(console.error);
         },
 
+        setTarget(dl, dir) {
+            dl.target_dir = dir;
+            api.setDownloadTarget(dl.id, dir).catch(console.error);
+        },
+
         downloadProgress(dl) {
-            if (dl.status === 'completed') return 100;
+            if (dl.status === 'completed' || dl.status === 'processing') return 100;
             // total_size/bytes_received only exist after a WS progress event;
             // API rows carry filesize/downloaded_bytes instead.
             var total = dl.total_size || dl.filesize;
@@ -1306,6 +1330,10 @@ document.addEventListener('alpine:init', () => {
 
         dlSpeedInfo(dl) {
             if (dl.status === 'downloading') return dl.speed ? formatSpeed(dl.speed) : '-';
+            if (dl.status === 'processing') {
+                var phaseText = { moving: 'Moving…', hooks: 'Running hooks…', extracting: 'Extracting…' };
+                return phaseText[dl.phase] || 'Finishing…';
+            }
             if (dl.status === 'completed') {
                 return dl.average_speed ? formatSpeed(dl.average_speed) : '-';
             }
@@ -1506,7 +1534,9 @@ document.addEventListener('alpine:init', () => {
                     dl.bytes_received = p.bytes_received;
                     dl.total_size = p.total_size;
                     dl.speed = p.speed;
-                    if (dl.status !== 'downloading') {
+                    // A late progress event must not pull a 'processing'/'completed'
+                    // row back to 'downloading' — only a still-queued row flips.
+                    if (dl.status === 'queued') {
                         dl.status = 'downloading';
                     }
                 } else {
@@ -1514,8 +1544,16 @@ document.addEventListener('alpine:init', () => {
                     this.loadDownloads();
                 }
             } else if (type === 'download_status') {
-                const dlStatus = data.data && data.data.status;
-                if (dlStatus === 'completed' || dlStatus === 'failed' || dlStatus === 'cancelled' || dlStatus === 'needs_action') {
+                const sd = data.data || {};
+                if (sd.status === 'processing') {
+                    const dl = this.downloads.find(d => d.id === sd.download_id);
+                    if (dl) {
+                        dl.status = 'processing';
+                        dl.phase = sd.phase;
+                    } else {
+                        this.loadDownloads();
+                    }
+                } else if (sd.status === 'completed' || sd.status === 'failed' || sd.status === 'cancelled' || sd.status === 'needs_action') {
                     this.loadDownloads();
                 }
             } else if (type === 'realm_updated') {

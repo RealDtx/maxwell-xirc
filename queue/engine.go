@@ -498,36 +498,55 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		return
 	}
 
-	e.queue.MarkCompleted(downloadID, destPath, tr.PeakSpeed(), tr.AverageSpeed())
+	// The DCC transfer is done. Mark "processing" (not counted as active, so
+	// the freed slot can be reused immediately) and publish it so the UI
+	// stops showing "downloading" while routing/hooks/extraction run.
+	if err := e.queue.MarkProcessing(downloadID, destPath); err != nil {
+		log.Printf("failed to mark download %d processing: %v", downloadID, err)
+	}
+	e.bus.Publish(irc.Event{
+		Type: irc.EventDownloadStatus,
+		Data: map[string]interface{}{
+			"download_id": downloadID,
+			"status":      "processing",
+			"phase":       "moving",
+		},
+	})
+	e.TryDispatchQueued()
 
-	// Record download stat
-	if dl, dlErr := e.store.GetDownload(downloadID); dlErr == nil && dl != nil {
-		now := time.Now()
-		stat := &db.DownloadStat{
-			Filename:    dl.Filename,
-			SizeBytes:   dl.Filesize,
-			ServerID:    dl.ServerID,
-			Channel:     dl.Channel,
-			BotNick:     dl.BotNick,
-			PackNumber:  dl.PackNumber,
-			StartedAt:   dl.StartedAt,
-			CompletedAt: &now,
-			Status:      dl.Status,
-			StatsOnly:   dl.StatsOnly,
-		}
-		if dl.StatsOnly && dl.Status == "completed" {
-			os.Remove(dl.DestinationPath)
-			stat.Status = "stats_only"
-		}
-		if recordErr := e.store.CreateDownloadStat(stat); recordErr != nil {
-			log.Printf("warning: could not record download stat: %v", recordErr)
-		}
+	// Loaded once, up front: routing (target_dir/auto_subdir), hooks, and
+	// extraction (auto_extract) all key off this row, and the stats-only
+	// early-out below needs it too.
+	dl, dlErr := e.store.GetDownload(downloadID)
+	if dlErr != nil {
+		log.Printf("failed to load download %d for post-processing: %v", downloadID, dlErr)
 	}
 
-	// Apply file routing rules
 	finalPath := destPath
+
+	// Stats-only downloads never had a real file to keep: remove the temp
+	// file and skip routing/hooks/extraction entirely rather than running
+	// them against a path that no longer exists.
+	if dlErr == nil && dl != nil && dl.StatsOnly {
+		os.Remove(destPath)
+		e.finishTransfer(downloadID, dl, finalPath, "stats_only", tr)
+		return
+	}
+
+	// Apply file routing rules: an explicit per-download target wins; else
+	// match the routing rules and, if auto_subdir is on, infer a subfolder
+	// from the filename.
 	if rules, err := e.store.GetFileRoutingRules(); err == nil {
-		if destDir := routing.MatchRule(offer.Filename, rules); destDir != "" {
+		destDir := ""
+		if dlErr == nil && dl != nil && dl.TargetDir != "" {
+			destDir = dl.TargetDir
+		} else if ruleDir := routing.MatchRule(offer.Filename, rules); ruleDir != "" {
+			destDir = ruleDir
+			if dlErr == nil && dl != nil && dl.AutoSubdir {
+				destDir = routing.InferSubdir(ruleDir, offer.Filename)
+			}
+		}
+		if destDir != "" {
 			if moved, err := routing.MoveFile(destPath, destDir); err != nil {
 				log.Printf("routing move failed for download %d: %v", downloadID, err)
 			} else {
@@ -538,8 +557,16 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		log.Printf("failed to load routing rules for download %d: %v", downloadID, err)
 	}
 
+	e.bus.Publish(irc.Event{
+		Type: irc.EventDownloadStatus,
+		Data: map[string]interface{}{
+			"download_id": downloadID,
+			"status":      "processing",
+			"phase":       "hooks",
+		},
+	})
+
 	// Run post-download hooks
-	dl, dlErr := e.store.GetDownload(downloadID)
 	var hooks []db.PostHook
 	globalHooks, err := e.store.GetPostHooks("", nil)
 	if err != nil {
@@ -586,6 +613,14 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 
 	// Auto-extract tar archives and route/hook each extracted file
 	if dlErr == nil && dl != nil && dl.AutoExtract && routing.IsArchive(offer.Filename) {
+		e.bus.Publish(irc.Event{
+			Type: irc.EventDownloadStatus,
+			Data: map[string]interface{}{
+				"download_id": downloadID,
+				"status":      "processing",
+				"phase":       "extracting",
+			},
+		})
 		extractDir := filepath.Dir(finalPath)
 
 		// Check available disk space before attempting extraction
@@ -672,10 +707,35 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		}
 	}
 
-	// Update destination_path in DB to the final routed location
-	if finalPath != destPath {
-		if err := e.queue.UpdateDestinationPath(downloadID, finalPath); err != nil {
-			log.Printf("failed to update destination path for download %d: %v", downloadID, err)
+	e.finishTransfer(downloadID, dl, finalPath, "completed", tr)
+}
+
+// finishTransfer marks a download completed at finalPath, records its
+// DownloadStat (statStatus is normally "completed", or "stats_only" when the
+// temp file was removed instead of routed), and publishes the "completed"
+// WebSocket event. dl may be nil if the row failed to load; the stat is then
+// skipped since there's nothing to record from.
+func (e *Engine) finishTransfer(downloadID int64, dl *db.Download, finalPath, statStatus string, tr *dcc.Transfer) {
+	if err := e.queue.MarkCompleted(downloadID, finalPath, tr.PeakSpeed(), tr.AverageSpeed()); err != nil {
+		log.Printf("failed to mark download %d completed: %v", downloadID, err)
+	}
+
+	if dl != nil {
+		now := time.Now()
+		stat := &db.DownloadStat{
+			Filename:    dl.Filename,
+			SizeBytes:   dl.Filesize,
+			ServerID:    dl.ServerID,
+			Channel:     dl.Channel,
+			BotNick:     dl.BotNick,
+			PackNumber:  dl.PackNumber,
+			StartedAt:   dl.StartedAt,
+			CompletedAt: &now,
+			Status:      statStatus,
+			StatsOnly:   dl.StatsOnly,
+		}
+		if recordErr := e.store.CreateDownloadStat(stat); recordErr != nil {
+			log.Printf("warning: could not record download stat: %v", recordErr)
 		}
 	}
 

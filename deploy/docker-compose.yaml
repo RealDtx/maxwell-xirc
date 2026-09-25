@@ -9,8 +9,10 @@ services:
       - "127.0.0.1:8085:8085"
     volumes:
       - ../data:/app/data
-      - /srv/dlna/media:/srv/dlna/media
-      - /srv/downloads:/srv/downloads
+      # Single bind mount covering both the temp dir and the routing
+      # destinations: they all live under /srv, so os.Rename succeeds
+      # (same mount = no EXDEV = no copy fallback in routing.MoveFile).
+      - /srv:/srv
     environment:
       - TZ=Europe/Berlin
     networks:

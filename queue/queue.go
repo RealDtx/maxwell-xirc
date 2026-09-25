@@ -2,6 +2,7 @@ package queue
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -21,7 +22,7 @@ func New(store db.Store, maxConcurrent int) *Queue {
 	}
 }
 
-func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64, statsOnly bool, autoExtract bool) (*db.Download, error) {
+func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64, statsOnly bool, autoExtract bool, autoSubdir bool) (*db.Download, error) {
 	dl := &db.Download{
 		ServerID:    serverID,
 		Channel:     channel,
@@ -32,6 +33,7 @@ func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, fil
 		Status:      "queued",
 		StatsOnly:   statsOnly,
 		AutoExtract: autoExtract,
+		AutoSubdir:  autoSubdir,
 	}
 
 	if err := q.store.CreateDownload(dl); err != nil {
@@ -83,6 +85,21 @@ func (q *Queue) NextAndMarkDownloading() (*db.Download, error) {
 	}
 
 	return nil, nil
+}
+
+// MarkProcessing marks a download as having finished its DCC transfer and
+// entered post-processing (moving/hooks/extraction). It is not counted as
+// "downloading" by NextAndMarkDownloading, so the freed slot can be reused
+// immediately while post-processing continues in the background.
+func (q *Queue) MarkProcessing(id int64, destPath string) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.Status = "processing"
+	dl.DestinationPath = destPath
+	dl.DownloadedBytes = dl.Filesize
+	return q.store.UpdateDownload(dl)
 }
 
 func (q *Queue) MarkCompleted(id int64, destPath string, peakSpeed, avgSpeed int64) error {
@@ -206,8 +223,13 @@ func (q *Queue) UpdateProgress(id int64, bytesReceived, peakSpeed, avgSpeed int6
 	return q.store.UpdateDownload(dl)
 }
 
-// RequeueInterrupted sets all "downloading" status downloads back to "queued".
-// Called on app startup to recover from unclean shutdown.
+// RequeueInterrupted sets all "downloading" status downloads back to "queued",
+// and flips leftover "processing" downloads to "completed": the file itself
+// finished transferring (that's what "processing" means), only the
+// post-processing step (moving/hooks/extraction) was interrupted by the
+// unclean shutdown, and the file is already sitting at its last-known
+// destination path on disk. Called on app startup to recover from unclean
+// shutdown.
 func (q *Queue) RequeueInterrupted() error {
 	downloads, err := q.store.GetDownloads("downloading")
 	if err != nil {
@@ -216,6 +238,20 @@ func (q *Queue) RequeueInterrupted() error {
 	for _, dl := range downloads {
 		dl.Status = "queued"
 		dl.StartedAt = nil
+		if err := q.store.UpdateDownload(&dl); err != nil {
+			return err
+		}
+	}
+
+	processing, err := q.store.GetDownloads("processing")
+	if err != nil {
+		return err
+	}
+	for _, dl := range processing {
+		log.Printf("download %d was interrupted mid-processing; marking completed at %s", dl.ID, dl.DestinationPath)
+		now := time.Now()
+		dl.Status = "completed"
+		dl.CompletedAt = &now
 		if err := q.store.UpdateDownload(&dl); err != nil {
 			return err
 		}

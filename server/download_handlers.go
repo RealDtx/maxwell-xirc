@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sort"
 
 	"github.com/RealDtx/maxwell-irc/db"
 )
@@ -43,6 +45,7 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		Filesize    int64  `json:"filesize"`
 		StatsOnly   bool   `json:"stats_only"`
 		AutoExtract *bool  `json:"auto_extract"`
+		AutoSubdir  *bool  `json:"auto_subdir"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -63,8 +66,12 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 	if req.AutoExtract != nil {
 		autoExtract = *req.AutoExtract
 	}
+	autoSubdir := true
+	if req.AutoSubdir != nil {
+		autoSubdir = *req.AutoSubdir
+	}
 
-	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly, autoExtract)
+	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly, autoExtract, autoSubdir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -282,4 +289,110 @@ func (s *Server) handleSetAutoExtract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"auto_extract": req.AutoExtract})
+}
+
+// downloadTargets returns, sorted, every distinct enabled routing
+// destination dir plus its immediate non-hidden subdirectories. This is the
+// trust boundary for handleSetDownloadTarget: only paths in this list may be
+// stored as a download's target_dir.
+func (s *Server) downloadTargets() ([]string, error) {
+	rules, err := s.store.GetAllFileRoutingRules()
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool)
+	var targets []string
+	for _, rule := range rules {
+		if !rule.Enabled || rule.DestinationDir == "" || seen[rule.DestinationDir] {
+			continue
+		}
+		seen[rule.DestinationDir] = true
+		targets = append(targets, rule.DestinationDir)
+
+		entries, err := readDirEntries(rule.DestinationDir)
+		if err != nil {
+			continue // skip dirs that fail to read
+		}
+		for _, entry := range entries {
+			if !entry.IsDir {
+				continue
+			}
+			sub := filepath.Join(rule.DestinationDir, entry.Name)
+			if seen[sub] {
+				continue
+			}
+			seen[sub] = true
+			targets = append(targets, sub)
+		}
+	}
+	sort.Strings(targets)
+	return targets, nil
+}
+
+func (s *Server) handleGetDownloadTargets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	targets, err := s.downloadTargets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if targets == nil {
+		targets = []string{}
+	}
+	writeJSON(w, http.StatusOK, targets)
+}
+
+func (s *Server) handleSetDownloadTarget(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		DownloadID int64  `json:"download_id"`
+		TargetDir  string `json:"target_dir"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.DownloadID == 0 {
+		writeError(w, http.StatusBadRequest, "download_id is required")
+		return
+	}
+
+	targetDir := req.TargetDir
+	if targetDir != "" {
+		targetDir = filepath.Clean(targetDir)
+		targets, err := s.downloadTargets()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		valid := false
+		for _, t := range targets {
+			if t == targetDir {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			writeError(w, http.StatusBadRequest, "target_dir must be \"\" or match a known routing destination/subfolder")
+			return
+		}
+	}
+
+	dl, err := s.store.GetDownload(req.DownloadID)
+	if err != nil || dl == nil {
+		writeError(w, http.StatusNotFound, "download not found")
+		return
+	}
+	dl.TargetDir = targetDir
+	if err := s.store.UpdateDownload(dl); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"target_dir": targetDir})
 }

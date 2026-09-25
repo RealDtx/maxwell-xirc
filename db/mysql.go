@@ -156,6 +156,9 @@ func mysqlMigrationStatements() []string {
 
 		`ALTER TABLE downloads ADD COLUMN auto_extract BOOLEAN NOT NULL DEFAULT TRUE`,
 
+		`ALTER TABLE downloads ADD COLUMN target_dir VARCHAR(500) NOT NULL DEFAULT ''`,
+		`ALTER TABLE downloads ADD COLUMN auto_subdir BOOLEAN NOT NULL DEFAULT TRUE`,
+
 		`CREATE TABLE IF NOT EXISTS indexed_files (
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
 			server_id BIGINT NOT NULL,
@@ -425,7 +428,7 @@ func (s *MySQLStore) UpdateRealmSearchBot(id int64, botNick string) error {
 // --- Downloads ---
 
 func (s *MySQLStore) GetDownloads(status string) ([]Download, error) {
-	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract FROM downloads"
+	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir FROM downloads"
 	var rows *sql.Rows
 	var err error
 	if status != "" {
@@ -445,7 +448,7 @@ func (s *MySQLStore) GetDownloads(status string) ([]Download, error) {
 		if err := rows.Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 			&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 			&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-			&dl.CreatedAt, &statsOnly, &dl.AutoExtract); err != nil {
+			&dl.CreatedAt, &statsOnly, &dl.AutoExtract, &dl.TargetDir, &dl.AutoSubdir); err != nil {
 			return nil, err
 		}
 		dl.StatsOnly = statsOnly == 1
@@ -458,11 +461,11 @@ func (s *MySQLStore) GetDownload(id int64) (*Download, error) {
 	var dl Download
 	var statsOnly int
 	err := s.db.QueryRow(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract FROM downloads WHERE id=?", id,
+		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir FROM downloads WHERE id=?", id,
 	).Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 		&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 		&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-		&dl.CreatedAt, &statsOnly, &dl.AutoExtract)
+		&dl.CreatedAt, &statsOnly, &dl.AutoExtract, &dl.TargetDir, &dl.AutoSubdir)
 	if err != nil {
 		return nil, err
 	}
@@ -473,11 +476,12 @@ func (s *MySQLStore) GetDownload(id int64) (*Download, error) {
 func (s *MySQLStore) CreateDownload(dl *Download) error {
 	now := time.Now()
 	result, err := s.db.Exec(
-		`INSERT INTO downloads (server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, auto_extract)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO downloads (server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, auto_extract, target_dir, auto_subdir)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		dl.ServerID, dl.Channel, dl.BotNick, dl.PackNumber, dl.Filename, dl.Filesize,
 		dl.DownloadedBytes, dl.Status, dl.DestinationPath, dl.ErrorMessage,
 		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, now, dl.AutoExtract,
+		dl.TargetDir, dl.AutoSubdir,
 	)
 	if err != nil {
 		return err
@@ -489,10 +493,11 @@ func (s *MySQLStore) CreateDownload(dl *Download) error {
 
 func (s *MySQLStore) UpdateDownload(dl *Download) error {
 	_, err := s.db.Exec(
-		`UPDATE downloads SET channel=?, bot_nick=?, pack_number=?, filename=?, filesize=?, downloaded_bytes=?, status=?, destination_path=?, error_message=?, peak_speed=?, average_speed=?, started_at=?, completed_at=?, created_at=?, auto_extract=? WHERE id=?`,
+		`UPDATE downloads SET channel=?, bot_nick=?, pack_number=?, filename=?, filesize=?, downloaded_bytes=?, status=?, destination_path=?, error_message=?, peak_speed=?, average_speed=?, started_at=?, completed_at=?, created_at=?, auto_extract=?, target_dir=?, auto_subdir=? WHERE id=?`,
 		dl.Channel, dl.BotNick, dl.PackNumber, dl.Filename, dl.Filesize,
 		dl.DownloadedBytes, dl.Status, dl.DestinationPath, dl.ErrorMessage,
-		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, dl.CreatedAt, dl.AutoExtract, dl.ID,
+		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, dl.CreatedAt, dl.AutoExtract,
+		dl.TargetDir, dl.AutoSubdir, dl.ID,
 	)
 	return err
 }

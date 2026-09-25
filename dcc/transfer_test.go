@@ -1,10 +1,13 @@
 package dcc
 
 import (
+	"encoding/binary"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
 	"testing"
+	"time"
 )
 
 // mockTCPServer creates a listening TCP server that sends data
@@ -198,6 +201,81 @@ done:
 	}
 	if lastProgress.BytesReceived != int64(len(testData)) {
 		t.Errorf("expected final progress %d, got %d", len(testData), lastProgress.BytesReceived)
+	}
+}
+
+// TestTransfer_SendsFinalACK_NoClose verifies that Transfer.Start sends a DCC
+// ACK (4-byte big-endian total bytes received) after each write and exits the
+// read loop once the offer size is reached, even when the sender never closes
+// the connection (as iroffer and similar bots do — they wait for the final
+// ACK instead of half-closing).
+func TestTransfer_SendsFinalACK_NoClose(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "transfer-test-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	listener, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatalf("failed to find available port: %v", err)
+	}
+	defer listener.Close()
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	testData := []byte("ack test payload data, not closed by sender")
+	ackCh := make(chan []byte, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			ackCh <- nil
+			return
+		}
+		defer conn.Close()
+		conn.Write(testData)
+		// Deliberately do NOT close the connection — the transfer must leave
+		// the read loop on its own once it has the full ACK'd size.
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		ack := make([]byte, 4)
+		if _, err := io.ReadFull(conn, ack); err != nil {
+			ackCh <- nil
+			return
+		}
+		ackCh <- ack
+	}()
+
+	offer := &DCCOffer{
+		Filename: "test.txt",
+		IP:       "127.0.0.1",
+		Port:     port,
+		Size:     int64(len(testData)),
+	}
+	destPath := tmpDir + "/test.txt"
+	transfer := NewTransfer(offer, destPath, nil)
+
+	done := make(chan error, 1)
+	go func() { done <- transfer.Start() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("transfer failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("transfer.Start did not return; sender never closed and no ACK-triggered exit occurred")
+	}
+
+	select {
+	case ack := <-ackCh:
+		if ack == nil {
+			t.Fatal("sender never received a final ACK from the transfer")
+		}
+		got := binary.BigEndian.Uint32(ack)
+		if got != uint32(len(testData)) {
+			t.Errorf("ACK mismatch: got %d, want %d", got, len(testData))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for sender to report the ACK it received")
 	}
 }
 

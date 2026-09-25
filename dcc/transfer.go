@@ -1,6 +1,7 @@
 package dcc
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -135,6 +136,14 @@ func (t *Transfer) Start() error {
 			received := t.bytesReceived
 			t.mu.Unlock()
 
+			// DCC ACK: the sender (e.g. iroffer) waits for the low 32 bits of the
+			// total byte count echoed back before it closes the connection. Without
+			// this, the socket stays open until the bot's own idle timeout even
+			// though the transfer is complete.
+			var ack [4]byte
+			binary.BigEndian.PutUint32(ack[:], uint32(received))
+			conn.Write(ack[:]) // best-effort; a write error surfaces on the next read
+
 			// Report progress every 500ms
 			now := time.Now()
 			if t.progressCh != nil && now.Sub(lastProgressTime) >= 500*time.Millisecond {
@@ -176,6 +185,10 @@ func (t *Transfer) Start() error {
 
 				lastProgressTime = now
 				lastProgressBytes = received
+			}
+
+			if t.offer.Size > 0 && received >= t.offer.Size {
+				break
 			}
 		}
 

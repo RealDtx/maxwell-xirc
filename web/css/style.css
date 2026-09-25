@@ -161,9 +161,20 @@ th {
     font-weight: 500;
     cursor: pointer;
 }
+.col-resize {
+    resize: horizontal;
+    overflow: hidden;
+    min-width: 40px;
+}
 td {
     padding: 8px 12px;
     border-bottom: 1px solid var(--border);
+}
+.dl-filename-cell {
+    max-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 tr:hover { background: rgba(255,255,255,0.02); }
 
@@ -224,10 +235,15 @@ tr:hover { background: rgba(255,255,255,0.02); }
 }
 .badge-queued { background: var(--bg-tertiary); color: var(--text-secondary); }
 .badge-downloading { background: var(--accent); color: #fff; }
+.badge-processing { background: var(--accent); color: #fff; animation: badge-pulse 1.4s ease-in-out infinite; }
 .badge-completed { background: var(--success); color: #1a1a2e; }
 .badge-failed { background: var(--danger); color: #fff; }
 .badge-needs_action { background: var(--warning); color: #1a1a2e; }
 .badge-cancelled { background: var(--text-muted); color: #fff; }
+@keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
 
 /* Unparsed result highlight */
 .unparsed { background: rgba(255, 209, 102, 0.1); border-left: 3px solid var(--warning); }

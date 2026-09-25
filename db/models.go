@@ -72,6 +72,8 @@ type Download struct {
 	CreatedAt       time.Time  `json:"created_at"`
 	StatsOnly       bool       `json:"stats_only"`
 	AutoExtract     bool       `json:"auto_extract"`
+	TargetDir       string     `json:"target_dir"`
+	AutoSubdir      bool       `json:"auto_subdir"`
 }
 
 type SearchResult struct {

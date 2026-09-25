@@ -87,6 +87,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/downloads/delete", s.handleDeleteDownloads)
 	s.mux.HandleFunc("/api/downloads/clear", s.handleClearDownloads)
 	s.mux.HandleFunc("/api/downloads/set-auto-extract", s.handleSetAutoExtract)
+	s.mux.HandleFunc("/api/downloads/targets", s.handleGetDownloadTargets)
+	s.mux.HandleFunc("/api/downloads/set-target", s.handleSetDownloadTarget)
 
 	// Routing rule endpoints
 	s.mux.HandleFunc("/api/routing/rules", s.handleRoutingRules)

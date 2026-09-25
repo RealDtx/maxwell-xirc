@@ -129,6 +129,38 @@ func TestMoveFile_CreatesDestDir(t *testing.T) {
 	_ = destPath
 }
 
+func TestInferSubdir(t *testing.T) {
+	dir, err := ioutil.TempDir("", "infersubdir_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	for _, sub := range []string{"Scrubs", "S1", ".hidden"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		filename string
+		want     string
+	}{
+		{"matches existing subdir", "Scrubs.2026.S01E02.mkv", filepath.Join(dir, "Scrubs")},
+		{"no false match on short names", "S1.movie.mkv", dir},
+		{"no match at all falls back to ruleDir", "Unrelated.Movie.2026.mkv", dir},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := InferSubdir(dir, tt.filename)
+			if got != tt.want {
+				t.Errorf("InferSubdir(%q, %q) = %q, want %q", dir, tt.filename, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCopyFile(t *testing.T) {
 	dir, err := ioutil.TempDir("", "copyfile_test")
 	if err != nil {

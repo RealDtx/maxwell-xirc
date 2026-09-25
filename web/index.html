@@ -848,26 +848,26 @@
                         </template>
                     </div>
                     <!-- Downloads table -->
-                    <div style="overflow-y:auto; flex:1;">
+                    <div style="overflow:auto; flex:1;">
                         <template x-if="filteredDownloads().length > 0">
                             <table>
                                 <thead>
                                     <tr>
                                         <th style="width:28px;"></th>
-                                        <th>Status</th>
-                                        <th @click="dlSortBy('filename')" x-text="'Filename' + dlSortIndicator('filename')"></th>
-                                        <th @click="dlSortBy('bot_nick')" x-text="'Bot' + dlSortIndicator('bot_nick')"></th>
-                                        <th @click="dlSortBy('filesize')" x-text="'Size' + dlSortIndicator('filesize')"></th>
-                                        <th @click="dlSortBy('progress')" x-text="'Progress' + dlSortIndicator('progress')"></th>
-                                        <th @click="dlSortBy('speed')" x-text="'Speed / Info' + dlSortIndicator('speed')"></th>
-                                        <th @click="dlSortBy('created_at')" x-text="'Date' + dlSortIndicator('created_at')"></th>
-                                        <th>Time</th>
+                                        <th><div class="col-resize">Status</div></th>
+                                        <th @click="dlSortBy('filename')"><div class="col-resize" style="width:360px;" x-text="'Filename' + dlSortIndicator('filename')"></div></th>
+                                        <th @click="dlSortBy('bot_nick')"><div class="col-resize" x-text="'Bot' + dlSortIndicator('bot_nick')"></div></th>
+                                        <th @click="dlSortBy('filesize')"><div class="col-resize" x-text="'Size' + dlSortIndicator('filesize')"></div></th>
+                                        <th @click="dlSortBy('progress')"><div class="col-resize" x-text="'Progress' + dlSortIndicator('progress')"></div></th>
+                                        <th @click="dlSortBy('speed')"><div class="col-resize" x-text="'Speed / Info' + dlSortIndicator('speed')"></div></th>
+                                        <th @click="dlSortBy('created_at')"><div class="col-resize" x-text="'Date' + dlSortIndicator('created_at')"></div></th>
+                                        <th><div class="col-resize">Time</div></th>
                                         <th></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <template x-for="dl in sortedDownloads()" :key="dl.id">
-                                        <tr>
+                                        <tr :title="dl.filename">
                                             <td>
                                                 <template x-if="dlIsClearable(dl)">
                                                     <input type="checkbox" :checked="_dlSelected[dl.id]" @change="toggleDlSelect(dl.id)">
@@ -882,7 +882,7 @@
                                                     ></span>
                                                 </span>
                                             </td>
-                                            <td x-text="dl.filename || '-'"></td>
+                                            <td class="dl-filename-cell" x-text="dl.filename || '-'"></td>
                                             <td>
                                                 <span class="tooltip">
                                                     <span x-text="dl.bot_nick || '-'"></span>
@@ -891,7 +891,7 @@
                                             </td>
                                             <td x-text="dl.filesize ? formatSize(dl.filesize) : '-'"></td>
                                             <td>
-                                                <template x-if="dl.status === 'downloading'">
+                                                <template x-if="dl.status === 'downloading' || dl.status === 'processing'">
                                                     <div class="progress">
                                                         <div
                                                             class="progress-fill"
@@ -899,7 +899,7 @@
                                                         ></div>
                                                     </div>
                                                 </template>
-                                                <template x-if="dl.status !== 'downloading'">
+                                                <template x-if="dl.status !== 'downloading' && dl.status !== 'processing'">
                                                     <span x-text="dl.status === 'completed' ? '100%' : '-'"></span>
                                                 </template>
                                             </td>
@@ -909,6 +909,16 @@
                                             <td style="white-space:nowrap;">
                                                 <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
                                                     <span>
+                                                        <select
+                                                            x-model="dl.target_dir"
+                                                            @change="setTarget(dl, dl.target_dir)"
+                                                            :title="dl.target_dir || 'Auto'"
+                                                            style="max-width:110px;font-size:11px;padding:2px 4px;margin-right:6px;vertical-align:middle;background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;overflow:hidden;text-overflow:ellipsis;">
+                                                            <option value="">Auto</option>
+                                                            <template x-for="t in downloadTargets" :key="t">
+                                                                <option :value="t" :title="t" x-text="t"></option>
+                                                            </template>
+                                                        </select>
                                                         <template x-if="isArchive(dl.filename)">
                                                             <label style="font-size:12px; margin-right:6px; cursor:pointer; white-space:nowrap;">
                                                                 <input type="checkbox" :checked="dl.auto_extract !== false" @change="toggleAutoExtract(dl, $event.target.checked)" style="vertical-align:middle;">
@@ -1309,6 +1319,17 @@
                                 </div>
                                 <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
                                     Preview: <span x-text="formatDateCustom(new Date().toISOString(), dateFormat)"></span>
+                                </p>
+                            </div>
+                            <div class="settings-card" style="max-width:480px;margin-top:16px;">
+                                <h3 style="margin-bottom:12px;">Downloads</h3>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                                    <input type="checkbox" :checked="autoSubdir"
+                                           @change="autoSubdir = $event.target.checked; localStorage.setItem('mxirc_auto_subdir', autoSubdir)">
+                                    Auto-pick subfolder from filename
+                                </label>
+                                <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
+                                    When no folder is chosen, a subfolder of the routing destination whose name matches the start of the filename is used.
                                 </p>
                             </div>
                         </div>
