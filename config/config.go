@@ -35,6 +35,9 @@ type StorageConfig struct {
 	MinFreeSpace      string            `yaml:"min_free_space"`
 	CriticalFreeSpace string            `yaml:"critical_free_space"`
 	AutoExtract       AutoExtractConfig `yaml:"auto_extract"`
+	// CategoriesFile is the library taxonomy config (library package).
+	// Defaults to categories.yaml next to the --config file when empty.
+	CategoriesFile string `yaml:"categories_file"`
 }
 
 type DCCConfig struct {

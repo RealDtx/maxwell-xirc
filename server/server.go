@@ -7,23 +7,30 @@ import (
 
 	"github.com/RealDtx/maxwell-irc/db"
 	ircpkg "github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/library"
 	"github.com/RealDtx/maxwell-irc/parser"
 	"github.com/RealDtx/maxwell-irc/queue"
 	ws "github.com/RealDtx/maxwell-irc/ws"
 )
 
 type Server struct {
-	store  db.Store
-	ircMgr *ircpkg.Manager
-	parser *parser.Parser
-	engine *queue.Engine
-	wsHub  *ws.Hub
-	msgBuf *ircpkg.MessageBuffer
-	errBuf *ircpkg.ErrorBuffer
-	setup  *SetupState
-	mux    *http.ServeMux
-	prefix string
-	webFS  fs.FS
+	store   db.Store
+	ircMgr  *ircpkg.Manager
+	parser  *parser.Parser
+	engine  *queue.Engine
+	wsHub   *ws.Hub
+	msgBuf  *ircpkg.MessageBuffer
+	errBuf  *ircpkg.ErrorBuffer
+	setup   *SetupState
+	mux     *http.ServeMux
+	prefix  string
+	webFS   fs.FS
+	library *library.Manager
+}
+
+// SetLibrary wires the library manager in — set once at startup.
+func (s *Server) SetLibrary(m *library.Manager) {
+	s.library = m
 }
 
 func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer, setup *SetupState, prefix string, webFS fs.FS) *Server {
@@ -89,6 +96,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/downloads/set-auto-extract", s.handleSetAutoExtract)
 	s.mux.HandleFunc("/api/downloads/targets", s.handleGetDownloadTargets)
 	s.mux.HandleFunc("/api/downloads/set-target", s.handleSetDownloadTarget)
+
+	// Library (categories) endpoints
+	s.mux.HandleFunc("/api/library", s.handleLibrary)
+	s.mux.HandleFunc("/api/library/detect", s.handleLibraryDetect)
+	s.mux.HandleFunc("/api/library/preview", s.handleLibraryPreview)
+	s.mux.HandleFunc("/api/library/kinds", s.handleLibraryKinds)
 
 	// Routing rule endpoints
 	s.mux.HandleFunc("/api/routing/rules", s.handleRoutingRules)

@@ -2,6 +2,54 @@ function escHtml(s) {
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// --- File manager icons ---
+
+const FM_ICON_CATEGORIES = {
+    video: ['mkv', 'mp4', 'avi', 'mov', 'wmv', 'webm', 'm4v', 'ts'],
+    audio: ['mp3', 'flac', 'm4a', 'ogg', 'opus', 'wav', 'aac'],
+    subtitle: ['srt', 'sub', 'ass', 'ssa', 'txt', 'nfo'],
+    book: ['pdf', 'epub', 'mobi', 'azw3', 'cbz', 'cbr'],
+    archive: ['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst'],
+    disc: ['iso', 'img'],
+    image: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+    app: ['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'appimage'],
+};
+
+const FM_ICON_SVG = {
+    folder: '<path d="M2 4a1 1 0 0 1 1-1h3.3l1.4 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z"/>',
+    video: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 6h12M2 10h12M5.5 3v3M5.5 10v3M10.5 3v3M10.5 10v3"/>',
+    audio: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="10.5" r="1.6"/><path d="M6.6 12V4l7-1.3v7.3"/>',
+    subtitle: '<path d="M4 2h6l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M10 2v3h3"/><path d="M5 9h6M5 11.5h4"/>',
+    book: '<path d="M3 3.4C3 2.6 3.7 2 4.5 2H8v11H4.5C3.7 13 3 13.6 3 14.4V3.4z"/><path d="M13 3.4c0-.8-.7-1.4-1.5-1.4H8v11h3.5c.8 0 1.5.6 1.5 1.4V3.4z"/>',
+    archive: '<rect x="2.5" y="3" width="11" height="10" rx="1"/><path d="M8 3v1.4M8 6v1.2M8 8.6v1.2M8 11.2v1.8"/>',
+    disc: '<circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.4"/>',
+    image: '<rect x="2" y="3" width="12" height="10" rx="1"/><circle cx="6" cy="6.5" r="1.2"/><path d="M2 11l3.5-3.5L8 10l2.5-2.5L14 11"/>',
+    app: '<rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="M6.5 5.5l4 2.5-4 2.5z"/>',
+    generic: '<path d="M4 2h5l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/>',
+};
+
+function fmExt(name) {
+    var i = (name || '').lastIndexOf('.');
+    return i > 0 ? name.slice(i + 1).toLowerCase() : '';
+}
+
+function fmCategory(entry) {
+    if (entry.is_dir) return 'folder';
+    var ext = fmExt(entry.name);
+    for (var cat in FM_ICON_CATEGORIES) {
+        if (FM_ICON_CATEGORIES[cat].indexOf(ext) !== -1) return cat;
+    }
+    return 'generic';
+}
+
+function fileIcon(entry) {
+    var cat = fmCategory(entry);
+    var svg = FM_ICON_SVG[cat] || FM_ICON_SVG.generic;
+    return '<svg class="fm-icon fm-icon-' + cat + '" width="16" height="16" viewBox="0 0 16 16" ' +
+        'fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">' +
+        svg + '</svg>';
+}
+
 function getCharOffset(container, node, offset) {
     // Walk text nodes in container up to (node, offset), summing lengths
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -68,6 +116,9 @@ document.addEventListener('alpine:init', () => {
         dlSort: { col: 'created_at', dir: 'desc' },
         downloadTargets: [],
         _dlTargetsLoaded: false,
+        _dlPredicted: {},       // filename -> predicted path (from /library/preview)
+        _dlMediaRoot: '',
+        _dlMediaRootLoaded: false,
         ircMessages: {},
         _msgVersion: 0,  // bumped whenever ircMessages or serverMessages change; forces x-for re-eval
         ircInput: '',
@@ -94,11 +145,20 @@ document.addEventListener('alpine:init', () => {
         routingNewExt: '',
         showAddDestForm: false,
 
+        // Library (auto-organize) settings
+        library: null,          // {auto_organize, search_depth, media_root, categories:[]}
+        libraryKinds: {},       // {kind: [fieldName]}
+        _libraryOriginal: null, // JSON snapshot for Reload
+        libraryError: '',
+        librarySaved: false,
+        libraryNote: '',
+        libraryPreviewName: '',
+        libraryPreviewResult: null,
+        _libraryPreviewTimer: null,
+
         // Mode
         appMode: localStorage.getItem('mxirc_mode') || 'simple',
         dateFormat: localStorage.getItem('mxirc_date_format') || 'DD-MM-YYYY HH:MM:SS',
-        autoSubdir: localStorage.getItem('mxirc_auto_subdir') !== 'false',
-        subdirDepth: parseInt(localStorage.getItem('mxirc_subdir_depth') || '3', 10),
 
         // Channel configs map: channelKey -> download_channel
         _channelConfigs: {},
@@ -132,8 +192,23 @@ document.addEventListener('alpine:init', () => {
 
         // File manager
         fileManagerDir: null,
-        fileManagerFiles: [],
+        fileManagerRoot: '',
+        fileManagerEntries: [],
         fileManagerLoading: false,
+        fileManagerParent: '',
+        fileManagerError: '',
+        fileManagerErrors: {},
+        fileManagerFilter: '',
+        fileManagerSort: { col: 'name', dir: 'asc' },
+        fileManagerSelected: {},
+        fileManagerSelectAll: false,
+        fileManagerRename: { name: null, value: '' },
+        fileManagerNewFolderOpen: false,
+        fileManagerNewFolderName: '',
+        fileManagerDragOverPath: null,
+        _fmConfirm: null,
+        _fmConfirmTimer: null,
+        _fmDragNames: null,
 
         // Errors
         errors: [],
@@ -244,6 +319,8 @@ document.addEventListener('alpine:init', () => {
                 this.loadSettingsData();
             } else if (view === 'files') {
                 api.getRoutingRules().then(r => { this.routingRules = Array.isArray(r) ? r : []; }).catch(console.error);
+                this._dlTargetsLoaded = false; // move targets may have changed on disk
+                this.loadDownloadTargets();
             }
         },
 
@@ -924,8 +1001,8 @@ document.addEventListener('alpine:init', () => {
                 }.bind(this));
             }
             arr.sort(function(a, b) {
-                var av = a[col];
-                var bv = b[col];
+                var av = searchSortValue(a, col);
+                var bv = searchSortValue(b, col);
                 if (av == null) av = '';
                 if (bv == null) bv = '';
                 var cmp;
@@ -963,7 +1040,7 @@ document.addEventListener('alpine:init', () => {
                 arr = arr.filter(function(r) { return r.bot_nick === this.selectedUser; }.bind(this));
             }
             arr.sort(function(a, b) {
-                var av = a[col], bv = b[col];
+                var av = searchSortValue(a, col), bv = searchSortValue(b, col);
                 if (av == null) av = '';
                 if (bv == null) bv = '';
                 if (typeof av === 'number' && typeof bv === 'number') {
@@ -1011,8 +1088,6 @@ document.addEventListener('alpine:init', () => {
                 filename: row.filename || '',
                 filesize: filesizeBytes,
                 stats_only: this.statsOnlyDefault,
-                auto_subdir: this.autoSubdir,
-                subdir_depth: this.subdirDepth,
             }).then(() => {
                 this._downloadingKeys = Object.assign({}, this._downloadingKeys, { [key]: 'queued' });
                 this.loadDownloads();
@@ -1277,18 +1352,53 @@ document.addEventListener('alpine:init', () => {
                 console.error('loadDownloads error', e);
             }
             this.loadDownloadTargets();
+            this._predictDownloadTargets();
         },
 
         async loadDownloadTargets() {
             if (this._dlTargetsLoaded) return;
             this._dlTargetsLoaded = true;
             try {
-                const res = await api.getDownloadTargets(this.subdirDepth);
+                const res = await api.getDownloadTargets();
                 this.downloadTargets = Array.isArray(res) ? res : [];
             } catch (e) {
                 console.error('loadDownloadTargets error', e);
                 this._dlTargetsLoaded = false;
             }
+        },
+
+        // Predicts the "Auto" target path for queued/downloading/processing rows,
+        // via one /library/preview call per loadDownloads() (not per WS tick).
+        async _predictDownloadTargets() {
+            const names = this.downloads
+                .filter(d => ['queued', 'downloading', 'processing'].includes(d.status) && d.filename)
+                .map(d => d.filename);
+            if (!names.length) { this._dlPredicted = {}; return; }
+            try {
+                if (!this._dlMediaRootLoaded) {
+                    this._dlMediaRootLoaded = true;
+                    const cfg = await api.getLibrary().catch(() => null);
+                    this._dlMediaRoot = (cfg && cfg.media_root) || '';
+                }
+                const res = await api.previewLibrary(names);
+                const map = {};
+                (Array.isArray(res) ? res : []).forEach(r => {
+                    if (!r.path) return;
+                    let p = r.path;
+                    if (this._dlMediaRoot && p.startsWith(this._dlMediaRoot)) {
+                        p = p.slice(this._dlMediaRoot.length).replace(/^[\/\\]+/, '');
+                    }
+                    map[r.filename] = p;
+                });
+                this._dlPredicted = map;
+            } catch (e) {
+                console.error('previewLibrary error', e);
+            }
+        },
+
+        dlAutoLabel(dl) {
+            const p = dl.filename && this._dlPredicted[dl.filename];
+            return p ? 'Auto → ' + p : 'Auto';
         },
 
         cancelDownload(id) {
@@ -1306,13 +1416,6 @@ document.addEventListener('alpine:init', () => {
         toggleAutoExtract(dl, val) {
             dl.auto_extract = val;
             api.setAutoExtract(dl.id, val).catch(console.error);
-        },
-
-        setSubdirDepth(val) {
-            var n = Math.max(0, Math.min(5, parseInt(val, 10) || 0));
-            this.subdirDepth = n;
-            localStorage.setItem('mxirc_subdir_depth', n);
-            this._dlTargetsLoaded = false; // target list depends on depth
         },
 
         setTarget(dl, dir) {
@@ -1663,14 +1766,229 @@ document.addEventListener('alpine:init', () => {
         async loadFileManager(dir) {
             this.fileManagerDir = dir;
             this.fileManagerLoading = true;
+            this.fileManagerError = '';
+            this.fileManagerErrors = {};
+            this.fileManagerFilter = '';
+            this.fileManagerSelected = {};
+            this.fileManagerSelectAll = false;
+            this.fileManagerRename = { name: null, value: '' };
+            this.fmCancelNewFolder();
+            this.fileManagerDragOverPath = null;
             try {
                 const res = await api.listFiles(dir);
-                this.fileManagerFiles = res && res.files ? res.files : [];
+                this.fileManagerEntries = (res && res.entries) || [];
+                this.fileManagerRoot = (res && res.root) || dir;
+                this.fileManagerParent = (res && res.parent) || '';
+                this.fileManagerDir = (res && res.dir) || dir;
             } catch(e) {
                 console.error('loadFileManager', e);
+                this.fileManagerError = e.message || String(e);
             } finally {
                 this.fileManagerLoading = false;
             }
+        },
+
+        fmJoin(dir, name) {
+            return dir.replace(/\/+$/, '') + '/' + name;
+        },
+
+        // Breadcrumb segments from the destination root down to the current dir.
+        fmBreadcrumb() {
+            var root = this.fileManagerRoot || this.fileManagerDir || '';
+            var dir = this.fileManagerDir || '';
+            var crumbs = [{ name: root, path: root }];
+            if (dir && dir !== root && dir.indexOf(root) === 0) {
+                var rest = dir.slice(root.length).replace(/^\/+/, '');
+                var acc = root;
+                if (rest) {
+                    rest.split('/').forEach(p => {
+                        if (!p) return;
+                        acc = this.fmJoin(acc, p);
+                        crumbs.push({ name: p, path: acc });
+                    });
+                }
+            }
+            return crumbs;
+        },
+
+        fmOpenFolder(entry) {
+            if (!entry.is_dir) return;
+            this.loadFileManager(this.fmJoin(this.fileManagerDir, entry.name));
+        },
+
+        fmSortBy(col) { this._sortToggle(this.fileManagerSort, col); },
+        fmSortIndicator(col) { return this._sortArrow(this.fileManagerSort, col); },
+
+        fmSizeLabel(entry) {
+            if (entry.is_dir) return (entry.items || 0) + ' item' + (entry.items === 1 ? '' : 's');
+            return formatSize(entry.size || 0);
+        },
+
+        // Filtered + sorted rows, folders always first.
+        fmDisplayEntries() {
+            var filter = (this.fileManagerFilter || '').toLowerCase();
+            var arr = this.fileManagerEntries.filter(e => !filter || e.name.toLowerCase().indexOf(filter) !== -1);
+            var col = this.fileManagerSort.col;
+            var dir = this.fileManagerSort.dir === 'asc' ? 1 : -1;
+            arr = arr.slice().sort((a, b) => {
+                if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+                var av, bv;
+                if (col === 'size') {
+                    av = a.is_dir ? (a.items || 0) : (a.size || 0);
+                    bv = b.is_dir ? (b.items || 0) : (b.size || 0);
+                } else if (col === 'modified') {
+                    av = a.modified || '';
+                    bv = b.modified || '';
+                } else {
+                    av = (a.name || '').toLowerCase();
+                    bv = (b.name || '').toLowerCase();
+                }
+                if (av < bv) return -1 * dir;
+                if (av > bv) return 1 * dir;
+                return 0;
+            });
+            return arr;
+        },
+
+        // --- Selection ---
+
+        fmToggleSelect(name) {
+            var sel = Object.assign({}, this.fileManagerSelected);
+            if (sel[name]) { delete sel[name]; } else { sel[name] = true; }
+            this.fileManagerSelected = sel;
+            var rows = this.fmDisplayEntries();
+            this.fileManagerSelectAll = rows.length > 0 && rows.every(e => sel[e.name]);
+        },
+
+        fmToggleSelectAll() {
+            this.fileManagerSelectAll = !this.fileManagerSelectAll;
+            var sel = {};
+            if (this.fileManagerSelectAll) {
+                this.fmDisplayEntries().forEach(e => { sel[e.name] = true; });
+            }
+            this.fileManagerSelected = sel;
+        },
+
+        fmSelectedNames() { return Object.keys(this.fileManagerSelected); },
+        fmSelectedCount() { return Object.keys(this.fileManagerSelected).length; },
+
+        // --- Move / delete / rename / mkdir ---
+
+        async fmMove(names, destDir) {
+            if (!destDir || !names.length) return;
+            this.fileManagerError = '';
+            this.fileManagerErrors = {};
+            try {
+                const res = await api.fileAction({ action: 'move', src_dir: this.fileManagerDir, names: names, dest_dir: destDir });
+                if (res && res.errors && Object.keys(res.errors).length) this.fileManagerErrors = res.errors;
+            } catch (e) {
+                this.fileManagerError = 'Move failed: ' + (e.message || e);
+            }
+            this.fileManagerSelected = {};
+            this.fileManagerSelectAll = false;
+            await this.loadFileManager(this.fileManagerDir);
+        },
+
+        async fmDeleteNames(names) {
+            if (!names.length) return;
+            this.fileManagerError = '';
+            this.fileManagerErrors = {};
+            try {
+                const res = await api.fileAction({ action: 'delete', dir: this.fileManagerDir, names: names });
+                if (res && res.errors && Object.keys(res.errors).length) this.fileManagerErrors = res.errors;
+            } catch (e) {
+                this.fileManagerError = 'Delete failed: ' + (e.message || e);
+            }
+            this.fileManagerSelected = {};
+            this.fileManagerSelectAll = false;
+            await this.loadFileManager(this.fileManagerDir);
+        },
+
+        // Shared two-click "Confirm?" pattern (see _dlConfirm) keyed by 'selected' or 'row:<name>'.
+        async fmConfirmDelete(key, doDelete) {
+            if (this._fmConfirm !== key) {
+                this._fmConfirm = key;
+                clearTimeout(this._fmConfirmTimer);
+                this._fmConfirmTimer = setTimeout(() => { this._fmConfirm = null; }, 3000);
+                return;
+            }
+            this._fmConfirm = null;
+            await doDelete();
+        },
+
+        fmStartRename(entry) {
+            this.fileManagerRename = { name: entry.name, value: entry.name };
+        },
+
+        fmCancelRename() {
+            this.fileManagerRename = { name: null, value: '' };
+        },
+
+        async fmSaveRename(entry) {
+            var newName = (this.fileManagerRename.value || '').trim();
+            this.fileManagerRename = { name: null, value: '' };
+            if (!newName || newName === entry.name) return;
+            this.fileManagerError = '';
+            try {
+                await api.fileAction({ action: 'rename', dir: this.fileManagerDir, name: entry.name, new_name: newName });
+                await this.loadFileManager(this.fileManagerDir);
+            } catch (e) {
+                this.fileManagerError = 'Rename failed: ' + (e.message || e);
+            }
+        },
+
+        fmStartNewFolder() {
+            this.fileManagerNewFolderOpen = true;
+            this.fileManagerNewFolderName = '';
+        },
+
+        fmCancelNewFolder() {
+            this.fileManagerNewFolderOpen = false;
+            this.fileManagerNewFolderName = '';
+        },
+
+        async fmCreateFolder() {
+            var name = (this.fileManagerNewFolderName || '').trim();
+            if (!name) { this.fmCancelNewFolder(); return; }
+            this.fileManagerError = '';
+            try {
+                await api.fileAction({ action: 'mkdir', dir: this.fileManagerDir, name: name });
+                this.fmCancelNewFolder();
+                await this.loadFileManager(this.fileManagerDir);
+            } catch (e) {
+                this.fileManagerError = 'Create folder failed: ' + (e.message || e);
+            }
+        },
+
+        // --- Drag & drop ---
+
+        fmDragStart(ev, entry) {
+            var names = this.fileManagerSelected[entry.name] ? this.fmSelectedNames() : [entry.name];
+            this._fmDragNames = names;
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', names.join(','));
+        },
+
+        fmDragOverTarget(ev, path) {
+            if (!this._fmDragNames || !this._fmDragNames.length) return;
+            ev.preventDefault();
+            this.fileManagerDragOverPath = path;
+        },
+
+        fmDragLeaveTarget(path) {
+            if (this.fileManagerDragOverPath === path) this.fileManagerDragOverPath = null;
+        },
+
+        async fmDropTarget(ev, path) {
+            ev.preventDefault();
+            this.fileManagerDragOverPath = null;
+            var names = this._fmDragNames || [];
+            this._fmDragNames = null;
+            if (!names.length || !path) return;
+            if (path === this.fileManagerDir) return; // dropping into the folder it's already in
+            var base = path.split('/').pop();
+            if (names.indexOf(base) !== -1 && path === this.fmJoin(this.fileManagerDir, base)) return; // folder onto itself
+            await this.fmMove(names, path);
         },
 
         // --- Stats ---
@@ -1908,6 +2226,78 @@ document.addEventListener('alpine:init', () => {
                 await api.updateRoutingRule(item.id, Object.assign({}, item.rule, { destination_dir: newDir }));
             }
             await this.loadSettingsData();
+        },
+
+        // --- Library (auto-organize) settings ---
+
+        async loadLibrarySettings() {
+            try {
+                const [cfg, kinds] = await Promise.all([api.getLibrary(), api.getLibraryKinds()]);
+                this.library = cfg || { auto_organize: false, search_depth: 3, media_root: '', categories: [] };
+                this.libraryKinds = kinds || {};
+                this._libraryOriginal = JSON.stringify(this.library);
+                this.libraryError = '';
+                this.libraryNote = '';
+            } catch (e) {
+                console.error('loadLibrarySettings error', e);
+            }
+        },
+
+        async saveLibrarySettings() {
+            this.libraryError = '';
+            try {
+                const saved = await api.saveLibrary(this.library);
+                this.library = saved;
+                this._libraryOriginal = JSON.stringify(this.library);
+                this.libraryNote = '';
+                this.librarySaved = true;
+                setTimeout(() => { this.librarySaved = false; }, 2000);
+            } catch (e) {
+                this.libraryError = e.message || 'Save failed';
+            }
+        },
+
+        async detectLibrarySettings() {
+            try {
+                this.library = await api.detectLibrary();
+                this.libraryNote = 'Proposal loaded — review and Save';
+                this.libraryError = '';
+            } catch (e) {
+                console.error('detectLibrary error', e);
+            }
+        },
+
+        reloadLibrarySettings() {
+            if (this._libraryOriginal) this.library = JSON.parse(this._libraryOriginal);
+            this.libraryNote = '';
+            this.libraryError = '';
+        },
+
+        libraryFieldsFor(kind) {
+            return (this.libraryKinds && this.libraryKinds[kind]) || [];
+        },
+
+        libraryExtensionsText(cat) { return (cat.extensions || []).join(', '); },
+        setLibraryExtensions(cat, text) {
+            cat.extensions = text.split(',').map(s => s.trim()).filter(Boolean);
+        },
+        libraryPatternsText(cat) { return (cat.patterns || []).join('\n'); },
+        setLibraryPatterns(cat, text) {
+            cat.patterns = text.split('\n').map(s => s.trim()).filter(Boolean);
+        },
+
+        previewLibraryName() {
+            clearTimeout(this._libraryPreviewTimer);
+            const name = (this.libraryPreviewName || '').trim();
+            if (!name) { this.libraryPreviewResult = null; return; }
+            this._libraryPreviewTimer = setTimeout(async () => {
+                try {
+                    const res = await api.previewLibrary([name]);
+                    this.libraryPreviewResult = Array.isArray(res) ? res[0] : null;
+                } catch (e) {
+                    console.error('previewLibrary error', e);
+                }
+            }, 300);
         },
 
         // --- Pattern settings ---

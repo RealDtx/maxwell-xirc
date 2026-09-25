@@ -330,19 +330,19 @@
                                 <table class="table">
                                     <thead>
                                         <tr>
-                                            <th @click="sortBy('filename')" style="cursor:pointer;" x-text="'File' + sortIndicator('filename')"></th>
-                                            <th @click="sortBy('filesize')" style="cursor:pointer;" x-text="'Size' + sortIndicator('filesize')"></th>
-                                            <th @click="sortBy('bot_nick')" style="cursor:pointer;" x-text="'Bot' + sortIndicator('bot_nick')"></th>
-                                            <th @click="sortBy('pack_number')" style="cursor:pointer;" x-text="'Pack' + sortIndicator('pack_number')"></th>
-                                            <th>Server</th>
-                                            <th>Channel</th>
+                                            <th @click="sortBy('filename')"><div class="col-resize" style="width:360px;" x-text="'File' + sortIndicator('filename')"></div></th>
+                                            <th @click="sortBy('filesize')"><div class="col-resize" x-text="'Size' + sortIndicator('filesize')"></div></th>
+                                            <th @click="sortBy('bot_nick')"><div class="col-resize" x-text="'Bot' + sortIndicator('bot_nick')"></div></th>
+                                            <th @click="sortBy('pack_number')"><div class="col-resize" x-text="'Pack' + sortIndicator('pack_number')"></div></th>
+                                            <th><div class="col-resize">Server</div></th>
+                                            <th><div class="col-resize">Channel</div></th>
                                             <th></th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <template x-for="(r, idx) in displaySearchRows()" :key="idx">
-                                            <tr>
-                                                <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="r.filename || r.raw_line || '-'"></td>
+                                            <tr :title="r.filename || r.raw_line">
+                                                <td class="dl-filename-cell" x-text="r.filename || r.raw_line || '-'"></td>
                                                 <td style="white-space:nowrap;" x-text="r.size_display || '-'"></td>
                                                 <td x-text="r.bot_nick || '-'"></td>
                                                 <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
@@ -379,17 +379,17 @@
                                             <table class="table" style="margin-top:4px;">
                                                 <thead>
                                                     <tr>
-                                                        <th>File</th>
-                                                        <th>Size</th>
-                                                        <th>Bot</th>
-                                                        <th>Pack</th>
+                                                        <th><div class="col-resize" style="width:360px;">File</div></th>
+                                                        <th><div class="col-resize">Size</div></th>
+                                                        <th><div class="col-resize">Bot</div></th>
+                                                        <th><div class="col-resize">Pack</div></th>
                                                         <th></th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     <template x-for="(r, idx) in group.results" :key="idx">
-                                                        <tr>
-                                                            <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" x-text="r.filename || r.raw_line || '-'"></td>
+                                                        <tr :title="r.filename || r.raw_line">
+                                                            <td class="dl-filename-cell" x-text="r.filename || r.raw_line || '-'"></td>
                                                             <td style="white-space:nowrap;" x-text="r.size_display || '-'"></td>
                                                             <td x-text="r.bot_nick || '-'"></td>
                                                             <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
@@ -526,19 +526,19 @@
                                     <table>
                                         <thead>
                                             <tr>
-                                                <th @click="sortBy('pack_number')" x-text="'Pack #' + sortIndicator('pack_number')"></th>
-                                                <th @click="sortBy('filename')" x-text="'Filename' + sortIndicator('filename')"></th>
-                                                <th @click="sortBy('filesize')" x-text="'Size' + sortIndicator('filesize')"></th>
-                                                <th @click="sortBy('bot_nick')" x-text="'Bot' + sortIndicator('bot_nick')"></th>
-                                                <th @click="sortBy('downloads_count')" x-text="'Downloads' + sortIndicator('downloads_count')"></th>
-                                                <th>Actions</th>
+                                                <th @click="sortBy('pack_number')"><div class="col-resize" x-text="'Pack #' + sortIndicator('pack_number')"></div></th>
+                                                <th @click="sortBy('filename')"><div class="col-resize" style="width:360px;" x-text="'Filename' + sortIndicator('filename')"></div></th>
+                                                <th @click="sortBy('filesize')"><div class="col-resize" x-text="'Size' + sortIndicator('filesize')"></div></th>
+                                                <th @click="sortBy('bot_nick')"><div class="col-resize" x-text="'Bot' + sortIndicator('bot_nick')"></div></th>
+                                                <th @click="sortBy('downloads_count')"><div class="col-resize" x-text="'Downloads' + sortIndicator('downloads_count')"></div></th>
+                                                <th><div class="col-resize">Actions</div></th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <template x-for="(r, i) in realmDisplayRows()" :key="i">
-                                                <tr :class="{ unparsed: !r.parsed }">
+                                                <tr :class="{ unparsed: !r.parsed }" :title="r.filename || r.raw_line">
                                                     <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
-                                                    <td>
+                                                    <td class="dl-filename-cell">
                                                         <span x-text="r.filename || r.raw_line || '-'"></span>
                                                         <template x-if="!r.parsed">
                                                             <a
@@ -686,19 +686,19 @@
                                     <table>
                                         <thead>
                                             <tr>
-                                                <th @click="sortBy('pack_number')" x-text="'Pack #' + sortIndicator('pack_number')"></th>
-                                                <th @click="sortBy('filename')" x-text="'Filename' + sortIndicator('filename')"></th>
-                                                <th @click="sortBy('filesize')" x-text="'Size' + sortIndicator('filesize')"></th>
-                                                <th @click="sortBy('bot_nick')" x-text="'Bot' + sortIndicator('bot_nick')"></th>
-                                                <th @click="sortBy('downloads_count')" x-text="'Downloads' + sortIndicator('downloads_count')"></th>
-                                                <th>Actions</th>
+                                                <th @click="sortBy('pack_number')"><div class="col-resize" x-text="'Pack #' + sortIndicator('pack_number')"></div></th>
+                                                <th @click="sortBy('filename')"><div class="col-resize" style="width:360px;" x-text="'Filename' + sortIndicator('filename')"></div></th>
+                                                <th @click="sortBy('filesize')"><div class="col-resize" x-text="'Size' + sortIndicator('filesize')"></div></th>
+                                                <th @click="sortBy('bot_nick')"><div class="col-resize" x-text="'Bot' + sortIndicator('bot_nick')"></div></th>
+                                                <th @click="sortBy('downloads_count')"><div class="col-resize" x-text="'Downloads' + sortIndicator('downloads_count')"></div></th>
+                                                <th><div class="col-resize">Actions</div></th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <template x-for="(r, i) in realmDisplayRows()" :key="i">
-                                                <tr :class="{ unparsed: !r.parsed }">
+                                                <tr :class="{ unparsed: !r.parsed }" :title="r.filename || r.raw_line">
                                                     <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
-                                                    <td>
+                                                    <td class="dl-filename-cell">
                                                         <span x-text="r.filename || r.raw_line || '-'"></span>
                                                         <template x-if="!r.parsed">
                                                             <a
@@ -914,7 +914,7 @@
                                                             @change="setTarget(dl, dl.target_dir)"
                                                             :title="dl.target_dir || 'Auto'"
                                                             style="max-width:110px;font-size:11px;padding:2px 4px;margin-right:6px;vertical-align:middle;background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;overflow:hidden;text-overflow:ellipsis;">
-                                                            <option value="">Auto</option>
+                                                            <option value="" x-text="dlAutoLabel(dl)"></option>
                                                             <template x-for="t in downloadTargets" :key="t">
                                                                 <option :value="t" :title="t" x-text="t"></option>
                                                             </template>
@@ -961,6 +961,7 @@
                         <div class="tab" :class="{ active: settingsTab === 'servers' }" @click="settingsTab = 'servers'">Servers</div>
                         <div class="tab" :class="{ active: settingsTab === 'realms' }" @click="settingsTab = 'realms'">Realms</div>
                         <div class="tab" :class="{ active: settingsTab === 'routing' }" @click="settingsTab = 'routing'">File Routing</div>
+                        <div class="tab" :class="{ active: settingsTab === 'library' }" @click="settingsTab = 'library'; loadLibrarySettings()">Library</div>
                         <div class="tab" :class="{ active: settingsTab === 'hooks' }" @click="settingsTab = 'hooks'">Post-Hooks</div>
                         <div class="tab" :class="{ active: settingsTab === 'patterns' }" @click="settingsTab = 'patterns'; loadPatternSettings()">Patterns</div>
                         <div class="tab" :class="{ active: settingsTab === 'general' }" @click="settingsTab = 'general'">General</div>
@@ -1227,6 +1228,150 @@
                         </div>
                     </template>
 
+                    <!-- Library tab -->
+                    <template x-if="settingsTab === 'library' && library">
+                        <div style="padding-top:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                <h3 style="margin:0; font-size:14px;">Library</h3>
+                                <div style="display:flex; gap:8px;">
+                                    <button class="btn btn-sm" @click="detectLibrarySettings()">Re-detect from folders</button>
+                                    <button class="btn btn-sm" @click="reloadLibrarySettings()">Reload</button>
+                                    <button class="btn btn-primary btn-sm" @click="saveLibrarySettings()">Save</button>
+                                </div>
+                            </div>
+
+                            <template x-if="libraryNote">
+                                <p style="color:var(--warning); font-size:12px; margin:0 0 12px;" x-text="libraryNote"></p>
+                            </template>
+                            <template x-if="libraryError">
+                                <p style="color:var(--danger); font-size:12px; margin:0 0 12px;" x-text="libraryError"></p>
+                            </template>
+                            <template x-if="librarySaved">
+                                <p style="color:var(--success); font-size:12px; margin:0 0 12px;">Saved.</p>
+                            </template>
+
+                            <!-- Global settings -->
+                            <div class="settings-card" style="max-width:480px; margin-bottom:16px;">
+                                <h3 style="margin-bottom:12px;">Global</h3>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                                    <input type="checkbox" x-model="library.auto_organize">
+                                    Auto-organize downloads into categories
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;">
+                                    Folder levels to search
+                                    <input type="number" min="0" max="5" x-model.number="library.search_depth"
+                                           style="width:60px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;">
+                                </label>
+                                <div class="form-group" style="margin-top:12px;">
+                                    <label>Media root</label>
+                                    <div style="display:flex; gap:8px;">
+                                        <input type="text" x-model="library.media_root" placeholder="/data/media" style="flex:1;">
+                                        <button @click="openDirPicker(library.media_root, d => library.media_root = d)" class="btn btn-sm">📁</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Category cards -->
+                            <div style="display:flex; flex-direction:column; gap:12px;">
+                                <template x-for="cat in library.categories" :key="cat.id">
+                                    <div style="padding:14px 16px; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary);">
+                                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                                            <label class="toggle">
+                                                <input type="checkbox" x-model="cat.enabled">
+                                                <span class="toggle-slider"></span>
+                                            </label>
+                                            <input type="text" x-model="cat.name" style="font-size:13px; font-weight:600; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; padding:4px 8px; color:var(--text-primary); max-width:200px;">
+                                            <span class="badge" x-text="cat.kind"></span>
+                                        </div>
+
+                                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                                            <div class="form-group">
+                                                <label>Folder</label>
+                                                <input type="text" x-model="cat.dir">
+                                            </div>
+                                            <template x-if="cat.kind === 'series'">
+                                                <div class="form-group">
+                                                    <label>New season folder style</label>
+                                                    <input type="text" x-model="cat.season_dir" placeholder="S{season:02}" style="font-family:monospace;">
+                                                </div>
+                                            </template>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label>Path template</label>
+                                            <input type="text" x-model="cat.path" style="font-family:monospace;" placeholder="{title}/{season_dir}">
+                                            <small style="color:var(--text-muted); font-size:11px; display:block; margin-top:4px;">
+                                                Fields:
+                                                <template x-for="f in libraryFieldsFor(cat.kind)" :key="f">
+                                                    <code x-text="'{' + f + '}'" style="margin-right:6px;"></code>
+                                                </template>
+                                                <template x-if="cat.kind === 'series'">
+                                                    <code style="margin-right:6px;">{season_dir}</code>
+                                                </template>
+                                            </small>
+                                        </div>
+
+                                        <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:8px;">
+                                            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                                <input type="checkbox" x-model="cat.create_folders"> Create folders
+                                            </label>
+                                            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                                <input type="checkbox" x-model="cat.auto_extract"> Auto-extract
+                                            </label>
+                                            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                                <input type="checkbox" x-model="cat.delete_archive"> Delete archive after extract
+                                            </label>
+                                        </div>
+
+                                        <details style="margin-top:10px;">
+                                            <summary style="cursor:pointer; font-size:12px; color:var(--text-muted);">Advanced</summary>
+                                            <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px;">
+                                                <div class="form-group">
+                                                    <label>Extensions (comma-separated)</label>
+                                                    <input type="text" :value="libraryExtensionsText(cat)" @change="setLibraryExtensions(cat, $event.target.value)" placeholder="mkv, mp4, avi">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>Patterns (one regex per line)</label>
+                                                    <textarea :value="libraryPatternsText(cat)" @change="setLibraryPatterns(cat, $event.target.value)" rows="3" style="width:100%; font-family:monospace; font-size:12px; padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);"></textarea>
+                                                </div>
+                                                <div class="form-group" style="max-width:120px;">
+                                                    <label>Priority</label>
+                                                    <input type="number" x-model.number="cat.priority">
+                                                </div>
+                                            </div>
+                                        </details>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <!-- Try a file name -->
+                            <div class="settings-card" style="max-width:600px; margin-top:20px;">
+                                <h3 style="margin-bottom:12px;">Try a file name</h3>
+                                <input type="text" x-model="libraryPreviewName" @input="previewLibraryName()" placeholder="The.Simpsons.S37E01.mkv"
+                                       style="width:100%; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px; font-family:monospace;">
+                                <template x-if="libraryPreviewResult">
+                                    <div style="margin-top:10px; font-size:12px;">
+                                        <template x-if="libraryPreviewResult.path">
+                                            <div>
+                                                <div><strong x-text="libraryPreviewResult.category"></strong> <span style="color:var(--text-muted);" x-text="'(' + libraryPreviewResult.kind + ')'"></span></div>
+                                                <template x-for="(v, k) in libraryPreviewResult.fields" :key="k">
+                                                    <div style="color:var(--text-muted);"><span x-text="k"></span>: <span x-text="v"></span></div>
+                                                </template>
+                                                <div style="margin-top:6px; font-family:monospace;">
+                                                    <span x-text="libraryPreviewResult.path"></span>
+                                                    <span x-show="!libraryPreviewResult.exists" style="color:var(--text-muted);"> (will be created)</span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <template x-if="!libraryPreviewResult.path">
+                                            <div style="color:var(--text-muted);">No category — routing rules apply</div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
                     <!-- Post-Hooks tab -->
                     <template x-if="settingsTab === 'hooks'">
                         <div style="padding-top:16px;">
@@ -1319,28 +1464,6 @@
                                 </div>
                                 <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
                                     Preview: <span x-text="formatDateCustom(new Date().toISOString(), dateFormat)"></span>
-                                </p>
-                            </div>
-                            <div class="settings-card" style="max-width:480px;margin-top:16px;">
-                                <h3 style="margin-bottom:12px;">Downloads</h3>
-                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
-                                    <input type="checkbox" :checked="autoSubdir"
-                                           @change="autoSubdir = $event.target.checked; localStorage.setItem('mxirc_auto_subdir', autoSubdir)">
-                                    Auto-pick subfolder from filename
-                                </label>
-                                <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
-                                    When no folder is chosen, the subfolder of the routing destination whose name matches the start of the filename is used
-                                    (e.g. <code>Series/Scrubs</code>), and inside it an existing season folder
-                                    (<code>Season 4</code>, <code>S04</code>, <code>Staffel 4</code>) matching the filename's <code>S04E…</code>.
-                                </p>
-                                <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;">
-                                    Folder levels to search
-                                    <input type="number" min="0" max="5" :value="subdirDepth"
-                                           @change="setSubdirDepth($event.target.value); $event.target.value = subdirDepth"
-                                           style="width:60px;padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;">
-                                </label>
-                                <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">
-                                    How deep below each routing destination to look for matching folders and to list folders in the download target dropdown (0–5).
                                 </p>
                             </div>
                         </div>
@@ -1490,30 +1613,130 @@
                     </template>
                 </div>
                 <!-- File list (right) -->
-                <div style="flex:1;overflow:auto;">
+                <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
                     <div x-show="!fileManagerDir" class="text-muted text-sm">Select a directory.</div>
-                    <div x-show="fileManagerLoading" class="text-muted text-sm">Loading...</div>
-                    <table x-show="fileManagerDir && !fileManagerLoading" class="w-full text-sm">
-                        <thead>
-                            <tr class="text-muted border-b">
-                                <th class="text-left pb-2 pr-4">Filename</th>
-                                <th class="text-left pb-2 pr-4">Size</th>
-                                <th class="text-left pb-2">Modified</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr x-show="fileManagerFiles.length === 0">
-                                <td colspan="3" class="text-muted py-4">No files.</td>
-                            </tr>
-                            <template x-for="f in fileManagerFiles" :key="f.name">
-                                <tr class="border-b hover-row">
-                                    <td class="py-1 pr-4 font-mono text-xs" x-text="f.name"></td>
-                                    <td class="py-1 pr-4 text-muted text-xs" x-text="formatSize(f.size)"></td>
-                                    <td class="py-1 text-muted text-xs" x-text="formatDate(f.modified)"></td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
+                    <template x-if="fileManagerDir">
+                        <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
+                            <!-- Toolbar -->
+                            <div class="fm-toolbar">
+                                <div class="fm-breadcrumb">
+                                    <template x-for="(crumb, i) in fmBreadcrumb()" :key="crumb.path">
+                                        <span>
+                                            <span class="fm-crumb"
+                                                  :class="{ 'fm-drop-target': fileManagerDragOverPath === crumb.path }"
+                                                  @click="loadFileManager(crumb.path)"
+                                                  @dragover="fmDragOverTarget($event, crumb.path)"
+                                                  @dragleave="fmDragLeaveTarget(crumb.path)"
+                                                  @drop="fmDropTarget($event, crumb.path)"
+                                                  x-text="crumb.name"></span>
+                                            <span x-show="i < fmBreadcrumb().length - 1" class="fm-crumb-sep">/</span>
+                                        </span>
+                                    </template>
+                                </div>
+                                <button class="btn btn-sm" :disabled="!fileManagerParent" @click="loadFileManager(fileManagerParent)" title="Up one folder">&uarr; Up</button>
+                                <template x-if="!fileManagerNewFolderOpen">
+                                    <button class="btn btn-sm" @click="fmStartNewFolder()">+ New folder</button>
+                                </template>
+                                <template x-if="fileManagerNewFolderOpen">
+                                    <span style="display:flex;gap:4px;align-items:center;">
+                                        <input type="text" x-model="fileManagerNewFolderName" x-init="$el.focus()"
+                                               placeholder="Folder name" class="fm-inline-input"
+                                               @keydown.enter="fmCreateFolder()" @keydown.escape="fmCancelNewFolder()">
+                                        <button class="btn btn-sm btn-primary" @click="fmCreateFolder()">Create</button>
+                                        <button class="btn btn-sm" @click="fmCancelNewFolder()">Cancel</button>
+                                    </span>
+                                </template>
+                                <input type="text" x-model="fileManagerFilter" placeholder="Filter…" class="fm-filter-input">
+                                <button class="btn btn-sm" style="margin-left:auto;" @click="loadFileManager(fileManagerDir)" title="Refresh">&#8635; Refresh</button>
+                            </div>
+
+                            <div x-show="fileManagerLoading" class="text-muted text-sm">Loading...</div>
+                            <div x-show="fileManagerError" class="text-sm" style="color:var(--danger);margin:4px 0;" x-text="fileManagerError"></div>
+                            <div x-show="Object.keys(fileManagerErrors).length" style="color:var(--danger);margin:4px 0;font-size:12px;">
+                                <template x-for="(msg, name) in fileManagerErrors" :key="name">
+                                    <div><span x-text="name"></span>: <span x-text="msg"></span></div>
+                                </template>
+                            </div>
+
+                            <!-- Bulk actions -->
+                            <div class="fm-bulk-bar" x-show="fmSelectedCount() > 0">
+                                <span x-text="fmSelectedCount() + ' selected'"></span>
+                                <select class="fm-move-select" @change="fmMove(fmSelectedNames(), $event.target.value); $event.target.value = ''">
+                                    <option value="">Move to…</option>
+                                    <template x-for="t in downloadTargets.filter(t => t !== fileManagerDir)" :key="t">
+                                        <option :value="t" x-text="t"></option>
+                                    </template>
+                                </select>
+                                <button class="btn btn-sm btn-danger"
+                                        @click="fmConfirmDelete('selected', () => fmDeleteNames(fmSelectedNames()))"
+                                        x-text="_fmConfirm === 'selected' ? 'Confirm? (folders deleted with contents)' : 'Delete'"></button>
+                            </div>
+
+                            <div style="flex:1;overflow:auto;">
+                                <table x-show="!fileManagerLoading" class="w-full text-sm">
+                                    <thead>
+                                        <tr class="text-muted border-b">
+                                            <th style="width:28px;"><input type="checkbox" :checked="fileManagerSelectAll" @change="fmToggleSelectAll()"></th>
+                                            <th style="width:24px;"></th>
+                                            <th @click="fmSortBy('name')"><div class="col-resize" style="width:300px;" x-text="'Name' + fmSortIndicator('name')"></div></th>
+                                            <th @click="fmSortBy('size')"><div class="col-resize" x-text="'Size' + fmSortIndicator('size')"></div></th>
+                                            <th @click="fmSortBy('modified')"><div class="col-resize" x-text="'Modified' + fmSortIndicator('modified')"></div></th>
+                                            <th><div class="col-resize">Actions</div></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr x-show="fmDisplayEntries().length === 0">
+                                            <td colspan="6" class="text-muted py-4">Empty folder.</td>
+                                        </tr>
+                                        <template x-for="entry in fmDisplayEntries()" :key="entry.name">
+                                            <tr class="border-b hover-row"
+                                                draggable="true"
+                                                @dragstart="fmDragStart($event, entry)"
+                                                @dragover="entry.is_dir && fmDragOverTarget($event, fmJoin(fileManagerDir, entry.name))"
+                                                @dragleave="entry.is_dir && fmDragLeaveTarget(fmJoin(fileManagerDir, entry.name))"
+                                                @drop="entry.is_dir && fmDropTarget($event, fmJoin(fileManagerDir, entry.name))"
+                                                :class="{ 'fm-drop-target': entry.is_dir && fileManagerDragOverPath === fmJoin(fileManagerDir, entry.name) }"
+                                                :title="entry.name">
+                                                <td class="py-1"><input type="checkbox" :checked="!!fileManagerSelected[entry.name]" @change="fmToggleSelect(entry.name)"></td>
+                                                <td class="py-1" x-html="fileIcon(entry)"></td>
+                                                <td class="py-1 dl-filename-cell">
+                                                    <template x-if="fileManagerRename.name !== entry.name">
+                                                        <span :style="entry.is_dir ? 'cursor:pointer;' : ''"
+                                                              @click="entry.is_dir && fmOpenFolder(entry)"
+                                                              @dblclick="entry.is_dir && fmOpenFolder(entry)"
+                                                              x-text="entry.name"></span>
+                                                    </template>
+                                                    <template x-if="fileManagerRename.name === entry.name">
+                                                        <input type="text" x-model="fileManagerRename.value" x-init="$el.focus(); $el.select()"
+                                                               class="fm-inline-input"
+                                                               @keydown.enter="fmSaveRename(entry)" @keydown.escape="fmCancelRename()"
+                                                               @blur="fmSaveRename(entry)">
+                                                    </template>
+                                                </td>
+                                                <td class="py-1 text-muted text-xs" x-text="fmSizeLabel(entry)"></td>
+                                                <td class="py-1 text-muted text-xs" x-text="formatDate(entry.modified)"></td>
+                                                <td class="py-1">
+                                                    <span style="display:flex;gap:4px;align-items:center;">
+                                                        <button class="btn btn-sm" title="Rename" @click.stop="fmStartRename(entry)">✎</button>
+                                                        <select class="fm-move-select" style="max-width:120px;"
+                                                                @change="fmMove([entry.name], $event.target.value); $event.target.value = ''">
+                                                            <option value="">Move to…</option>
+                                                            <template x-for="t in downloadTargets.filter(t => t !== fileManagerDir)" :key="t">
+                                                                <option :value="t" x-text="t"></option>
+                                                            </template>
+                                                        </select>
+                                                        <button class="btn btn-sm btn-danger" title="Delete"
+                                                                @click="fmConfirmDelete('row:' + entry.name, () => fmDeleteNames([entry.name]))"
+                                                                x-text="_fmConfirm === ('row:' + entry.name) ? 'Confirm?' : '🗑'"></button>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </template>
                 </div>
             </div>
         </div>

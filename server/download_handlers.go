@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/RealDtx/maxwell-irc/db"
@@ -49,7 +48,6 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		StatsOnly   bool   `json:"stats_only"`
 		AutoExtract *bool  `json:"auto_extract"`
 		AutoSubdir  *bool  `json:"auto_subdir"`
-		SubdirDepth *int   `json:"subdir_depth"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -70,16 +68,17 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 	if req.AutoExtract != nil {
 		autoExtract = *req.AutoExtract
 	}
+	// Default auto_subdir to the library's auto-organize setting rather than
+	// always-on, so turning that off in Settings also changes new downloads.
 	autoSubdir := true
+	if s.library != nil {
+		autoSubdir = s.library.Get().AutoOrganize
+	}
 	if req.AutoSubdir != nil {
 		autoSubdir = *req.AutoSubdir
 	}
-	subdirDepth := routing.DefaultSubdirDepth
-	if req.SubdirDepth != nil {
-		subdirDepth = clampSubdirDepth(*req.SubdirDepth)
-	}
 
-	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly, autoExtract, autoSubdir, subdirDepth)
+	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly, autoExtract, autoSubdir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -309,7 +308,9 @@ func clampSubdirDepth(d int) int {
 	return d
 }
 
-// enabledRoutingDirs returns the distinct destination dirs of enabled routing rules.
+// enabledRoutingDirs returns the distinct destination dirs of enabled routing
+// rules plus every enabled library category's dir — both count as valid
+// download-target roots.
 func (s *Server) enabledRoutingDirs() ([]string, error) {
 	rules, err := s.store.GetAllFileRoutingRules()
 	if err != nil {
@@ -323,20 +324,38 @@ func (s *Server) enabledRoutingDirs() ([]string, error) {
 			dirs = append(dirs, rule.DestinationDir)
 		}
 	}
+	if s.library != nil {
+		cfg := s.library.Get()
+		for _, cat := range cfg.Categories {
+			dir := cat.Dir
+			if dir == "" {
+				continue
+			}
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(cfg.MediaRoot, dir)
+			}
+			if cat.Enabled && !seen[dir] {
+				seen[dir] = true
+				dirs = append(dirs, dir)
+			}
+		}
+	}
 	return dirs, nil
 }
 
-// GET /api/downloads/targets?depth=3 — every enabled routing destination dir
-// plus its non-hidden subfolders down to depth levels, sorted.
+// GET /api/downloads/targets — every enabled routing destination dir and
+// library category dir, plus their non-hidden subfolders down to the
+// library's search_depth levels, sorted.
 func (s *Server) handleGetDownloadTargets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	depth := routing.DefaultSubdirDepth
-	if v, err := strconv.Atoi(r.URL.Query().Get("depth")); err == nil {
-		depth = clampSubdirDepth(v)
+	if s.library != nil {
+		depth = s.library.Get().SearchDepth
 	}
+	depth = clampSubdirDepth(depth)
 	dirs, err := s.enabledRoutingDirs()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

@@ -22,7 +22,7 @@ func New(store db.Store, maxConcurrent int) *Queue {
 	}
 }
 
-func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64, statsOnly bool, autoExtract bool, autoSubdir bool, subdirDepth int) (*db.Download, error) {
+func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64, statsOnly bool, autoExtract bool, autoSubdir bool) (*db.Download, error) {
 	dl := &db.Download{
 		ServerID:    serverID,
 		Channel:     channel,
@@ -34,7 +34,6 @@ func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, fil
 		StatsOnly:   statsOnly,
 		AutoExtract: autoExtract,
 		AutoSubdir:  autoSubdir,
-		SubdirDepth: subdirDepth,
 	}
 
 	if err := q.store.CreateDownload(dl); err != nil {

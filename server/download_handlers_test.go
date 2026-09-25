@@ -14,6 +14,7 @@ import (
 	"github.com/RealDtx/maxwell-irc/config"
 	"github.com/RealDtx/maxwell-irc/db"
 	"github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/library"
 	"github.com/RealDtx/maxwell-irc/parser"
 	"github.com/RealDtx/maxwell-irc/queue"
 )
@@ -251,6 +252,48 @@ func TestIsValidTargetDir(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got, err := srv.isValidTargetDir(filepath.Clean(tt.dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tt.want {
+			t.Errorf("isValidTargetDir(%q) = %v, want %v", tt.dir, got, tt.want)
+		}
+	}
+}
+
+// TestIsValidTargetDir_LibraryCategoryDir checks that B6's extension of
+// enabledRoutingDirs — library category dirs count as roots too — actually
+// takes effect, independent of any routing rule.
+func TestIsValidTargetDir_LibraryCategoryDir(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	mediaRoot, err := ioutil.TempDir("", "xirc-library-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(mediaRoot)
+	if err := os.MkdirAll(filepath.Join(mediaRoot, "Movies", "Collection"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	srv.SetLibrary(library.NewManager(filepath.Join(mediaRoot, "categories.yaml"), library.Config{
+		MediaRoot: mediaRoot,
+		Categories: []library.Category{
+			{ID: "movie", Kind: "movie", Dir: "Movies", Enabled: true},
+		},
+	}))
+
+	tests := []struct {
+		dir  string
+		want bool
+	}{
+		{filepath.Join(mediaRoot, "Movies"), true},
+		{filepath.Join(mediaRoot, "Movies", "Collection"), true},
+		{filepath.Join(mediaRoot, "NotACategory"), false},
+	}
+	for _, tt := range tests {
+		got, err := srv.isValidTargetDir(tt.dir)
 		if err != nil {
 			t.Fatal(err)
 		}

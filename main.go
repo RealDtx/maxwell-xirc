@@ -21,6 +21,7 @@ import (
 	"github.com/RealDtx/maxwell-irc/internal/debug"
 	"github.com/RealDtx/maxwell-irc/internal/exitcodes"
 	ircpkg "github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/library"
 	"github.com/RealDtx/maxwell-irc/maintenance"
 	"github.com/RealDtx/maxwell-irc/notify"
 	"github.com/RealDtx/maxwell-irc/parser"
@@ -74,6 +75,33 @@ func checkDirectories(store db.Store) []string {
 		os.Exit(exitcodes.ExitTransient)
 	}
 	return bad
+}
+
+// loadLibrary loads the library taxonomy config (categories.yaml, next to
+// configPath by default). Missing: detect defaults from cfg.Storage.MediaDir
+// and save them. Present but unparseable: log it and fall back to detected
+// defaults in memory, without touching the file.
+func loadLibrary(configPath string, cfg *config.Config) *library.Manager {
+	path := cfg.Storage.CategoriesFile
+	if path == "" {
+		path = filepath.Join(filepath.Dir(configPath), "categories.yaml")
+	}
+
+	var libCfg library.Config
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		libCfg = library.Detect(cfg.Storage.MediaDir)
+		if err := library.Save(path, &libCfg); err != nil {
+			log.Printf("warning: failed to save detected library config to %s: %v", path, err)
+		} else {
+			log.Printf("library: detected default categories from %s, saved to %s", cfg.Storage.MediaDir, path)
+		}
+	} else if loaded, err := library.Load(path); err != nil {
+		log.Printf("warning: failed to parse %s: %v — using detected defaults (not saved)", path, err)
+		libCfg = library.Detect(cfg.Storage.MediaDir)
+	} else {
+		libCfg = *loaded
+	}
+	return library.NewManager(path, libCfg)
 }
 
 // isTerminal reports whether stdin is an interactive terminal.
@@ -247,7 +275,10 @@ func main() {
 	p := parser.New(store, bus)
 	p.Start()
 
+	libMgr := loadLibrary(*configPath, cfg)
+
 	eng := queue.NewEngine(store, bus, ircMgr, &cfg.Storage, cfg.Downloads.MaxConcurrent)
+	eng.SetLibrary(libMgr)
 	eng.Start()
 
 	maint := maintenance.New(store, cfg.Maintenance)
@@ -263,6 +294,7 @@ func main() {
 		log.Fatalf("embedded web FS: %v", err)
 	}
 	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState, cfg.Server.Prefix, webFS)
+	srv.SetLibrary(libMgr)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{

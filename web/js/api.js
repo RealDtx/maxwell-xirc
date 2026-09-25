@@ -25,6 +25,10 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: res.statusText }));
+            throw new Error(err.error || res.statusText);
+        }
         return res.json();
     },
 
@@ -116,7 +120,7 @@ const api = {
     deleteDownloads(ids) { return this.post('/downloads/delete', { ids }); },
     clearDownloads(status) { return this.post('/downloads/clear', { status }); },
     setAutoExtract(id, enabled) { return this.post('/downloads/set-auto-extract', { download_id: id, auto_extract: enabled }); },
-    getDownloadTargets(depth) { return this.get('/downloads/targets?depth=' + encodeURIComponent(depth)); },
+    getDownloadTargets() { return this.get('/downloads/targets'); },
     setDownloadTarget(id, dir) { return this.post('/downloads/set-target', { download_id: id, target_dir: dir }); },
 
     // Storage
@@ -140,12 +144,20 @@ const api = {
     // Browse & Files
     browseDir(path)  { return this.get('/browse?path=' + encodeURIComponent(path || '/')); },
     listFiles(dir)   { return this.get('/files?dir=' + encodeURIComponent(dir)); },
+    fileAction(body) { return this.post('/files', body); },
 
     // Stats
     getDownloadStats()                { return this.get('/stats/downloads'); },
     getDownloadHistory(offset, limit) {
         return this.get(`/stats/history?offset=${offset||0}&limit=${limit||50}`);
     },
+
+    // Library (auto-organize categories)
+    getLibrary()             { return this.get('/library'); },
+    saveLibrary(cfg)         { return this.put('/library', cfg); },
+    detectLibrary()          { return this.get('/library/detect'); },
+    getLibraryKinds()        { return this.get('/library/kinds'); },
+    previewLibrary(filenames){ return this.post('/library/preview', { filenames }); },
 
     // Setup wizard
     getSetupStatus() { return this.get('/setup/status'); },

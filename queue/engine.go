@@ -15,6 +15,7 @@ import (
 	"github.com/RealDtx/maxwell-irc/db"
 	"github.com/RealDtx/maxwell-irc/dcc"
 	"github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/library"
 	"github.com/RealDtx/maxwell-irc/routing"
 )
 
@@ -39,6 +40,7 @@ type Engine struct {
 	bus                *irc.EventBus
 	ircMgr             *irc.Manager
 	storageCfg         *config.StorageConfig
+	library            *library.Manager
 	eventCh            <-chan irc.Event
 	stopCh             chan struct{}
 	pendingByBot       map[string]*PendingRequest // key: "serverID:botNick"
@@ -80,6 +82,12 @@ func (e *Engine) CancelTransfer(downloadID int64) {
 
 func (e *Engine) Queue() *Queue {
 	return e.queue
+}
+
+// SetLibrary wires the library manager in — set once at startup, before
+// Start(), so no locking is needed to read it from runTransfer.
+func (e *Engine) SetLibrary(m *library.Manager) {
+	e.library = m
 }
 
 func (e *Engine) Start() {
@@ -533,28 +541,44 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		return
 	}
 
-	// Apply file routing rules: an explicit per-download target wins; else
-	// match the routing rules and, if auto_subdir is on, infer a subfolder
-	// from the filename.
-	if rules, err := e.store.GetFileRoutingRules(); err == nil {
-		destDir := ""
-		if dlErr == nil && dl != nil && dl.TargetDir != "" {
-			destDir = dl.TargetDir
-		} else if ruleDir := routing.MatchRule(offer.Filename, rules); ruleDir != "" {
-			destDir = ruleDir
-			if dlErr == nil && dl != nil && dl.AutoSubdir {
-				destDir = routing.InferSubdir(ruleDir, offer.Filename, dl.SubdirDepth)
+	// Pick the destination directory: an explicit per-download target wins;
+	// else the library categorizes it when auto-organize is on (library
+	// package); else the existing routing rules + optional inferred
+	// subfolder, unchanged.
+	destDir := ""
+	var matchedCat *library.Category
+	if dlErr == nil && dl != nil && dl.TargetDir != "" {
+		destDir = dl.TargetDir
+	} else if e.library != nil && dlErr == nil && dl != nil && dl.AutoSubdir {
+		libCfg := e.library.Get()
+		if libCfg.AutoOrganize {
+			if dir, cat, _, ok := library.Resolve(&libCfg, offer.Filename); ok {
+				destDir, matchedCat = dir, cat
 			}
 		}
-		if destDir != "" {
-			if moved, err := routing.MoveFile(destPath, destDir); err != nil {
-				log.Printf("routing move failed for download %d: %v", downloadID, err)
-			} else {
-				finalPath = moved
+	}
+	if destDir == "" {
+		if rules, err := e.store.GetFileRoutingRules(); err == nil {
+			if ruleDir := routing.MatchRule(offer.Filename, rules); ruleDir != "" {
+				destDir = ruleDir
+				if dlErr == nil && dl != nil && dl.AutoSubdir {
+					depth := routing.DefaultSubdirDepth
+					if e.library != nil {
+						depth = e.library.Get().SearchDepth
+					}
+					destDir = routing.InferSubdir(ruleDir, offer.Filename, depth)
+				}
 			}
+		} else {
+			log.Printf("failed to load routing rules for download %d: %v", downloadID, err)
 		}
-	} else {
-		log.Printf("failed to load routing rules for download %d: %v", downloadID, err)
+	}
+	if destDir != "" {
+		if moved, err := routing.MoveFile(destPath, destDir); err != nil {
+			log.Printf("routing move failed for download %d: %v", downloadID, err)
+		} else {
+			finalPath = moved
+		}
 	}
 
 	e.bus.Publish(irc.Event{
@@ -611,8 +635,20 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		}
 	}
 
-	// Auto-extract tar archives and route/hook each extracted file
-	if dlErr == nil && dl != nil && dl.AutoExtract && routing.IsArchive(offer.Filename) {
+	// Auto-extract and route/hook each extracted file. A matched category's
+	// auto_extract/delete_archive override the download's/global defaults.
+	autoExtract := dlErr == nil && dl != nil && dl.AutoExtract
+	deleteArchive := e.storageCfg != nil && e.storageCfg.AutoExtract.DeleteArchive
+	if matchedCat != nil {
+		autoExtract = matchedCat.AutoExtract
+		deleteArchive = matchedCat.DeleteArchive
+	}
+	// zip/rar/7z are only unpacked for a matched category that asks for it;
+	// the rule-fallback path keeps its tar-only behaviour.
+	if library.IsArchive(offer.Filename) && matchedCat == nil {
+		autoExtract = false
+	}
+	if autoExtract && routing.IsArchive(offer.Filename) {
 		e.bus.Publish(irc.Event{
 			Type: irc.EventDownloadStatus,
 			Data: map[string]interface{}{
@@ -644,7 +680,13 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 			}
 		}
 		if !skipExtract {
-			extracted, extractErr := routing.Extract(finalPath, extractDir)
+			var extracted []string
+			var extractErr error
+			if library.IsArchive(offer.Filename) {
+				extracted, extractErr = library.Extract(finalPath, extractDir)
+			} else {
+				extracted, extractErr = routing.Extract(finalPath, extractDir)
+			}
 			if extractErr != nil {
 				log.Printf("auto-extract failed for download %d (%s): %v", downloadID, offer.Filename, extractErr)
 				e.bus.Publish(irc.Event{
@@ -656,48 +698,22 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 				})
 				// Archive remains untouched. Download stays completed.
 			} else {
-				extractRules, _ := e.store.GetFileRoutingRules()
-				for _, ef := range extracted {
-					efName := filepath.Base(ef)
-					efFinal := ef
-					if len(extractRules) > 0 {
-						if destDir := routing.MatchRule(efName, extractRules); destDir != "" {
-							if moved, err := routing.MoveFile(ef, destDir); err != nil {
-								log.Printf("routing extracted file %q: %v", efName, err)
-							} else {
-								efFinal = moved
-							}
-						}
-					}
-					// If the file wasn't routed out of extractDir, flatten it to extractDir
-					// so that subdirectories created by tar don't linger.
-					if efFinal == ef && filepath.Dir(efFinal) != extractDir {
-						flat := filepath.Join(extractDir, efName)
-						if err := os.Rename(efFinal, flat); err == nil {
-							efFinal = flat
-						}
-					}
-					efCtx := hCtx
-					efCtx.FilePath = efFinal
-					efCtx.Filename = efName
-					if info, err := os.Stat(efFinal); err == nil {
-						efCtx.Filesize = info.Size()
-					}
-					for _, hook := range hooks {
-						if !hook.Enabled {
-							continue
-						}
-						result := routing.RunHook(hook, efCtx)
-						if result.Error != "" {
-							log.Printf("hook %q failed for extracted file %q: %s", hook.Name, efName, result.Error)
-						}
-					}
+				// A categorized download (matchedCat != nil) is already in
+				// its resolved folder — extracted files are only flattened
+				// there, not routed again file by file. That per-file
+				// re-routing stays for the rule-fallback path only.
+				var extractRules []db.FileRoutingRule
+				if matchedCat == nil {
+					extractRules, _ = e.store.GetFileRoutingRules()
 				}
-				// Remove subdirectories created by tar — all files have been routed
-				// or flattened, so these should now be empty.
+				for _, ef := range extracted {
+					processExtractedFile(ef, extractDir, extractRules, hCtx, hooks)
+				}
+				// Remove subdirectories left by extraction — all files have
+				// been routed or flattened, so these should now be empty.
 				routing.RemoveEmptyDirs(extractDir)
 
-				if e.storageCfg != nil && e.storageCfg.AutoExtract.DeleteArchive {
+				if deleteArchive {
 					log.Printf("auto-extract: deleting archive %q after successful extraction", finalPath)
 					if err := os.Remove(finalPath); err != nil {
 						log.Printf("auto-extract: failed to remove archive %q: %v", finalPath, err)
@@ -749,6 +765,47 @@ func (e *Engine) finishTransfer(downloadID int64, dl *db.Download, finalPath, st
 			"avg_speed":   tr.AverageSpeed(),
 		},
 	})
+}
+
+// processExtractedFile finishes one file pulled out of an archive: routed to
+// a matching rule when extractRules is non-empty (the rule-fallback path
+// only — categorized downloads pass nil to skip this and just flatten),
+// otherwise flattened directly into extractDir, then run through hooks.
+func processExtractedFile(ef, extractDir string, extractRules []db.FileRoutingRule, hCtx routing.HookContext, hooks []db.PostHook) {
+	efName := filepath.Base(ef)
+	efFinal := ef
+	if len(extractRules) > 0 {
+		if destDir := routing.MatchRule(efName, extractRules); destDir != "" {
+			if moved, err := routing.MoveFile(ef, destDir); err != nil {
+				log.Printf("routing extracted file %q: %v", efName, err)
+			} else {
+				efFinal = moved
+			}
+		}
+	}
+	// If the file wasn't routed out of extractDir, flatten it to extractDir
+	// so that subdirectories created by extraction don't linger.
+	if efFinal == ef && filepath.Dir(efFinal) != extractDir {
+		flat := filepath.Join(extractDir, efName)
+		if err := os.Rename(efFinal, flat); err == nil {
+			efFinal = flat
+		}
+	}
+	efCtx := hCtx
+	efCtx.FilePath = efFinal
+	efCtx.Filename = efName
+	if info, err := os.Stat(efFinal); err == nil {
+		efCtx.Filesize = info.Size()
+	}
+	for _, hook := range hooks {
+		if !hook.Enabled {
+			continue
+		}
+		result := routing.RunHook(hook, efCtx)
+		if result.Error != "" {
+			log.Printf("hook %q failed for extracted file %q: %s", hook.Name, efName, result.Error)
+		}
+	}
 }
 
 // humanSizePtr formats a byte count as a short human-readable size string

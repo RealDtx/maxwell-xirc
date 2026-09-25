@@ -12,6 +12,23 @@ function toSizeDisplay(filesize) {
     return '-';
 }
 
+// sizeToBytes parses bot-advertised sizes ("1.4G", "700M", "2.1 GB", "512K",
+// plain byte counts) so search results sort numerically; unknown → -1.
+function sizeToBytes(size) {
+    if (typeof size === 'number') return size;
+    const m = /^\s*([\d.,]+)\s*([KMGT]?)i?B?\s*$/i.exec(String(size || ''));
+    if (!m) return -1;
+    const n = parseFloat(m[1].replace(',', '.'));
+    if (!Number.isFinite(n)) return -1;
+    return n * Math.pow(1024, ' KMGT'.indexOf(m[2].toUpperCase() || ' '));
+}
+
+// searchSortValue returns the value to sort a search row by for column col.
+function searchSortValue(row, col) {
+    if (col === 'filesize') return sizeToBytes(row.filesize);
+    return row[col];
+}
+
 function normalizeSearchRow(row) {
     const r = row || {};
     return Object.assign({}, r, {
@@ -20,5 +37,5 @@ function normalizeSearchRow(row) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { formatBytesForSearch, toSizeDisplay, normalizeSearchRow };
+    module.exports = { formatBytesForSearch, toSizeDisplay, normalizeSearchRow, sizeToBytes, searchSortValue };
 }

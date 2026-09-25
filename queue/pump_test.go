@@ -87,7 +87,7 @@ func TestEngine_TryDispatchQueued_NoConnection(t *testing.T) {
 		DownloadsDir: "/tmp/downloads", TempDir: "/tmp/temp", MinFreeSpace: "1MB",
 	}, 2)
 
-	dl, err := engine.queue.Add(1, "#chan", "BotA", 1, "f.txt", 1, false, false, true, 3)
+	dl, err := engine.queue.Add(1, "#chan", "BotA", 1, "f.txt", 1, false, false, true)
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}

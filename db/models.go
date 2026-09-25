@@ -74,7 +74,6 @@ type Download struct {
 	AutoExtract     bool       `json:"auto_extract"`
 	TargetDir       string     `json:"target_dir"`
 	AutoSubdir      bool       `json:"auto_subdir"`
-	SubdirDepth     int        `json:"subdir_depth"`
 }
 
 type SearchResult struct {

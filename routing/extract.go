@@ -13,9 +13,12 @@ import (
 var archiveExtensions = []string{
 	".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2",
 	".tar.xz", ".txz", ".tar.zst",
+	".zip", ".rar", ".7z",
 }
 
-// IsArchive reports whether filename is a supported tar-based archive.
+// IsArchive reports whether filename is a supported archive: the tar family
+// (extracted by Extract, below, via tar(1)) or zip/rar/7z (extracted by the
+// library package via archive/zip or the 7z/unrar binaries).
 func IsArchive(filename string) bool {
 	lower := strings.ToLower(filename)
 	for _, ext := range archiveExtensions {
