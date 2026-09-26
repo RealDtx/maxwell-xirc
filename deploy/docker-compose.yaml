@@ -1,41 +1,51 @@
 services:
-  maxwell-irc:
+  xirc:
+    image: ghcr.io/realdtx/xirc:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    container_name: maxwell-irc
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    container_name: xirc
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8085:8085"
+      # Behind a reverse proxy on this host? Use "127.0.0.1:8085:8085".
+      - "8085:8085"
     volumes:
-      - ../data:/app/data
-      # Single bind mount covering both the temp dir and the routing
-      # destinations: they all live under /srv, so os.Rename succeeds
-      # (same mount = no EXDEV = no copy fallback in routing.MoveFile).
-      - /srv:/srv
+      - ./data:/data
+      # Keep downloads and media on the same filesystem so finished files are
+      # renamed instantly instead of copied.
+      - ${DOWNLOADS_DIR:?set DOWNLOADS_DIR in .env}:/downloads
+      - ${MEDIA_DIR:?set MEDIA_DIR in .env}:/media
     environment:
-      # - TZ=Europe/Berlin   # set your timezone
+      - TZ=${TZ:-UTC}
+      # LAN clients skip login (comma-separated CIDRs). Only safe when the
+      # container sees real client IPs (no NAT in between) or sits behind a
+      # proxy listed in XIRC_AUTH_TRUSTED_PROXIES.
+      - XIRC_AUTH_TRUSTED_NETWORKS=${TRUSTED_NETWORKS:-}
+      - XIRC_AUTH_TRUSTED_ROLE=${TRUSTED_ROLE:-admin}
     networks:
-      - maxwell-irc
+      - xirc
 
   db:
     image: mariadb:11
-    container_name: maxwell-irc-db
+    container_name: xirc-db
     restart: unless-stopped
     profiles:
       - mariadb
     environment:
-      - MYSQL_ROOT_PASSWORD=changeme
-      - MYSQL_DATABASE=maxwell_irc
-      - MYSQL_USER=maxwell_irc
-      - MYSQL_PASSWORD=changeme
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set in .env}
+      - MYSQL_DATABASE=xirc
+      - MYSQL_USER=xirc
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?set in .env}
     volumes:
       - db_data:/var/lib/mysql
     networks:
-      - maxwell-irc
+      - xirc
 
 networks:
-  maxwell-irc:
+  xirc:
     driver: bridge
 
 volumes:

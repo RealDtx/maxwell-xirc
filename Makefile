@@ -32,7 +32,7 @@ build-pi3:
 	GOOS=linux GOARCH=arm GOARM=7 $(GO) build -ldflags="-s -w" -o $(BINARY)-arm .
 
 docker:
-	docker build -f deploy/Dockerfile -t maxwell-irc .
+	docker build -f deploy/Dockerfile --build-arg VERSION=$(VERSION) -t xirc .
 
 docker-up:
 	cd deploy && docker compose up -d
