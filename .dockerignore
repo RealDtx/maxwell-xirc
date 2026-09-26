@@ -6,3 +6,7 @@ xirc
 xirc-*
 maxwell-irc
 maxwell-irc-*
+config.yaml
+categories.yaml
+deploy/.env
+*.db
