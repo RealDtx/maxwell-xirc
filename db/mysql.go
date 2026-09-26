@@ -194,6 +194,21 @@ func mysqlMigrationStatements() []string {
 		// settings mean very short or common words (e.g. "the") may not be
 		// indexed — acceptable for searching distinctive filenames/titles.
 		`ALTER TABLE indexed_files ADD FULLTEXT INDEX idx_indexed_files_filename_ft (filename)`,
+
+		`CREATE TABLE IF NOT EXISTS users (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			username VARCHAR(64) NOT NULL UNIQUE,
+			password_hash VARCHAR(255) NOT NULL,
+			role VARCHAR(16) NOT NULL DEFAULT 'user',
+			created_at BIGINT NOT NULL
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			token_hash CHAR(64) PRIMARY KEY,
+			user_id BIGINT NOT NULL,
+			expires_at BIGINT NOT NULL,
+			INDEX idx_sessions_expires (expires_at),
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	}
 }
 
@@ -1069,4 +1084,23 @@ func (s *MySQLStore) GetDownloadHistory(offset, limit int) ([]DownloadStat, erro
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+// --- Users & sessions (SQL shared in users.go) ---
+
+func (s *MySQLStore) CreateUser(u *User) error                 { return createUser(s.db, u) }
+func (s *MySQLStore) GetUser(id int64) (*User, error)          { return getUser(s.db, id) }
+func (s *MySQLStore) GetUserByName(n string) (*User, error)    { return getUserByName(s.db, n) }
+func (s *MySQLStore) ListUsers() ([]User, error)               { return listUsers(s.db) }
+func (s *MySQLStore) UpdateUser(u *User) error                 { return updateUser(s.db, u) }
+func (s *MySQLStore) DeleteUser(id int64) error                { return deleteUser(s.db, id) }
+func (s *MySQLStore) CountUsers() (int, error)                 { return countUsers(s.db, "") }
+func (s *MySQLStore) CountAdmins() (int, error)                { return countUsers(s.db, " WHERE role = ?", "admin") }
+func (s *MySQLStore) CreateSession(x *Session) error           { return createSession(s.db, x) }
+func (s *MySQLStore) GetSession(h string) (*Session, error)    { return getSession(s.db, h) }
+func (s *MySQLStore) TouchSession(h string, t time.Time) error { return touchSession(s.db, h, t) }
+func (s *MySQLStore) DeleteSession(h string) error             { return deleteSession(s.db, h) }
+func (s *MySQLStore) DeleteUserSessions(id int64) error        { return deleteUserSessions(s.db, id) }
+func (s *MySQLStore) DeleteExpiredSessions(now time.Time) (int64, error) {
+	return deleteExpiredSessions(s.db, now)
 }

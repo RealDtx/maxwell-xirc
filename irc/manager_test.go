@@ -92,10 +92,24 @@ func (m *mockStore) ClearIndex(serverID int64) error { return nil }
 func (m *mockStore) GetIndexStatsDetail() (*db.IndexStatsDetail, error) {
 	return &db.IndexStatsDetail{}, nil
 }
-func (m *mockStore) PruneSearchResults(olderThan time.Time) (int64, error) { return 0, nil }
-func (m *mockStore) EnforceIndexCap(maxFiles int64) (int64, error)         { return 0, nil }
-func (m *mockStore) Close() error                                          { return nil }
-func (m *mockStore) Migrate() error                                        { return nil }
+func (m *mockStore) PruneSearchResults(olderThan time.Time) (int64, error)    { return 0, nil }
+func (m *mockStore) EnforceIndexCap(maxFiles int64) (int64, error)            { return 0, nil }
+func (m *mockStore) Close() error                                             { return nil }
+func (m *mockStore) Migrate() error                                           { return nil }
+func (m *mockStore) CreateUser(u *db.User) error                              { return nil }
+func (m *mockStore) GetUser(id int64) (*db.User, error)                       { return nil, nil }
+func (m *mockStore) GetUserByName(name string) (*db.User, error)              { return nil, nil }
+func (m *mockStore) ListUsers() ([]db.User, error)                            { return nil, nil }
+func (m *mockStore) UpdateUser(u *db.User) error                              { return nil }
+func (m *mockStore) DeleteUser(id int64) error                                { return nil }
+func (m *mockStore) CountUsers() (int, error)                                 { return 0, nil }
+func (m *mockStore) CountAdmins() (int, error)                                { return 0, nil }
+func (m *mockStore) CreateSession(s *db.Session) error                        { return nil }
+func (m *mockStore) GetSession(tokenHash string) (*db.Session, error)         { return nil, nil }
+func (m *mockStore) TouchSession(tokenHash string, expiresAt time.Time) error { return nil }
+func (m *mockStore) DeleteSession(tokenHash string) error                     { return nil }
+func (m *mockStore) DeleteUserSessions(userID int64) error                    { return nil }
+func (m *mockStore) DeleteExpiredSessions(now time.Time) (int64, error)       { return 0, nil }
 
 func TestManager_New(t *testing.T) {
 	store := &mockStore{

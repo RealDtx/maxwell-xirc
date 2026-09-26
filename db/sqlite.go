@@ -921,3 +921,22 @@ func (s *SQLiteStore) GetDownloadHistory(offset, limit int) ([]DownloadStat, err
 	}
 	return out, rows.Err()
 }
+
+// --- Users & sessions (SQL shared in users.go) ---
+
+func (s *SQLiteStore) CreateUser(u *User) error                 { return createUser(s.db, u) }
+func (s *SQLiteStore) GetUser(id int64) (*User, error)          { return getUser(s.db, id) }
+func (s *SQLiteStore) GetUserByName(n string) (*User, error)    { return getUserByName(s.db, n) }
+func (s *SQLiteStore) ListUsers() ([]User, error)               { return listUsers(s.db) }
+func (s *SQLiteStore) UpdateUser(u *User) error                 { return updateUser(s.db, u) }
+func (s *SQLiteStore) DeleteUser(id int64) error                { return deleteUser(s.db, id) }
+func (s *SQLiteStore) CountUsers() (int, error)                 { return countUsers(s.db, "") }
+func (s *SQLiteStore) CountAdmins() (int, error)                { return countUsers(s.db, " WHERE role = ?", "admin") }
+func (s *SQLiteStore) CreateSession(x *Session) error           { return createSession(s.db, x) }
+func (s *SQLiteStore) GetSession(h string) (*Session, error)    { return getSession(s.db, h) }
+func (s *SQLiteStore) TouchSession(h string, t time.Time) error { return touchSession(s.db, h, t) }
+func (s *SQLiteStore) DeleteSession(h string) error             { return deleteSession(s.db, h) }
+func (s *SQLiteStore) DeleteUserSessions(id int64) error        { return deleteUserSessions(s.db, id) }
+func (s *SQLiteStore) DeleteExpiredSessions(now time.Time) (int64, error) {
+	return deleteExpiredSessions(s.db, now)
+}

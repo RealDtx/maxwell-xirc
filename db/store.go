@@ -113,4 +113,20 @@ type Store interface {
 	CreateDownloadStat(s *DownloadStat) error
 	GetDownloadStatsSummary() (*DownloadStatsSummary, error)
 	GetDownloadHistory(offset, limit int) ([]DownloadStat, error)
+
+	// Users & sessions
+	CreateUser(u *User) error
+	GetUser(id int64) (*User, error)
+	GetUserByName(name string) (*User, error)
+	ListUsers() ([]User, error)
+	UpdateUser(u *User) error
+	DeleteUser(id int64) error
+	CountUsers() (int, error)
+	CountAdmins() (int, error)
+	CreateSession(s *Session) error
+	GetSession(tokenHash string) (*Session, error)
+	TouchSession(tokenHash string, expiresAt time.Time) error
+	DeleteSession(tokenHash string) error
+	DeleteUserSessions(userID int64) error
+	DeleteExpiredSessions(now time.Time) (int64, error)
 }
