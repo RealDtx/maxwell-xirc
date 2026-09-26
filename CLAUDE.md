@@ -8,7 +8,7 @@
 
 ## Go
 
-- Go runtime is installed at `~/go-install/go` (currently 1.26.2). The system Go at `/usr/bin/go` is 1.13 and must **not** be used.
+- Go runtime is installed at `~/go-install/go` (currently 1.27.1). The system Go at `/usr/bin/go` is 1.13 and must **not** be used.
 - **Always build via `make`** — the Makefile points to the correct Go binary automatically:
   - Build: `make build`
   - Test: `make test`
