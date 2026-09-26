@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/RealDtx/maxwell-irc/config"
@@ -105,10 +106,14 @@ func TestSecureCookieBehindHTTPSProxy(t *testing.T) {
 	hdr := map[string]string{"Content-Type": "application/json", "X-Forwarded-Proto": "https"}
 	w := do(srv, "POST", "/api/auth/setup", "127.0.0.1:1", hdr, `{"username":"a","password":"password1"}`)
 	for _, c := range w.Result().Cookies() {
-		if c.Name == sessionCookie && !c.Secure {
-			t.Error("Secure missing behind https proxy")
+		if c.Name == sessionCookie {
+			if !c.Secure {
+				t.Error("Secure missing behind https proxy")
+			}
+			return
 		}
 	}
+	t.Fatal("no cookie")
 }
 
 func TestUsersCRUDAndLastAdminGuard(t *testing.T) {
@@ -153,3 +158,56 @@ func TestUsersCRUDAndLastAdminGuard(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// TestConcurrentLoginRateLimitIsAtomic fires many concurrent wrong-password
+// logins from one IP and checks the limiter can't be raced: the check and
+// the recording of an attempt must happen under a single lock, otherwise
+// concurrent requests could all observe "not yet blocked" before any of
+// them records a failure, letting more than loginMaxFails through.
+func TestConcurrentLoginRateLimitIsAtomic(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{})
+	do(srv, "POST", "/api/auth/setup", "203.0.113.1:1", jsonHdr, `{"username":"a","password":"password1"}`)
+
+	const n = 20
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	codes := map[int]int{}
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w := do(srv, "POST", "/api/auth/login", "203.0.113.20:1", jsonHdr, `{"username":"a","password":"wrong-pass"}`)
+			mu.Lock()
+			codes[w.Code]++
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	if codes[http.StatusUnauthorized] > loginMaxFails {
+		t.Errorf("got %d 401s, want at most %d", codes[http.StatusUnauthorized], loginMaxFails)
+	}
+	if codes[http.StatusUnauthorized]+codes[http.StatusTooManyRequests] != n {
+		t.Errorf("unexpected response codes: %+v", codes)
+	}
+}
+
+// TestLogoutClearsAnonymousCookie: an expired/bogus session cookie shouldn't
+// prevent a client from clearing it, even from an untrusted IP with no
+// authenticated principal.
+func TestLogoutClearsAnonymousCookie(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{})
+	w := do(srv, "POST", "/api/auth/logout", "203.0.113.9:1", withCookie("bogus-token"), `{}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("logout: got %d want 200", w.Code)
+	}
+	for _, c := range w.Result().Cookies() {
+		if c.Name == sessionCookie {
+			if c.MaxAge >= 0 {
+				t.Errorf("expected MaxAge<0 to clear cookie, got %d", c.MaxAge)
+			}
+			return
+		}
+	}
+	t.Fatal("no Set-Cookie in logout response")
+}

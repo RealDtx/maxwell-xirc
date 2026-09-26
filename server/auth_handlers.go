@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -93,7 +94,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := s.auth.clientIP(r).String()
-	if s.auth.limiter.blocked(ip) {
+	if !s.auth.limiter.allow(ip) {
 		writeError(w, http.StatusTooManyRequests, "too many failed logins, wait a minute")
 		return
 	}
@@ -113,10 +114,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		hash = []byte(u.PasswordHash)
 	}
 	if bcrypt.CompareHashAndPassword(hash, []byte(c.Password)) != nil || u == nil {
-		s.auth.limiter.fail(ip)
 		writeError(w, http.StatusUnauthorized, "wrong username or password")
 		return
 	}
+	s.auth.limiter.succeed(ip)
 	if err := s.auth.startSession(w, r, u); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -134,7 +135,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if c, err := r.Cookie(sessionCookie); err == nil {
-		s.store.DeleteSession(hashToken(c.Value))
+		if err := s.store.DeleteSession(hashToken(c.Value)); err != nil {
+			log.Printf("logout: delete session failed: %v", err)
+		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: s.auth.cookiePath, MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -204,6 +207,10 @@ type userRequest struct {
 
 // /api/users (admin; enforced by middleware)
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
+	if s.auth == nil {
+		writeError(w, http.StatusNotFound, "auth disabled")
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		users, err := s.store.ListUsers()
@@ -249,6 +256,10 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 
 // /api/users/{id}: PUT {role?, password?}, DELETE
 func (s *Server) handleUserByID(w http.ResponseWriter, r *http.Request) {
+	if s.auth == nil {
+		writeError(w, http.StatusNotFound, "auth disabled")
+		return
+	}
 	id, err := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/api/users/"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid user id")
@@ -294,7 +305,10 @@ func (s *Server) handleUserByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Role or password change: revoke sessions so it applies immediately.
-		s.store.DeleteUserSessions(u.ID)
+		if err := s.store.DeleteUserSessions(u.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, u)
 	case http.MethodDelete:
 		if lastAdmin() {

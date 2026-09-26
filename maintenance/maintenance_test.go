@@ -121,8 +121,12 @@ func TestRunOnce_PrunesExpiredSessions(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 	u := &db.User{Username: "a", PasswordHash: "x", Role: "user", CreatedAt: time.Now()}
-	store.CreateUser(u)
-	store.CreateSession(&db.Session{TokenHash: "old", UserID: u.ID, ExpiresAt: time.Now().Add(-time.Minute)})
+	if err := store.CreateUser(u); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	if err := store.CreateSession(&db.Session{TokenHash: "old", UserID: u.ID, ExpiresAt: time.Now().Add(-time.Minute)}); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
 	New(store, config.MaintenanceConfig{}).runOnce()
 	if s, _ := store.GetSession("old"); s != nil {
 		t.Error("expired session not pruned")

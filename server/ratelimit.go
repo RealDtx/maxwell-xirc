@@ -34,15 +34,33 @@ func (l *loginLimiter) recent(ip string, now time.Time) []time.Time {
 	return kept
 }
 
-func (l *loginLimiter) blocked(ip string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return len(l.recent(ip, time.Now())) >= loginMaxFails
-}
-
-func (l *loginLimiter) fail(ip string) {
+// allow reports whether ip may attempt a login right now. If so, it records
+// this attempt immediately (before the caller checks the password) so
+// concurrent requests can't all observe "not yet blocked" and slip through
+// together; call succeed on a successful login to undo that recording.
+func (l *loginLimiter) allow(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
-	l.fails[ip] = append(l.recent(ip, now), now)
+	if len(l.recent(ip, now)) >= loginMaxFails {
+		return false
+	}
+	l.fails[ip] = append(l.fails[ip], now)
+	return true
+}
+
+// succeed removes one recorded attempt for ip (the one allow just added for
+// this request) so a correct password doesn't count against the limit.
+func (l *loginLimiter) succeed(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fails := l.fails[ip]
+	if len(fails) == 0 {
+		return
+	}
+	if len(fails) == 1 {
+		delete(l.fails, ip)
+		return
+	}
+	l.fails[ip] = fails[:len(fails)-1]
 }

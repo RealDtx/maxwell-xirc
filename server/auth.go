@@ -186,7 +186,7 @@ func (a *Auth) principal(r *http.Request) *Principal {
 // everything outside /api/ and /ws (the SPA draws the login screen itself).
 func anonymousOK(path string) bool {
 	switch path {
-	case "/api/health", "/api/auth/login", "/api/auth/me", "/api/auth/setup":
+	case "/api/health", "/api/auth/login", "/api/auth/me", "/api/auth/setup", "/api/auth/logout":
 		return true
 	}
 	return !strings.HasPrefix(path, "/api/") && path != "/ws"
