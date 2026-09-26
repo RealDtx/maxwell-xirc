@@ -571,10 +571,11 @@ document.addEventListener('alpine:init', () => {
         // --- IRC actions ---
 
         // Add a message to the local channel buffer (client-side echo for sent messages).
-        _localEcho(serverId, channel, nick, text) {
+        // msgType 'raw' renders as an unprefixed system line (no nick), used for local notices.
+        _localEcho(serverId, channel, nick, text, msgType) {
             const key = this.channelKey(serverId, channel);
             const existing = this.ircMessages[key] || [];
-            const msg = { nick, message: text, timestamp: new Date().toISOString(), msg_type: 'privmsg' };
+            const msg = { nick, message: text, timestamp: new Date().toISOString(), msg_type: msgType || 'privmsg' };
             this.ircMessages = Object.assign({}, this.ircMessages, { [key]: existing.concat([msg]) });
             this._msgVersion++;
             setTimeout(() => {
@@ -588,7 +589,15 @@ document.addEventListener('alpine:init', () => {
             if (!text || !this.activeServer) return;
             this.ircInput = '';
             if (text.startsWith('/')) {
-                await api.sendRaw(this.activeServer, text.slice(1));
+                if (!this.isAdmin) {
+                    this._localEcho(this.activeServer, this.activeChannel, '', 'Commands (/...) are available to admins only', 'raw');
+                    return;
+                }
+                try {
+                    await api.sendRaw(this.activeServer, text.slice(1));
+                } catch (e) {
+                    this._localEcho(this.activeServer, this.activeChannel, '', 'Command failed: ' + e.message, 'raw');
+                }
             } else {
                 if (!this.activeChannel) return;
                 // Intercept search command (e.g. "!s query")
@@ -2755,6 +2764,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async setUserRole(u, role) {
+            if (!confirm("Change " + u.username + "'s role to '" + role + "'?")) { await this.loadUsers(); return; }
             try { await api.updateUser(u.id, { role }); } catch (e) { alert(e.message); }
             await this.loadUsers();
         },
@@ -2786,7 +2796,8 @@ document.addEventListener('alpine:init', () => {
             await this.loadDiskStats();
             this.loadIndexStats();
             var self = this;
-            setInterval(function() { self.loadDiskStats(); }, 30000);
+            clearInterval(this._diskStatsTimer);
+            this._diskStatsTimer = setInterval(function() { self.loadDiskStats(); }, 30000);
 
             // Restore layout prefs from localStorage
             this._channelLayout = {};
