@@ -184,7 +184,7 @@ func TestRunCreateAdmin_NoPasswordNonTTY(t *testing.T) {
 	store, _ := db.NewSQLiteStore(filepath.Join(t.TempDir(), "t.db"))
 	defer store.Close()
 	store.Migrate()
-	os.Unsetenv("XIRC_ADMIN_PASSWORD")
+	t.Setenv("XIRC_ADMIN_PASSWORD", "")
 	if err := runCreateAdmin(store, "boss", strings.NewReader(""), false); err == nil {
 		t.Fatal("expected error without password source")
 	}
