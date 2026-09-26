@@ -111,7 +111,7 @@ func (a *Auth) clientIP(r *http.Request) net.IP {
 	if ip == nil || !inNets(ip, a.proxies) {
 		return ip
 	}
-	hops := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
 	for i := len(hops) - 1; i >= 0; i-- {
 		h := net.ParseIP(strings.TrimSpace(hops[i]))
 		if h == nil {
@@ -129,7 +129,16 @@ func (a *Auth) isHTTPS(r *http.Request) bool {
 		return true
 	}
 	ip := remoteIP(r)
-	return ip != nil && inNets(ip, a.proxies) && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	if ip == nil || !inNets(ip, a.proxies) {
+		return false
+	}
+	proto := r.Header.Values("X-Forwarded-Proto")
+	if len(proto) == 0 {
+		return false
+	}
+	// A client-sent first line can't set this: only the proxy-appended last
+	// value (the hop closest to us) is believed.
+	return strings.EqualFold(proto[len(proto)-1], "https")
 }
 
 func hashToken(tok string) string {

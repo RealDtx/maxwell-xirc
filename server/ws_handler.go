@@ -8,8 +8,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Default CheckOrigin: Origin host must equal Host. Proxies must preserve
-// Host (both shipped configs do). Blocks cross-site WebSocket hijacking.
+// Default CheckOrigin: Origin host:port must equal Host. Proxies must
+// forward the original Host header including port (nginx: proxy_set_header
+// Host $http_host; Apache: ProxyPreserveHost On).
 var upgrader = websocket.Upgrader{}
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {

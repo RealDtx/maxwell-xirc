@@ -74,6 +74,21 @@ func TestClientIP(t *testing.T) {
 	}
 }
 
+// TestClientIP_MultipleHeaderLines covers proxies (e.g. HAProxy) that append
+// their own X-Forwarded-For as a second header line rather than extending
+// the first. Header.Get only sees the first line, which is client-controlled
+// — clientIP must consider every line via Header.Values.
+func TestClientIP_MultipleHeaderLines(t *testing.T) {
+	a, _ := NewAuth(config.AuthConfig{TrustedRole: "admin", TrustedProxies: []string{"127.0.0.1/32", "::1/128"}}, nil, "")
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "127.0.0.1:5000"
+	r.Header.Add("X-Forwarded-For", "192.168.1.5") // client-forged
+	r.Header.Add("X-Forwarded-For", "203.0.113.9") // appended by the trusted proxy
+	if got := a.clientIP(r).String(); got != "203.0.113.9" {
+		t.Errorf("multi-line XFF: got %s want 203.0.113.9", got)
+	}
+}
+
 func TestAnonymousBlockedFromAPI(t *testing.T) {
 	srv, _ := newAuthTestServer(t, config.AuthConfig{})
 	for _, p := range []string{"/api/downloads", "/api/servers", "/ws"} {
