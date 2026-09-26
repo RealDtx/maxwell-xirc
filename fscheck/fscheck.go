@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/user"
-	"path/filepath"
 	"strconv"
 	"syscall"
 )
@@ -75,6 +74,7 @@ func Probe(path string) DirStatus {
 		return s
 	}
 	if !info.IsDir() {
+		s.Exists = true
 		s.Reason = "not a directory: " + path
 		return s
 	}
@@ -82,10 +82,9 @@ func Probe(path string) DirStatus {
 	if _, err := os.ReadDir(path); err == nil {
 		s.Read = true
 	}
-	probe := filepath.Join(path, ".xirc_write_check")
-	if f, err := os.Create(probe); err == nil {
+	if f, err := os.CreateTemp(path, ".xirc_write_check_*"); err == nil {
 		f.Close()
-		os.Remove(probe)
+		os.Remove(f.Name())
 		s.Write = true
 	}
 	switch {

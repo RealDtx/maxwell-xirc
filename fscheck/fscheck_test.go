@@ -73,3 +73,40 @@ func TestDescribe(t *testing.T) {
 		t.Error("EROFS should count as permission")
 	}
 }
+
+func TestProbeNonDirectory(t *testing.T) {
+	skipIfRoot(t)
+	base := t.TempDir()
+	plain := filepath.Join(base, "file")
+	os.WriteFile(plain, []byte("content"), 0644)
+	s := Probe(plain)
+	if !s.Exists || s.Reason != "not a directory: "+plain {
+		t.Errorf("non-directory: got Exists=%v Reason=%q", s.Exists, s.Reason)
+	}
+}
+
+func TestProbeNeverClobbers(t *testing.T) {
+	skipIfRoot(t)
+	base := t.TempDir()
+	rw := filepath.Join(base, "rw")
+	os.Mkdir(rw, 0755)
+	preexisting := filepath.Join(rw, ".xirc_write_check")
+	os.WriteFile(preexisting, []byte("keep"), 0644)
+	s := Probe(rw)
+	if !s.Write {
+		t.Errorf("probe failed to detect write permission")
+	}
+	data, err := os.ReadFile(preexisting)
+	if err != nil {
+		t.Errorf("preexisting file was deleted: %v", err)
+	}
+	if string(data) != "keep" {
+		t.Errorf("preexisting file was modified: got %q", string(data))
+	}
+	entries, _ := os.ReadDir(rw)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".xirc_write_check_") {
+			t.Errorf("leftover temp file: %s", e.Name())
+		}
+	}
+}
