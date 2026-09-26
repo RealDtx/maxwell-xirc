@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"sync"
 
 	"github.com/RealDtx/maxwell-irc/db"
 	ircpkg "github.com/RealDtx/maxwell-irc/irc"
@@ -30,6 +31,7 @@ type Server struct {
 	// alongside the library's category dirs (see configuredRoots).
 	downloadsDir string
 	auth         *Auth
+	setupMu      sync.Mutex // serialises /api/auth/setup and last-admin checks
 }
 
 // SetLibrary wires the library manager in — set once at startup.
@@ -77,6 +79,14 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/api/health", s.handleHealth)
+
+	// Auth & users (handlers require SetAuth; only registered routes reached via the middleware)
+	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/api/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("/api/auth/me", s.handleMe)
+	s.mux.HandleFunc("/api/auth/setup", s.handleAuthSetup)
+	s.mux.HandleFunc("/api/users", s.handleUsers)
+	s.mux.HandleFunc("/api/users/", s.handleUserByID)
 
 	// IRC endpoints (exact paths first, then prefix for parameterised routes)
 	s.mux.HandleFunc("/api/irc/status", s.handleIRCStatus)

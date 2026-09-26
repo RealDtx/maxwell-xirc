@@ -79,4 +79,10 @@ func (m *Maintenance) runOnce() {
 			log.Printf("maintenance: evicted %d indexed_files row(s) to stay within cap of %d", evicted, m.cfg.IndexMaxFiles)
 		}
 	}
+
+	if n, err := m.store.DeleteExpiredSessions(time.Now()); err != nil {
+		log.Printf("maintenance: prune sessions failed: %v", err)
+	} else if n > 0 {
+		log.Printf("maintenance: pruned %d expired session(s)", n)
+	}
 }
