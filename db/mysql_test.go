@@ -148,22 +148,6 @@ func TestMySQLStore_Downloads(t *testing.T) {
 	}
 }
 
-func TestMySQLStore_FileRoutingRules(t *testing.T) {
-	store := newTestMySQLStore(t)
-	defer store.Close()
-
-	store.CreateFileRoutingRule(&FileRoutingRule{Pattern: "*.mkv", DestinationDir: "/media", Priority: 100, Enabled: true})
-	store.CreateFileRoutingRule(&FileRoutingRule{Pattern: "*", DestinationDir: "/dl", Priority: 0, Builtin: true, Enabled: true})
-
-	rules, _ := store.GetFileRoutingRules()
-	if len(rules) != 2 {
-		t.Fatalf("expected 2 rules, got %d", len(rules))
-	}
-	if rules[0].Priority != 100 {
-		t.Errorf("expected first rule priority 100, got %d", rules[0].Priority)
-	}
-}
-
 func TestMySQLStore_IndexedFiles_UpsertAndSearch(t *testing.T) {
 	store := newTestMySQLStore(t)
 	defer store.Close()

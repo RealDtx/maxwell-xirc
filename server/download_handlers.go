@@ -308,44 +308,39 @@ func clampSubdirDepth(d int) int {
 	return d
 }
 
-// enabledRoutingDirs returns the distinct destination dirs of enabled routing
-// rules plus every enabled library category's dir — both count as valid
-// download-target roots.
-func (s *Server) enabledRoutingDirs() ([]string, error) {
-	rules, err := s.store.GetAllFileRoutingRules()
-	if err != nil {
-		return nil, err
-	}
+// configuredRoots returns the distinct destination-directory roots: the
+// library's media root, every enabled category's dir, and storage's
+// downloads dir — deduplicated. These are the valid roots for the download
+// targets endpoint, the file manager, storage stats, and isValidTargetDir.
+func (s *Server) configuredRoots() []string {
 	seen := make(map[string]bool)
 	var dirs []string
-	for _, rule := range rules {
-		if rule.Enabled && rule.DestinationDir != "" && !seen[rule.DestinationDir] {
-			seen[rule.DestinationDir] = true
-			dirs = append(dirs, rule.DestinationDir)
+	add := func(d string) {
+		if d != "" && !seen[d] {
+			seen[d] = true
+			dirs = append(dirs, d)
 		}
 	}
 	if s.library != nil {
 		cfg := s.library.Get()
+		add(cfg.MediaRoot)
 		for _, cat := range cfg.Categories {
-			dir := cat.Dir
-			if dir == "" {
+			if !cat.Enabled || cat.Dir == "" {
 				continue
 			}
+			dir := cat.Dir
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(cfg.MediaRoot, dir)
 			}
-			if cat.Enabled && !seen[dir] {
-				seen[dir] = true
-				dirs = append(dirs, dir)
-			}
+			add(dir)
 		}
 	}
-	return dirs, nil
+	add(s.downloadsDir)
+	return dirs
 }
 
-// GET /api/downloads/targets — every enabled routing destination dir and
-// library category dir, plus their non-hidden subfolders down to the
-// library's search_depth levels, sorted.
+// GET /api/downloads/targets — every configured root, plus their non-hidden
+// subfolders down to the library's search_depth levels, sorted.
 func (s *Server) handleGetDownloadTargets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -356,11 +351,7 @@ func (s *Server) handleGetDownloadTargets(w http.ResponseWriter, r *http.Request
 		depth = s.library.Get().SearchDepth
 	}
 	depth = clampSubdirDepth(depth)
-	dirs, err := s.enabledRoutingDirs()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	dirs := s.configuredRoots()
 	seen := make(map[string]bool)
 	targets := []string{}
 	for _, dir := range dirs {
@@ -376,15 +367,12 @@ func (s *Server) handleGetDownloadTargets(w http.ResponseWriter, r *http.Request
 }
 
 // isValidTargetDir is the trust boundary for handleSetDownloadTarget: dir must
-// be an existing directory at or below an enabled routing destination, at most
+// be an existing directory at or below a configured root, at most
 // MaxSubdirDepth levels down, with no hidden path components.
 func (s *Server) isValidTargetDir(dir string) (bool, error) {
-	roots, err := s.enabledRoutingDirs()
-	if err != nil {
-		return false, err
-	}
+	roots := s.configuredRoots()
 	// Resolve symlinks on both sides so a link can't point outside the roots.
-	dir, err = filepath.EvalSymlinks(dir)
+	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return false, nil
 	}
@@ -447,7 +435,7 @@ func (s *Server) handleSetDownloadTarget(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		if !valid {
-			writeError(w, http.StatusBadRequest, "target_dir must be \"\" or a folder below a routing destination")
+			writeError(w, http.StatusBadRequest, "target_dir must be \"\" or a folder below a configured root")
 			return
 		}
 	}

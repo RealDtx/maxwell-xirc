@@ -26,7 +26,6 @@ import (
 	"github.com/RealDtx/maxwell-irc/notify"
 	"github.com/RealDtx/maxwell-irc/parser"
 	"github.com/RealDtx/maxwell-irc/queue"
-	"github.com/RealDtx/maxwell-irc/routing"
 	"github.com/RealDtx/maxwell-irc/server"
 	wsPkg "github.com/RealDtx/maxwell-irc/ws"
 )
@@ -36,42 +35,36 @@ var embeddedWeb embed.FS
 
 var version = "dev"
 
-// checkDirectories probes each unique destination_dir in the routing rules.
+// checkDirectories probes storage.media_dir and storage.downloads_dir.
 // Dirs that do not exist are returned as a slice — the caller handles them.
 // Permission errors and other I/O failures are still fatal.
-func checkDirectories(store db.Store) []string {
-	rules, err := store.GetAllFileRoutingRules()
-	if err != nil {
-		log.Printf("warning: could not load routing rules for dir check: %v", err)
-		return nil
-	}
-
+func checkDirectories(mediaDir, downloadsDir string) []string {
 	seen := map[string]bool{}
 	var bad []string
-	for _, r := range rules {
-		if r.DestinationDir == "" || seen[r.DestinationDir] {
+	for _, dir := range []string{mediaDir, downloadsDir} {
+		if dir == "" || seen[dir] {
 			continue
 		}
-		seen[r.DestinationDir] = true
+		seen[dir] = true
 
-		probe := r.DestinationDir + "/.mxirc_write_check"
+		probe := dir + "/.mxirc_write_check"
 		f, err := os.Create(probe)
 		if err == nil {
 			f.Close()
 			os.Remove(probe)
-			log.Printf("startup: verified writable: %s", r.DestinationDir)
+			log.Printf("startup: verified writable: %s", dir)
 			continue
 		}
 
 		if os.IsPermission(err) || errors.Is(err, syscall.EROFS) {
-			log.Printf("FATAL (config): destination dir %q not writable — fix ownership or ACL, then restart (exit 78)", r.DestinationDir)
+			log.Printf("FATAL (config): destination dir %q not writable — fix ownership or ACL, then restart (exit 78)", dir)
 			os.Exit(exitcodes.ExitConfig)
 		}
 		if os.IsNotExist(err) {
-			bad = append(bad, r.DestinationDir)
+			bad = append(bad, dir)
 			continue
 		}
-		log.Printf("FATAL (transient): destination dir %q check failed: %v — will retry on restart (exit 1)", r.DestinationDir, err)
+		log.Printf("FATAL (transient): destination dir %q check failed: %v — will retry on restart (exit 1)", dir, err)
 		os.Exit(exitcodes.ExitTransient)
 	}
 	return bad
@@ -95,11 +88,18 @@ func loadLibrary(configPath string, cfg *config.Config) *library.Manager {
 		} else {
 			log.Printf("library: detected default categories from %s, saved to %s", cfg.Storage.MediaDir, path)
 		}
-	} else if loaded, err := library.Load(path); err != nil {
+	} else if loaded, upgraded, err := library.Load(path); err != nil {
 		log.Printf("warning: failed to parse %s: %v — using detected defaults (not saved)", path, err)
 		libCfg = library.Detect(cfg.Storage.MediaDir)
 	} else {
 		libCfg = *loaded
+		if upgraded {
+			if err := library.Save(path, &libCfg); err != nil {
+				log.Printf("warning: failed to save upgraded library config to %s: %v", path, err)
+			} else {
+				log.Printf("library: upgraded %s to version %d (series/movie now unpack tar/zip/rar/7z)", path, libCfg.Version)
+			}
+		}
 	}
 	return library.NewManager(path, libCfg)
 }
@@ -115,19 +115,13 @@ func isTerminal() bool {
 
 // runCLIWizard presents the interactive directory wizard on the terminal.
 // Only call this when isTerminal() is true.
-// It updates config.yaml and the DB, then returns.
-func runCLIWizard(badDirs []string, store db.Store, state *server.SetupState) {
-	rules, err := store.GetAllFileRoutingRules()
-	if err != nil {
-		log.Printf("warning: could not load rules for wizard: %v", err)
-		rules = nil
-	}
-	suggestions := server.DefaultSuggestions(badDirs, rules, state.HomeDir)
+// It updates config.yaml, then returns.
+func runCLIWizard(badDirs []string, state *server.SetupState) {
+	suggestions := server.DefaultSuggestions(badDirs, state.DownloadsDir, state.HomeDir)
 
 	fmt.Fprintf(os.Stderr, "\nmaxwell-irc: the following destination directories do not exist:\n\n")
 	for _, dir := range badDirs {
-		patterns := server.PatternsForDir(rules, dir)
-		fmt.Fprintf(os.Stderr, "  %s\n    → used by: %s\n", dir, strings.Join(patterns, " "))
+		fmt.Fprintf(os.Stderr, "  %s\n    → used by: %s\n", dir, server.DirLabel(dir, state))
 	}
 	fmt.Fprintf(os.Stderr, "\nEnter replacement paths (press Enter to accept suggestion):\n\n")
 
@@ -154,7 +148,7 @@ func runCLIWizard(badDirs []string, store db.Store, state *server.SetupState) {
 		}
 	}
 
-	if err := server.ApplyMappings(mappings, store, state); err != nil {
+	if err := server.ApplyMappings(mappings, state); err != nil {
 		log.Printf("warning: wizard failed to apply mappings: %v", err)
 	}
 }
@@ -197,13 +191,7 @@ func main() {
 		log.Printf("warning: could not determine home dir: %v", err)
 	}
 
-	// Sync DB routing rules to match config.yaml BEFORE checking directories,
-	// so that a changed config is reflected in checkDirectories immediately.
-	if err := routing.SyncBuiltinRuleDirs(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {
-		log.Printf("warning: failed to sync builtin routing rules: %v", err)
-	}
-
-	badDirs := checkDirectories(store)
+	badDirs := checkDirectories(cfg.Storage.MediaDir, cfg.Storage.DownloadsDir)
 
 	setupState := &server.SetupState{
 		Required:     len(badDirs) > 0,
@@ -216,7 +204,7 @@ func main() {
 
 	if len(badDirs) > 0 {
 		if isTerminal() {
-			runCLIWizard(badDirs, store, setupState)
+			runCLIWizard(badDirs, setupState)
 			// Reload storage paths from the updated config.yaml so the queue
 			// engine and seed use the new dirs, not the pre-wizard bad paths.
 			if newCfg, err := config.Load(*configPath); err == nil {
@@ -247,10 +235,6 @@ func main() {
 		if _, err := parser.SyncPatterns(store, cfgPatterns); err != nil {
 			log.Printf("warning: failed to sync config patterns: %v", err)
 		}
-	}
-
-	if err := routing.SeedRoutingRules(store, cfg.Storage.MediaDir, cfg.Storage.DownloadsDir); err != nil {
-		log.Printf("warning: failed to seed routing rules: %v", err)
 	}
 
 	bus := ircpkg.NewEventBus()
@@ -295,6 +279,7 @@ func main() {
 	}
 	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState, cfg.Server.Prefix, webFS)
 	srv.SetLibrary(libMgr)
+	srv.SetDownloadsDir(cfg.Storage.DownloadsDir)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{

@@ -7,35 +7,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 	"syscall"
-
-	"github.com/RealDtx/maxwell-irc/db"
 )
-
-// MatchRule returns the destination directory for a filename based on routing rules.
-// Rules are tried in priority order (highest first). Returns empty string if no match.
-func MatchRule(filename string, rules []db.FileRoutingRule) string {
-	sorted := make([]db.FileRoutingRule, len(rules))
-	copy(sorted, rules)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Priority > sorted[j].Priority
-	})
-
-	for _, rule := range sorted {
-		if !rule.Enabled {
-			continue
-		}
-		matched, _ := filepath.Match(rule.Pattern, filename)
-		if matched {
-			return rule.DestinationDir
-		}
-	}
-	return ""
-}
 
 // MoveFile moves a file from srcPath to destDir, creating destDir if needed.
 // Returns the final path. Tries rename first (fast, same filesystem),
@@ -79,7 +53,7 @@ func MoveFile(srcPath, destDir string) (string, error) {
 }
 
 // DefaultSubdirDepth and MaxSubdirDepth bound how many folder levels below a
-// routing destination are listed as targets and searched by InferSubdir.
+// destination root are listed as download targets and allowed for isValidTargetDir.
 const (
 	DefaultSubdirDepth = 3
 	MaxSubdirDepth     = 5
@@ -107,69 +81,6 @@ func ListSubdirs(root string, depth int) []string {
 		level = next
 	}
 	return out
-}
-
-var (
-	// Season number in a release name: "S04E10", "S04.", "Season 4", "Staffel 4".
-	seasonInFilename = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(?:s|season|staffel)[ ._-]?(\d{1,3})(?:e\d|[^a-z0-9]|$)`)
-	// Season folder names: "S04", "S4", "Season 4", "Season.04", "Staffel 4".
-	seasonDirName = regexp.MustCompile(`(?i)^(?:s|season|staffel)[ ._-]*(\d{1,3})$`)
-)
-
-// InferSubdir picks the folder below ruleDir (up to depth levels) whose name
-// best matches filename, so "Scrubs.2026.S01E02.mkv" lands in an existing
-// ".../Series/Scrubs" folder, and further in its "Season 1"/"S01" subfolder
-// when one exists. Names are normalized (lowercased, [a-z0-9] only); the
-// folder whose normalized name is the longest prefix of the normalized
-// filename wins (shallower wins ties), with a minimum length of 3 to avoid
-// short false positives. Falls back to ruleDir when nothing matches.
-// ponytail: prefix match only; fuzzy/series parsing if prefixes miss too often
-func InferSubdir(ruleDir, filename string, depth int) string {
-	normFilename := normalizeSubdirName(filename)
-	best := ruleDir
-	bestLen := 2 // matched name must be longer than this (min length 3)
-	for _, dir := range ListSubdirs(ruleDir, depth) {
-		normName := normalizeSubdirName(filepath.Base(dir))
-		if len(normName) > bestLen && strings.HasPrefix(normFilename, normName) {
-			best = dir
-			bestLen = len(normName)
-		}
-	}
-	if best == ruleDir {
-		return ruleDir // no show folder, so don't guess a season folder either
-	}
-	if season := seasonSubdir(best, filename); season != "" {
-		return season
-	}
-	return best
-}
-
-// seasonSubdir returns the existing season folder inside showDir matching the
-// season number in filename, or "" if the filename has none or no folder matches.
-func seasonSubdir(showDir, filename string) string {
-	m := seasonInFilename.FindStringSubmatch(filename)
-	if m == nil {
-		return ""
-	}
-	want, _ := strconv.Atoi(m[1])
-	for _, dir := range ListSubdirs(showDir, 1) {
-		if dm := seasonDirName.FindStringSubmatch(filepath.Base(dir)); dm != nil {
-			if n, _ := strconv.Atoi(dm[1]); n == want {
-				return dir
-			}
-		}
-	}
-	return ""
-}
-
-func normalizeSubdirName(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
 
 func copyFile(src, dst string) error {

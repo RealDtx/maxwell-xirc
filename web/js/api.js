@@ -131,19 +131,15 @@ const api = {
         return this.get('/errors' + (limit ? '?limit=' + limit : ''));
     },
 
-    // Routing & Hooks
-    getRoutingRules()            { return this.get('/routing/rules'); },
-    createRoutingRule(r)         { return this.post('/routing/rules', r); },
-    updateRoutingRule(id, r)     { return this.put('/routing/rules/' + id, r); },
-    deleteRoutingRule(id)        { return this.del('/routing/rules/' + id); },
-    getHooks()                   { return this.get('/hooks'); },
-    createHook(h)                { return this.post('/hooks', h); },
-    updateHook(id, h)            { return this.put('/hooks/' + id, h); },
-    deleteHook(id)               { return this.del('/hooks/' + id); },
-
     // Browse & Files
     browseDir(path)  { return this.get('/browse?path=' + encodeURIComponent(path || '/')); },
-    listFiles(dir)   { return this.get('/files?dir=' + encodeURIComponent(dir)); },
+    fileRoots()      { return this.get('/files'); },
+    async listFiles(dir) {
+        const res = await fetch(_apiBase + '/files?dir=' + encodeURIComponent(dir));
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+    },
     fileAction(body) { return this.post('/files', body); },
 
     // Stats

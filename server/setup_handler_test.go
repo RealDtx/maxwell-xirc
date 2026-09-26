@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -16,23 +15,6 @@ import (
 	"github.com/RealDtx/maxwell-irc/irc"
 	"github.com/RealDtx/maxwell-irc/parser"
 )
-
-type applyMappingsMockStore struct {
-	db.Store
-	rules     []db.FileRoutingRule
-	updateErr error
-}
-
-func (m *applyMappingsMockStore) GetAllFileRoutingRules() ([]db.FileRoutingRule, error) {
-	return append([]db.FileRoutingRule(nil), m.rules...), nil
-}
-
-func (m *applyMappingsMockStore) UpdateFileRoutingRule(r *db.FileRoutingRule) error {
-	if m.updateErr != nil {
-		return m.updateErr
-	}
-	return nil
-}
 
 func newTestServerWithSetup(t *testing.T, setup *SetupState) (*Server, db.Store, func()) {
 	t.Helper()
@@ -114,7 +96,7 @@ func TestSetupDefaults(t *testing.T) {
 	}
 }
 
-func TestSetupComplete_UpdatesRoutingRules(t *testing.T) {
+func TestSetupComplete_WritesConfig(t *testing.T) {
 	dir, err := ioutil.TempDir("", "xirc-setup-complete-*")
 	if err != nil {
 		t.Fatal(err)
@@ -145,8 +127,6 @@ func TestSetupComplete_UpdatesRoutingRules(t *testing.T) {
 	}
 	defer store.Close()
 	store.Migrate()
-	store.CreateFileRoutingRule(&db.FileRoutingRule{Pattern: "*.mkv", DestinationDir: "/old/media", Enabled: true})
-	store.CreateFileRoutingRule(&db.FileRoutingRule{Pattern: "*", DestinationDir: "/old/dl", Enabled: true})
 
 	bus := irc.NewEventBus()
 	ircMgr := irc.NewManager(store, bus)
@@ -173,67 +153,36 @@ func TestSetupComplete_UpdatesRoutingRules(t *testing.T) {
 		t.Error("expected SetupState.Required to be false after complete")
 	}
 
-	// Routing rules should point to new dirs
-	rules, _ := store.GetAllFileRoutingRules()
-	for _, r := range rules {
-		if r.DestinationDir == "/old/media" || r.DestinationDir == "/old/dl" {
-			t.Errorf("rule %q still points to old dir %q", r.Pattern, r.DestinationDir)
-		}
-	}
-}
-
-func TestApplyMappings_DBErrorRollsBackConfig(t *testing.T) {
-	dir, err := ioutil.TempDir("", "xirc-apply-mappings-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
-	cfgFile, err := ioutil.TempFile(dir, "config-*.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfgPath := cfgFile.Name()
-	original := "storage:\n  media_dir: /old/media\n  downloads_dir: /old/dl\n"
-	if _, err := cfgFile.Write([]byte(original)); err != nil {
-		cfgFile.Close()
-		t.Fatal(err)
-	}
-	if err := cfgFile.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	state := &SetupState{
-		Required:     true,
-		MediaDir:     "/old/media",
-		DownloadsDir: "/old/dl",
-		ConfigPath:   cfgPath,
-	}
-
-	store := &applyMappingsMockStore{
-		rules: []db.FileRoutingRule{
-			{ID: 1, Pattern: "*.mkv", DestinationDir: "/old/media", Enabled: true},
-		},
-		updateErr: errors.New("update failed"),
-	}
-
-	err = ApplyMappings([]Mapping{
-		{OldDir: "/old/media", NewDir: "/new/media"},
-		{OldDir: "/old/dl", NewDir: "/new/dl"},
-	}, store, state)
-	if err == nil {
-		t.Fatal("expected ApplyMappings to return an error")
-	}
-
+	// config.yaml should point to the new dirs
 	data, err := ioutil.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := string(data)
-	if !strings.Contains(got, "media_dir: /old/media") {
-		t.Fatalf("expected rolled back media_dir in config, got:\n%s", got)
+	if !strings.Contains(got, "media_dir: "+newMedia) {
+		t.Errorf("expected media_dir updated to %q in config, got:\n%s", newMedia, got)
 	}
-	if !strings.Contains(got, "downloads_dir: /old/dl") {
-		t.Fatalf("expected rolled back downloads_dir in config, got:\n%s", got)
+	if !strings.Contains(got, "downloads_dir: "+newDl) {
+		t.Errorf("expected downloads_dir updated to %q in config, got:\n%s", newDl, got)
+	}
+}
+
+func TestApplyMappings_WriteFailureLeavesSetupRequired(t *testing.T) {
+	state := &SetupState{
+		Required:     true,
+		MediaDir:     "/old/media",
+		DownloadsDir: "/old/dl",
+		ConfigPath:   "/nonexistent-dir/config.yaml",
+	}
+
+	err := ApplyMappings([]Mapping{
+		{OldDir: "/old/media", NewDir: "/new/media"},
+		{OldDir: "/old/dl", NewDir: "/new/dl"},
+	}, state)
+	if err == nil {
+		t.Fatal("expected ApplyMappings to return an error for an unwritable config path")
+	}
+	if !state.Required {
+		t.Error("expected setup to stay required when the config write fails")
 	}
 }

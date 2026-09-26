@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/RealDtx/maxwell-irc/config"
-	"github.com/RealDtx/maxwell-irc/db"
 	"github.com/RealDtx/maxwell-irc/dcc"
 	"github.com/RealDtx/maxwell-irc/irc"
 )
@@ -38,14 +37,18 @@ func TestRunTransfer_UnwritableDestinationFallsBackToDownloads(t *testing.T) {
 	}
 	os.Chmod(locked, 0555)
 	defer os.Chmod(locked, 0755)
-	if err := store.CreateFileRoutingRule(&db.FileRoutingRule{Pattern: "*", DestinationDir: locked, Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
 
 	bus := irc.NewEventBus()
 	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{DownloadsDir: downloads, TempDir: temp}, 1)
 	dl, err := engine.queue.Add(1, "#c", "Bot", 1, "ep.mkv", 4, false, false, false)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// An explicit per-download target (the first stop in the destination
+	// order) points at the unwritable dir, forcing the same move-failure
+	// fallback that a matched-but-unwritable library category would hit.
+	dl.TargetDir = locked
+	if err := store.UpdateDownload(dl); err != nil {
 		t.Fatal(err)
 	}
 

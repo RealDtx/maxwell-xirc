@@ -2,13 +2,11 @@ package server
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"path/filepath"
 	"sync"
 
 	"github.com/RealDtx/maxwell-irc/config"
-	"github.com/RealDtx/maxwell-irc/db"
 )
 
 // SetupState carries wizard data from main() into the HTTP server.
@@ -38,17 +36,11 @@ type Mapping struct {
 }
 
 // DefaultSuggestions returns a suggested replacement path for each bad dir.
-// Dirs that serve the catch-all rule (*) get ~/Downloads; others get ~/Videos.
-func DefaultSuggestions(badDirs []string, rules []db.FileRoutingRule, homeDir string) map[string]string {
-	hasCatchAll := map[string]bool{}
-	for _, r := range rules {
-		if r.Pattern == "*" {
-			hasCatchAll[r.DestinationDir] = true
-		}
-	}
+// The downloads dir gets ~/Downloads; the media dir gets ~/Videos.
+func DefaultSuggestions(badDirs []string, downloadsDir, homeDir string) map[string]string {
 	result := make(map[string]string, len(badDirs))
 	for _, d := range badDirs {
-		if hasCatchAll[d] {
+		if d == downloadsDir {
 			result[d] = filepath.Join(homeDir, "Downloads")
 		} else {
 			result[d] = filepath.Join(homeDir, "Videos")
@@ -57,26 +49,17 @@ func DefaultSuggestions(badDirs []string, rules []db.FileRoutingRule, homeDir st
 	return result
 }
 
-// PatternsForDir returns all patterns whose destination_dir equals dir.
-func PatternsForDir(rules []db.FileRoutingRule, dir string) []string {
-	var out []string
-	for _, r := range rules {
-		if r.DestinationDir == dir {
-			out = append(out, r.Pattern)
-		}
+// DirLabel names which storage dir this is, for the CLI wizard prompt.
+func DirLabel(dir string, state *SetupState) string {
+	if dir == state.DownloadsDir {
+		return "downloads_dir"
 	}
-	return out
+	return "media_dir"
 }
 
-// ApplyMappings rewrites config.yaml and updates routing rules in the DB.
-// Config write is done first atomically; if DB updates fail, config is best-effort rolled back.
-func ApplyMappings(mappings []Mapping, store db.Store, state *SetupState) error {
-	rules, err := store.GetAllFileRoutingRules()
-	if err != nil {
-		return err
-	}
-
-	// Compute new config values
+// ApplyMappings rewrites config.yaml's media_dir/downloads_dir. The write is
+// atomic (temp file + rename), so a failure leaves config.yaml untouched.
+func ApplyMappings(mappings []Mapping, state *SetupState) error {
 	newMediaDir := state.MediaDir
 	newDownloadsDir := state.DownloadsDir
 	for _, m := range mappings {
@@ -88,27 +71,8 @@ func ApplyMappings(mappings []Mapping, store db.Store, state *SetupState) error 
 		}
 	}
 
-	oldToNew := make(map[string]string, len(mappings))
-	for _, m := range mappings {
-		oldToNew[m.OldDir] = m.NewDir
-	}
-
-	// Persist config first (atomic rename; nothing changes on failure).
 	if err := config.WriteStorageDirs(state.ConfigPath, newMediaDir, newDownloadsDir); err != nil {
 		return err
-	}
-
-	// Update routing rules; on failure, best-effort roll back config.
-	for i := range rules {
-		if newDir, ok := oldToNew[rules[i].DestinationDir]; ok {
-			rules[i].DestinationDir = newDir
-			if dbErr := store.UpdateFileRoutingRule(&rules[i]); dbErr != nil {
-				if rbErr := config.WriteStorageDirs(state.ConfigPath, state.MediaDir, state.DownloadsDir); rbErr != nil {
-					log.Printf("warning: config rollback failed after DB error: %v", rbErr)
-				}
-				return dbErr
-			}
-		}
 	}
 
 	state.Complete()
@@ -171,7 +135,7 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "mappings must not be empty")
 		return
 	}
-	if err := ApplyMappings(body.Mappings, s.store, s.setup); err != nil {
+	if err := ApplyMappings(body.Mappings, s.setup); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -210,7 +210,7 @@ func TestGetDownloads_MethodNotAllowed(t *testing.T) {
 }
 
 func TestIsValidTargetDir(t *testing.T) {
-	srv, store, cleanup := newTestServerWithStore(t)
+	srv, _, cleanup := newTestServerWithStore(t)
 	defer cleanup()
 
 	root, err := ioutil.TempDir("", "xirc-targets-*")
@@ -232,9 +232,7 @@ func TestIsValidTargetDir(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateFileRoutingRule(&db.FileRoutingRule{Pattern: "*", DestinationDir: root, Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
+	srv.SetDownloadsDir(root)
 
 	tests := []struct {
 		dir  string
@@ -261,9 +259,8 @@ func TestIsValidTargetDir(t *testing.T) {
 	}
 }
 
-// TestIsValidTargetDir_LibraryCategoryDir checks that B6's extension of
-// enabledRoutingDirs — library category dirs count as roots too — actually
-// takes effect, independent of any routing rule.
+// TestIsValidTargetDir_LibraryCategoryDir checks that configuredRoots
+// includes every enabled library category dir, independent of downloads_dir.
 func TestIsValidTargetDir_LibraryCategoryDir(t *testing.T) {
 	srv, _, cleanup := newTestServerWithStore(t)
 	defer cleanup()

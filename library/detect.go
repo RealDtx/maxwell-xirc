@@ -32,11 +32,13 @@ var kindDefaults = map[string]kindDefault{
 	"series": {
 		Name: "Series", DirAliases: []string{"Series", "TV", "TV Shows", "Serien"},
 		Path: "{title}/{season_dir}", SeasonDir: "S{season:02}", Priority: 100,
-		Extensions: []string{"mkv", "mp4", "avi", "m4v", "ts", "wmv", "webm"},
+		Extensions: []string{"mkv", "mp4", "avi", "m4v", "ts", "wmv", "webm", "tar", "zip", "rar", "7z"},
 		Patterns: []string{
 			`(?i)[^a-z0-9]s\d{1,3}e\d{1,3}`,
 			`(?i)[^a-z0-9](s\d{1,3}|season[ ._-]?\d+|staffel[ ._-]?\d+)[^a-z0-9]`,
 		},
+		AutoExtract:   true,
+		DeleteArchive: true,
 	},
 	"show": {
 		Name: "Show", DirAliases: []string{"Show", "Shows", "Concerts", "Comedy"},
@@ -47,7 +49,12 @@ var kindDefaults = map[string]kindDefault{
 	"movie": {
 		Name: "Movies", DirAliases: []string{"Movies", "Filme", "Films"},
 		Path: "", Priority: 50,
-		Extensions: []string{"mkv", "mp4", "avi", "m4v", "ts", "wmv", "webm"},
+		Extensions: []string{"mkv", "mp4", "avi", "m4v", "ts", "wmv", "webm", "tar", "zip", "rar", "7z"},
+		// Only gates the archive extensions above (see movieVideoExts):
+		// requires a year, so a software/game archive isn't claimed as a movie.
+		Patterns:      []string{`(?i)\b(19|20)\d{2}\b`},
+		AutoExtract:   true,
+		DeleteArchive: true,
 	},
 	"music": {
 		Name: "Music", DirAliases: []string{"Music", "Musik"},
@@ -92,7 +99,7 @@ var kindDefaults = map[string]kindDefault{
 // the English name when none exists yet), the series season-folder style in
 // use, and whether movies sit flat or in "{title} ({year})" folders.
 func Detect(mediaRoot string) Config {
-	cfg := Config{AutoOrganize: true, SearchDepth: routing.DefaultSubdirDepth, MediaRoot: mediaRoot}
+	cfg := Config{Version: CurrentVersion, AutoOrganize: true, SearchDepth: routing.DefaultSubdirDepth, MediaRoot: mediaRoot}
 	for _, kind := range kindOrder {
 		kd := kindDefaults[kind]
 		dirName := findDirAlias(mediaRoot, kd.DirAliases)

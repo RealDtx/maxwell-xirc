@@ -26,11 +26,20 @@ type Server struct {
 	prefix  string
 	webFS   fs.FS
 	library *library.Manager
+	// downloadsDir is storage.downloads_dir from config.yaml — a root
+	// alongside the library's category dirs (see configuredRoots).
+	downloadsDir string
 }
 
 // SetLibrary wires the library manager in — set once at startup.
 func (s *Server) SetLibrary(m *library.Manager) {
 	s.library = m
+}
+
+// SetDownloadsDir wires storage.downloads_dir in — set once at startup,
+// alongside SetLibrary.
+func (s *Server) SetDownloadsDir(dir string) {
+	s.downloadsDir = dir
 }
 
 func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer, setup *SetupState, prefix string, webFS fs.FS) *Server {
@@ -102,14 +111,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/library/detect", s.handleLibraryDetect)
 	s.mux.HandleFunc("/api/library/preview", s.handleLibraryPreview)
 	s.mux.HandleFunc("/api/library/kinds", s.handleLibraryKinds)
-
-	// Routing rule endpoints
-	s.mux.HandleFunc("/api/routing/rules", s.handleRoutingRules)
-	s.mux.HandleFunc("/api/routing/rules/", s.handleRoutingRuleByID)
-
-	// Hook endpoints
-	s.mux.HandleFunc("/api/hooks", s.handleHooks)
-	s.mux.HandleFunc("/api/hooks/", s.handleHookByID)
 
 	// Server/realm CRUD
 	s.mux.HandleFunc("/api/servers", s.handleServers)

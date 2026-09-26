@@ -116,7 +116,8 @@ document.addEventListener('alpine:init', () => {
         dlSort: { col: 'created_at', dir: 'desc' },
         downloadTargets: [],
         _dlTargetsLoaded: false,
-        _dlPredicted: {},       // filename -> predicted path (from /library/preview)
+        _dlPredicted: {},       // filename -> predicted path, relative to media root (from /library/preview)
+        _dlPredictedFull: {},   // filename -> predicted full path
         _dlMediaRoot: '',
         _dlMediaRootLoaded: false,
         ircMessages: {},
@@ -131,19 +132,10 @@ document.addEventListener('alpine:init', () => {
         settingsServers: [],
         settingsChannels: [],
         settingsServerId: null,
-        routingRules: [],
-        hooks: [],
         serverForm: { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true },
         channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
-        routingForm: { id: null, pattern: '', destination_dir: '', priority: 0 },
-        hookForm: { id: null, name: '', scope: 'global', hook_type: 'script', config: '', enabled: true },
         showServerForm: false,
         showChannelForm: false,
-        showRoutingForm: false,
-        showHookForm: false,
-        routingNewDir: '',
-        routingNewExt: '',
-        showAddDestForm: false,
 
         // Library (auto-organize) settings
         library: null,          // {auto_organize, search_depth, media_root, categories:[]}
@@ -191,8 +183,11 @@ document.addEventListener('alpine:init', () => {
         dirPickerCallback: null,
 
         // File manager
+        fileRootsList: [],
         fileManagerDir: null,
         fileManagerRoot: '',
+        fileManagerHighlight: null,
+        _fmHighlightTimer: null,
         fileManagerEntries: [],
         fileManagerLoading: false,
         fileManagerParent: '',
@@ -262,22 +257,6 @@ document.addEventListener('alpine:init', () => {
 
         // --- Computed helpers ---
 
-        groupedRoutingRules() {
-            var groups = {};
-            for (var i = 0; i < this.routingRules.length; i++) {
-                var r = this.routingRules[i];
-                var dir = r.destination_dir;
-                if (!groups[dir]) groups[dir] = [];
-                var ext = r.pattern.replace(/^\*\./, '');
-                groups[dir].push({ id: r.id, ext: ext, rule: r });
-            }
-            return groups;
-        },
-
-        predefinedExtensions() {
-            return ['mkv', 'mp4', 'avi', 'mp3', 'flac', 'epub', 'pdf', 'zip', 'cbz'];
-        },
-
         serverStatus(serverId) {
             const s = this.ircStatus[serverId];
             return s ? s.status : 'disconnected';
@@ -314,11 +293,9 @@ document.addEventListener('alpine:init', () => {
             if (view === 'settings') {
                 this.showServerForm = false;
                 this.showChannelForm = false;
-                this.showRoutingForm = false;
-                this.showHookForm = false;
                 this.loadSettingsData();
             } else if (view === 'files') {
-                api.getRoutingRules().then(r => { this.routingRules = Array.isArray(r) ? r : []; }).catch(console.error);
+                this.loadFileRoots();
                 this._dlTargetsLoaded = false; // move targets may have changed on disk
                 this.loadDownloadTargets();
             }
@@ -1369,21 +1346,26 @@ document.addEventListener('alpine:init', () => {
 
         // Predicts the "Auto" target path for queued/downloading/processing rows,
         // via one /library/preview call per loadDownloads() (not per WS tick).
+        async _ensureMediaRoot() {
+            if (this._dlMediaRootLoaded) return;
+            this._dlMediaRootLoaded = true;
+            const cfg = await api.getLibrary().catch(() => null);
+            this._dlMediaRoot = (cfg && cfg.media_root) || '';
+        },
+
         async _predictDownloadTargets() {
             const names = this.downloads
                 .filter(d => ['queued', 'downloading', 'processing'].includes(d.status) && d.filename)
                 .map(d => d.filename);
-            if (!names.length) { this._dlPredicted = {}; return; }
+            if (!names.length) { this._dlPredicted = {}; this._dlPredictedFull = {}; return; }
             try {
-                if (!this._dlMediaRootLoaded) {
-                    this._dlMediaRootLoaded = true;
-                    const cfg = await api.getLibrary().catch(() => null);
-                    this._dlMediaRoot = (cfg && cfg.media_root) || '';
-                }
+                await this._ensureMediaRoot();
                 const res = await api.previewLibrary(names);
                 const map = {};
+                const fullMap = {};
                 (Array.isArray(res) ? res : []).forEach(r => {
                     if (!r.path) return;
+                    fullMap[r.filename] = r.path;
                     let p = r.path;
                     if (this._dlMediaRoot && p.startsWith(this._dlMediaRoot)) {
                         p = p.slice(this._dlMediaRoot.length).replace(/^[\/\\]+/, '');
@@ -1391,6 +1373,7 @@ document.addEventListener('alpine:init', () => {
                     map[r.filename] = p;
                 });
                 this._dlPredicted = map;
+                this._dlPredictedFull = fullMap;
             } catch (e) {
                 console.error('previewLibrary error', e);
             }
@@ -1423,6 +1406,76 @@ document.addEventListener('alpine:init', () => {
             api.setDownloadTarget(dl.id, dir).catch(console.error);
         },
 
+        // "Open in Files": jump to the folder holding this download (or where it will land)
+        // and highlight the file if it's already there.
+        async openDownloadInFiles(dl) {
+            this.setView('files');
+
+            let path = null, isFile = false;
+            if (dl.status === 'completed' && dl.destination_path) {
+                path = dl.destination_path; isFile = true;
+            } else if (dl.target_dir) {
+                path = dl.target_dir; isFile = false;
+            } else {
+                const full = dl.filename && this._dlPredictedFull[dl.filename];
+                if (full) { path = full; isFile = true; }
+            }
+
+            const hidden = path && /(^|\/)\.[^/]+(\/|$)/.test(path);
+            let dir, highlight = null;
+            if (!path || hidden) {
+                await this.loadFileRoots();
+                dir = this._downloadsFallbackRoot();
+            } else if (isFile) {
+                const idx = path.lastIndexOf('/');
+                highlight = idx >= 0 ? path.slice(idx + 1) : path;
+                dir = idx > 0 ? path.slice(0, idx) : '/';
+            } else {
+                dir = path;
+            }
+            if (!dir) return;
+
+            const target = dir;
+            const ok = await this._fmLoadWithWalkUp(dir);
+            if (hidden) this.fileManagerError = 'File is still in the temporary folder.';
+            if (ok && highlight && this.fileManagerDir === target) {
+                this._fmHighlightEntry(highlight);
+            }
+        },
+
+        // First root ending in "/Downloads", else the media root.
+        _downloadsFallbackRoot() {
+            const dr = this.fileRootsList.find(r => r.replace(/\/+$/, '').endsWith('/Downloads'));
+            return dr || this._dlMediaRoot || '';
+        },
+
+        _fmParentOf(p) {
+            if (!p || p === '/') return null;
+            const trimmed = p.replace(/\/+$/, '');
+            const idx = trimmed.lastIndexOf('/');
+            if (idx < 0) return null;
+            return idx === 0 ? '/' : trimmed.slice(0, idx);
+        },
+
+        async _fmLoadWithWalkUp(dir) {
+            let cur = dir;
+            while (cur) {
+                if (await this.loadFileManager(cur)) return true;
+                cur = this._fmParentOf(cur);
+            }
+            return false;
+        },
+
+        _fmHighlightEntry(name) {
+            this.fileManagerHighlight = name;
+            clearTimeout(this._fmHighlightTimer);
+            this._fmHighlightTimer = setTimeout(() => { this.fileManagerHighlight = null; }, 3000);
+            this.$nextTick(() => {
+                const el = document.querySelector('[data-fm-name="' + CSS.escape(name) + '"]');
+                if (el) el.scrollIntoView({ block: 'center' });
+            });
+        },
+
         downloadProgress(dl) {
             if (dl.status === 'completed' || dl.status === 'processing') return 100;
             // total_size/bytes_received only exist after a WS progress event;
@@ -1443,7 +1496,7 @@ document.addEventListener('alpine:init', () => {
         dlSpeedInfo(dl) {
             if (dl.status === 'downloading') return dl.speed ? formatSpeed(dl.speed) : '-';
             if (dl.status === 'processing') {
-                var phaseText = { moving: 'Moving…', hooks: 'Running hooks…', extracting: 'Extracting…' };
+                var phaseText = { moving: 'Moving…', extracting: 'Extracting…' };
                 return phaseText[dl.phase] || 'Finishing…';
             }
             if (dl.status === 'completed') {
@@ -1766,6 +1819,26 @@ document.addEventListener('alpine:init', () => {
 
         // --- File manager ---
 
+        async loadFileRoots() {
+            try {
+                const res = await api.fileRoots();
+                this.fileRootsList = (res && res.roots) || [];
+            } catch (e) {
+                console.error('loadFileRoots error', e);
+            }
+            await this._ensureMediaRoot();
+        },
+
+        // Label a destination root relative to the media root, when it's inside it.
+        fileRootLabel(root) {
+            const mr = this._dlMediaRoot;
+            if (mr && root.indexOf(mr) === 0) {
+                const rel = root.slice(mr.length).replace(/^[\/\\]+/, '');
+                if (rel) return rel;
+            }
+            return root;
+        },
+
         async loadFileManager(dir) {
             this.fileManagerDir = dir;
             this.fileManagerLoading = true;
@@ -1783,9 +1856,11 @@ document.addEventListener('alpine:init', () => {
                 this.fileManagerRoot = (res && res.root) || dir;
                 this.fileManagerParent = (res && res.parent) || '';
                 this.fileManagerDir = (res && res.dir) || dir;
+                return true;
             } catch(e) {
                 console.error('loadFileManager', e);
                 this.fileManagerError = e.message || String(e);
+                return false;
             } finally {
                 this.fileManagerLoading = false;
             }
@@ -2049,8 +2124,6 @@ document.addEventListener('alpine:init', () => {
         loadSettingsData() {
             return Promise.all([
                 api.getServers().then(r => { this.settingsServers = Array.isArray(r) ? r : []; }),
-                api.getRoutingRules().then(r => { this.routingRules = Array.isArray(r) ? r : []; }),
-                api.getHooks().then(r => { this.hooks = Array.isArray(r) ? r : []; }),
             ]);
         },
 
@@ -2168,67 +2241,6 @@ document.addEventListener('alpine:init', () => {
         deleteRealm(id) {
             if (!confirm('Delete realm?')) return;
             return api.deleteRealm(id).then(() => this.loadSettingsRealms(this.settingsServerId)).catch(console.error);
-        },
-
-        openRoutingForm(rule) {
-            this.routingForm = rule
-                ? Object.assign({}, rule)
-                : { id: null, pattern: '', destination_dir: '', priority: 0 };
-            this.showRoutingForm = true;
-        },
-
-        saveRoutingRule() {
-            const p = this.routingForm.id
-                ? api.updateRoutingRule(this.routingForm.id, this.routingForm)
-                : api.createRoutingRule(this.routingForm);
-            return p.then(() => {
-                this.showRoutingForm = false;
-                return this.loadSettingsData();
-            }).catch(console.error);
-        },
-
-        deleteRoutingRule(id) {
-            if (!confirm('Delete routing rule?')) return;
-            return api.deleteRoutingRule(id).then(() => this.loadSettingsData()).catch(console.error);
-        },
-
-        openHookForm(hook) {
-            this.hookForm = hook
-                ? Object.assign({}, hook)
-                : { id: null, name: '', scope: 'global', hook_type: 'script', config: '', enabled: true };
-            this.showHookForm = true;
-        },
-
-        saveHook() {
-            const p = this.hookForm.id
-                ? api.updateHook(this.hookForm.id, this.hookForm)
-                : api.createHook(this.hookForm);
-            return p.then(() => {
-                this.showHookForm = false;
-                return this.loadSettingsData();
-            }).catch(console.error);
-        },
-
-        deleteHook(id) {
-            if (!confirm('Delete hook?')) return;
-            return api.deleteHook(id).then(() => this.loadSettingsData()).catch(console.error);
-        },
-
-        async addRoutingRuleForDir(dir, ext) {
-            if (!dir || !ext) return;
-            const pattern = '*.' + ext.replace(/^\./, '');
-            await api.createRoutingRule({ pattern, destination_dir: dir, priority: 0 });
-            await this.loadSettingsData();
-        },
-
-        async renameRoutingDir(oldDir, newDir) {
-            if (!newDir || newDir === oldDir) return;
-            const groups = this.groupedRoutingRules();
-            const rules = groups[oldDir] || [];
-            for (const item of rules) {
-                await api.updateRoutingRule(item.id, Object.assign({}, item.rule, { destination_dir: newDir }));
-            }
-            await this.loadSettingsData();
         },
 
         // --- Library (auto-organize) settings ---

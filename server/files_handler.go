@@ -27,8 +27,9 @@ type filesResponse struct {
 	Entries []fileEntry `json:"entries"`
 }
 
-// /api/files — file manager limited to folders at or below routing destinations.
+// /api/files — file manager limited to folders at or below configured roots.
 //
+//	GET  (no dir)                                   {"roots": [...]}
 //	GET  ?dir=ABS                                   list dir
 //	POST {action:"move",   src_dir, names, dest_dir} move files/folders
 //	POST {action:"delete", dir, names}               delete (folders recursively)
@@ -46,18 +47,14 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 // fileRoots returns the destination roots, symlinks resolved.
-func (s *Server) fileRoots() ([]string, error) {
-	dirs, err := s.enabledRoutingDirs()
-	if err != nil {
-		return nil, err
-	}
+func (s *Server) fileRoots() []string {
 	var roots []string
-	for _, d := range dirs {
+	for _, d := range s.configuredRoots() {
 		if r, err := filepath.EvalSymlinks(d); err == nil {
 			roots = append(roots, r)
 		}
 	}
-	return roots, nil
+	return roots
 }
 
 func within(root, p string) bool {
@@ -68,7 +65,9 @@ func within(root, p string) bool {
 func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("dir")
 	if dir == "" {
-		writeError(w, http.StatusBadRequest, "dir required")
+		roots := s.configuredRoots()
+		sort.Strings(roots)
+		writeJSON(w, http.StatusOK, map[string][]string{"roots": roots})
 		return
 	}
 	clean := filepath.Clean(dir)
@@ -94,14 +93,12 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp.Root = clean
-	if roots, err := s.fileRoots(); err == nil {
-		real, _ := filepath.EvalSymlinks(clean)
-		for _, root := range roots {
-			if within(root, real) && len(root) < len(resp.Root) {
-				// Report the root in the caller's (unresolved) spelling.
-				if rel, err := filepath.Rel(root, real); err == nil {
-					resp.Root = filepath.Clean(strings.TrimSuffix(clean, rel))
-				}
+	real, _ := filepath.EvalSymlinks(clean)
+	for _, root := range s.fileRoots() {
+		if within(root, real) && len(root) < len(resp.Root) {
+			// Report the root in the caller's (unresolved) spelling.
+			if rel, err := filepath.Rel(root, real); err == nil {
+				resp.Root = filepath.Clean(strings.TrimSuffix(clean, rel))
 			}
 		}
 	}
@@ -162,11 +159,7 @@ func (s *Server) handleFileAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	roots, err := s.fileRoots()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	roots := s.fileRoots()
 	checkDir := func(d string) (string, bool) {
 		d = filepath.Clean(d)
 		ok, err := s.isValidTargetDir(d)

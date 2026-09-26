@@ -1,7 +1,7 @@
 // Package library organizes finished downloads into a typed taxonomy
 // (series/movie/show/music/magazine/ebook/game/software), configured via a
-// categories.yaml file that lives next to config.yaml. It runs before the
-// existing routing rules (routing package), which stay as the fallback.
+// categories.yaml file that lives next to config.yaml. An unmatched file
+// falls back to storage.downloads_dir, flat (see queue.Engine.runTransfer).
 package library
 
 import (
@@ -34,10 +34,56 @@ type Category struct {
 
 // Config is the whole categories.yaml document.
 type Config struct {
+	// Version tracks one-time migrations applied by Load (see
+	// upgradeArchiveCategories). Zero means "written before versioning
+	// existed" — Detect stamps CurrentVersion on every config it creates.
+	Version      int        `yaml:"version" json:"version"`
 	AutoOrganize bool       `yaml:"auto_organize" json:"auto_organize"`
 	SearchDepth  int        `yaml:"search_depth" json:"search_depth"`
 	MediaRoot    string     `yaml:"media_root" json:"media_root"`
 	Categories   []Category `yaml:"categories" json:"categories"`
+}
+
+// CurrentVersion is the categories.yaml schema version.
+const CurrentVersion = 1
+
+// archiveExtsToAdd are the extensions upgradeArchiveCategories adds to
+// series/movie categories, matching the defaults in detect.go's kindDefaults.
+var archiveExtsToAdd = []string{"tar", "zip", "rar", "7z"}
+
+// upgradeArchiveCategories is Load's one-time migration for categories.yaml
+// files written before series/movie categories could unpack archives (season
+// packs and movie releases shared as tar/zip/rar/7z): it adds the missing
+// archive extensions and turns extraction + archive deletion on for those two
+// kinds. Tracked by Config.Version so it runs at most once per file.
+func upgradeArchiveCategories(cfg *Config) bool {
+	if cfg.Version >= CurrentVersion {
+		return false
+	}
+	for i := range cfg.Categories {
+		cat := &cfg.Categories[i]
+		if cat.Kind != "series" && cat.Kind != "movie" {
+			continue
+		}
+		for _, ext := range archiveExtsToAdd {
+			if !hasExt(cat.Extensions, ext) {
+				cat.Extensions = append(cat.Extensions, ext)
+			}
+		}
+		cat.AutoExtract = true
+		cat.DeleteArchive = true
+	}
+	cfg.Version = CurrentVersion
+	return true
+}
+
+func hasExt(exts []string, ext string) bool {
+	for _, e := range exts {
+		if strings.EqualFold(strings.TrimPrefix(e, "."), ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // validKinds are the parsers implemented in parse.go.
@@ -46,17 +92,20 @@ var validKinds = map[string]bool{
 	"magazine": true, "ebook": true, "game": true, "software": true,
 }
 
-// Load reads and parses a categories.yaml file.
-func Load(path string) (*Config, error) {
+// Load reads and parses a categories.yaml file. upgraded reports whether the
+// file predates CurrentVersion and was migrated in memory — the caller is
+// responsible for saving it back (Save is a separate, deliberate step).
+func Load(path string) (cfg *Config, upgraded bool, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing categories file: %w", err)
+	cfg = &Config{}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, false, fmt.Errorf("parsing categories file: %w", err)
 	}
-	return &cfg, nil
+	upgraded = upgradeArchiveCategories(cfg)
+	return cfg, upgraded, nil
 }
 
 // Save writes cfg to path atomically: temp file + rename, the same approach

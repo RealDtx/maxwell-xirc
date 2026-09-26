@@ -5,15 +5,13 @@ import (
 	"syscall"
 )
 
-// GET /api/storage — returns disk usage stats for each unique destination directory
-// in the active routing rules.
+// GET /api/storage — returns disk usage stats for each configured root
+// (library media root, enabled category dirs, downloads dir).
 func (s *Server) handleStorageStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	rules, _ := s.store.GetAllFileRoutingRules()
 
 	type DirStats struct {
 		Path    string  `json:"path"`
@@ -22,16 +20,10 @@ func (s *Server) handleStorageStats(w http.ResponseWriter, r *http.Request) {
 		UsedPct float64 `json:"used_pct"`
 	}
 
-	seen := map[string]bool{}
 	var stats []DirStats
-	for _, rule := range rules {
-		if !rule.Enabled || rule.DestinationDir == "" || seen[rule.DestinationDir] {
-			continue
-		}
-		seen[rule.DestinationDir] = true
-
+	for _, dir := range s.configuredRoots() {
 		var fs syscall.Statfs_t
-		if err := syscall.Statfs(rule.DestinationDir, &fs); err != nil {
+		if err := syscall.Statfs(dir, &fs); err != nil {
 			continue
 		}
 
@@ -42,7 +34,7 @@ func (s *Server) handleStorageStats(w http.ResponseWriter, r *http.Request) {
 			usedPct = (total - free) / total * 100
 		}
 		stats = append(stats, DirStats{
-			Path:    rule.DestinationDir,
+			Path:    dir,
 			TotalGB: total / 1e9,
 			FreeGB:  free / 1e9,
 			UsedPct: usedPct,

@@ -119,16 +119,6 @@ type ParsePattern struct {
 	Channel  string `json:"channel"`
 }
 
-type PostHook struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Scope    string `json:"scope"`
-	ScopeID  *int64 `json:"scope_id"`
-	HookType string `json:"hook_type"`
-	Config   string `json:"config"`
-	Enabled  bool   `json:"enabled"`
-}
-
 // IndexedFile is a persistent, deduplicated catalog entry built from
 // successfully parsed live search results. Unlike SearchResult (which is
 // scoped to a single search session and cleared on the next search),
@@ -153,13 +143,4 @@ type IndexStats struct {
 	TotalFiles    int64 `json:"total_files"`
 	TotalBots     int64 `json:"total_bots"`
 	TotalChannels int64 `json:"total_channels"`
-}
-
-type FileRoutingRule struct {
-	ID             int64  `json:"id"`
-	Pattern        string `json:"pattern"`
-	DestinationDir string `json:"destination_dir"`
-	Priority       int    `json:"priority"`
-	Builtin        bool   `json:"builtin"`
-	Enabled        bool   `json:"enabled"`
 }

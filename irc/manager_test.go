@@ -65,22 +65,9 @@ func (m *mockStore) GetAllParsePatterns() ([]db.ParsePattern, error) { return ni
 func (m *mockStore) GetParsePatternsForChannel(_ int64, _ string) ([]db.ParsePattern, error) {
 	return nil, nil
 }
-func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error { return nil }
-func (m *mockStore) RecordPatternMatch(patternID int64) error    { return nil }
-func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error { return nil }
-func (m *mockStore) GetPostHooks(scope string, scopeID *int64) ([]db.PostHook, error) {
-	return nil, nil
-}
-func (m *mockStore) GetPostHookByID(id int64) (*db.PostHook, error)                  { return nil, nil }
-func (m *mockStore) CreatePostHook(h *db.PostHook) error                             { return nil }
-func (m *mockStore) UpdatePostHook(h *db.PostHook) error                             { return nil }
-func (m *mockStore) DeletePostHook(id int64) error                                   { return nil }
-func (m *mockStore) GetFileRoutingRules() ([]db.FileRoutingRule, error)              { return nil, nil }
-func (m *mockStore) GetAllFileRoutingRules() ([]db.FileRoutingRule, error)           { return nil, nil }
-func (m *mockStore) GetFileRoutingRuleByID(id int64) (*db.FileRoutingRule, error)    { return nil, nil }
-func (m *mockStore) CreateFileRoutingRule(r *db.FileRoutingRule) error               { return nil }
-func (m *mockStore) UpdateFileRoutingRule(r *db.FileRoutingRule) error               { return nil }
-func (m *mockStore) DeleteFileRoutingRule(id int64) error                            { return nil }
+func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error                     { return nil }
+func (m *mockStore) RecordPatternMatch(patternID int64) error                        { return nil }
+func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error                     { return nil }
 func (m *mockStore) CreateDownloadStat(s *db.DownloadStat) error                     { return nil }
 func (m *mockStore) GetDownloadStatsSummary() (*db.DownloadStatsSummary, error)      { return nil, nil }
 func (m *mockStore) GetDownloadHistory(offset, limit int) ([]db.DownloadStat, error) { return nil, nil }

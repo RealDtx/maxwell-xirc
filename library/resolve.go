@@ -20,6 +20,23 @@ var musicAudioExts = map[string]bool{
 	"mp3": true, "flac": true, "m4a": true, "ogg": true, "opus": true, "wav": true, "aac": true,
 }
 
+// movieVideoExts are movie's "always matches" extensions, mirroring
+// musicAudioExts: the archive extensions (tar/zip/rar/7z) it shares with
+// game/software also need every pattern to hit (a year, by default) so an
+// unrelated software/game archive doesn't get claimed as a movie.
+var movieVideoExts = map[string]bool{
+	"mkv": true, "mp4": true, "avi": true, "m4v": true, "ts": true, "wmv": true, "webm": true,
+}
+
+// nativeExtsByKind maps a kind to the extensions that match it unconditionally
+// (Patterns skipped); every other extension in the kind's Extensions list is
+// an archive format shared with other kinds, so it additionally needs every
+// pattern to hit. See matchesCategory.
+var nativeExtsByKind = map[string]map[string]bool{
+	"music": musicAudioExts,
+	"movie": movieVideoExts,
+}
+
 func extInList(exts []string, ext string) bool {
 	if len(exts) == 0 {
 		return true
@@ -45,17 +62,18 @@ func matchesPatterns(cat Category, filename string) bool {
 }
 
 // matchesCategory applies the B1 matching rule (extension in Extensions AND
-// a pattern matches) with one special case: music's archive extensions
-// (zip/rar/7z) require ALL patterns to hit (keyword + year), not just one —
-// otherwise any zip/rar/7z would need its own pattern to rule music out.
-// Audio extensions skip the pattern check entirely.
+// a pattern matches) with one special case, per nativeExtsByKind: a kind's
+// native extensions skip the pattern check entirely, while an archive
+// extension it shares with other kinds (zip/rar/7z/tar) requires ALL
+// patterns to hit, not just one — otherwise any such archive would need its
+// own pattern to rule the kind out.
 func matchesCategory(cat Category, filename string) bool {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), ".")
 	if !extInList(cat.Extensions, ext) {
 		return false
 	}
-	if cat.Kind == "music" {
-		if musicAudioExts[ext] {
+	if native, ok := nativeExtsByKind[cat.Kind]; ok {
+		if native[ext] {
 			return true
 		}
 		if len(cat.Patterns) == 0 {

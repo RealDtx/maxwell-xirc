@@ -109,21 +109,6 @@ type Store interface {
 	UpdateParsePattern(p *ParsePattern) error
 	CreateParsePattern(p *ParsePattern) error
 
-	// Post Hooks
-	GetPostHooks(scope string, scopeID *int64) ([]PostHook, error)
-	GetPostHookByID(id int64) (*PostHook, error)
-	CreatePostHook(h *PostHook) error
-	UpdatePostHook(h *PostHook) error
-	DeletePostHook(id int64) error
-
-	// File Routing Rules
-	GetFileRoutingRules() ([]FileRoutingRule, error)
-	GetAllFileRoutingRules() ([]FileRoutingRule, error)
-	GetFileRoutingRuleByID(id int64) (*FileRoutingRule, error)
-	CreateFileRoutingRule(r *FileRoutingRule) error
-	UpdateFileRoutingRule(r *FileRoutingRule) error
-	DeleteFileRoutingRule(id int64) error
-
 	// Download Stats
 	CreateDownloadStat(s *DownloadStat) error
 	GetDownloadStatsSummary() (*DownloadStatsSummary, error)

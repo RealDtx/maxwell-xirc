@@ -7,14 +7,15 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
-	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/library"
 )
 
 func TestFileManager(t *testing.T) {
-	srv, store, cleanup := newTestServerWithStore(t)
+	srv, _, cleanup := newTestServerWithStore(t)
 	defer cleanup()
 
 	root, err := ioutil.TempDir("", "xirc-files-*")
@@ -45,11 +46,8 @@ func TestFileManager(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Two roots, one nested in the other (like /data/media and /data/media/Downloads).
-	for _, d := range []string{root, filepath.Join(root, "Downloads")} {
-		if err := store.CreateFileRoutingRule(&db.FileRoutingRule{Pattern: "*", DestinationDir: d, Enabled: true}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	srv.SetLibrary(library.NewManager(filepath.Join(root, "categories.yaml"), library.Config{MediaRoot: root}))
+	srv.SetDownloadsDir(filepath.Join(root, "Downloads"))
 
 	list := func(dir string) (int, filesResponse) {
 		w := httptest.NewRecorder()
@@ -134,5 +132,56 @@ func TestFileManager(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outside, "secret")); err != nil {
 		t.Errorf("symlink target must survive: %v", err)
+	}
+}
+
+// TestFilesRoots checks GET /api/files with no dir returns the sorted,
+// deduplicated configured roots.
+func TestFilesRoots(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	mediaRoot, err := ioutil.TempDir("", "xirc-files-roots-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(mediaRoot)
+
+	movies := filepath.Join(mediaRoot, "Movies")
+	downloads := filepath.Join(mediaRoot, "Downloads")
+	if err := os.MkdirAll(movies, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	srv.SetLibrary(library.NewManager(filepath.Join(mediaRoot, "categories.yaml"), library.Config{
+		MediaRoot: mediaRoot,
+		Categories: []library.Category{
+			{ID: "movie", Kind: "movie", Dir: "Movies", Enabled: true},
+			{ID: "disabled", Kind: "movie", Dir: "Off", Enabled: false},
+		},
+	}))
+	srv.SetDownloadsDir(downloads)
+
+	w := httptest.NewRecorder()
+	srv.handleFiles(w, httptest.NewRequest("GET", "/api/files", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Roots []string `json:"roots"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	want := []string{mediaRoot, movies, downloads}
+	sort.Strings(want)
+	if len(resp.Roots) != len(want) {
+		t.Fatalf("roots = %v, want %v", resp.Roots, want)
+	}
+	for i := range want {
+		if resp.Roots[i] != want[i] {
+			t.Errorf("roots[%d] = %q, want %q", i, resp.Roots[i], want[i])
+		}
 	}
 }
