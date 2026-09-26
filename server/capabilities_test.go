@@ -17,8 +17,14 @@ func TestCapabilities_ReadOnlyDownloadsDisablesRequests(t *testing.T) {
 	srv, _, cleanup := newTestServerWithStore(t)
 	defer cleanup()
 	dl := t.TempDir()
-	os.Chmod(dl, 0555)
-	defer os.Chmod(dl, 0755)
+	if err := os.Chmod(dl, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chmod(dl, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}()
 	srv.SetDownloadsDir(dl)
 	srv.SetCapabilityInputs(filepath.Join(dl, ".tmp"), t.TempDir(), nil)
 	caps := srv.RecheckCapabilities()
@@ -36,7 +42,9 @@ func TestCapabilities_ReadOnlyDownloadsDisablesRequests(t *testing.T) {
 	w = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/api/capabilities", nil))
 	var got Capabilities
-	json.NewDecoder(w.Body).Decode(&got)
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode capabilities response: %v", err)
+	}
 	if got.Downloads.OK || len(got.Roots) == 0 {
 		t.Errorf("GET capabilities: %+v", got)
 	}

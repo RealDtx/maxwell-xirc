@@ -310,7 +310,11 @@ func moveItem(roots []string, srcDir, name, destDir string) error {
 	}
 	// ponytail: rename only; destinations share one filesystem (checked on the Pi).
 	// Add copy+delete for cross-device moves if that ever changes.
-	return fscheck.Describe(os.Rename(src, dst), destDir)
+	err = os.Rename(src, dst)
+	if err != nil && fscheck.IsPermission(err) && !fscheck.Probe(srcDir).Write {
+		return fscheck.Describe(err, srcDir)
+	}
+	return fscheck.Describe(err, destDir)
 }
 
 func statusFor(err error) int {

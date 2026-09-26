@@ -194,8 +194,14 @@ func TestFileManager_ReadOnlyRootReturns403WithReason(t *testing.T) {
 	defer cleanup()
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "a.mkv"), []byte("x"), 0644)
-	os.Chmod(root, 0555)
-	defer os.Chmod(root, 0755)
+	if err := os.Chmod(root, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chmod(root, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}()
 	srv.SetDownloadsDir(root)
 
 	body := `{"action":"rename","dir":"` + root + `","name":"a.mkv","new_name":"b.mkv"}`
@@ -204,5 +210,51 @@ func TestFileManager_ReadOnlyRootReturns403WithReason(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "permission denied: "+root) {
 		t.Errorf("got %d %s", w.Code, w.Body)
+	}
+}
+
+// A rename/move blocked by a read-only destination is not the same fault as
+// one blocked by a read-only source: the reason must name whichever side
+// actually lacks write permission.
+func TestFileManager_MoveBlamesReadOnlySource(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores permissions")
+	}
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "src")
+	destDir := filepath.Join(root, "dest")
+	if err := os.Mkdir(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(destDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "a.mkv"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(srcDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chmod(srcDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	srv.SetDownloadsDir(root)
+
+	body := `{"action":"move","src_dir":"` + srcDir + `","dest_dir":"` + destDir + `","names":["a.mkv"]}`
+	req := httptest.NewRequest("POST", "/api/files", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	errs, _ := resp["errors"].(map[string]interface{})
+	msg, _ := errs["a.mkv"].(string)
+	if w.Code != http.StatusOK || !strings.Contains(msg, "permission denied: "+srcDir) {
+		t.Errorf("got %d %v", w.Code, resp)
 	}
 }

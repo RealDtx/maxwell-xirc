@@ -106,8 +106,14 @@ func TestRunTransfer_UnwritableTargetRecordsDescriptiveReason(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	os.Chmod(targetDir, 0555)
-	defer os.Chmod(targetDir, 0755)
+	if err := os.Chmod(targetDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chmod(targetDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
 	bus := irc.NewEventBus()
 	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{DownloadsDir: downloadsDir, TempDir: tempDir}, 1)
