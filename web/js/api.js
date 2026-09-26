@@ -1,41 +1,39 @@
 const _apiBase = (window.XIRC_PREFIX || '') + '/api';
 
 const api = {
-    async get(path) {
-        const res = await fetch(_apiBase + path);
-        return res.json();
-    },
-
-    async post(path, body) {
-        const res = await fetch(_apiBase + path, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!res.ok) {
+    async request(method, path, body) {
+        const opts = { method, headers: {} };
+        if (body !== undefined) {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(body);
+        } else if (method === 'POST' || method === 'PUT') {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = '{}';
+        }
+        const res = await fetch(_apiBase + path, opts);
+        if (res.status === 401 && !path.startsWith('/auth/')) {
+            window.dispatchEvent(new CustomEvent('xirc:unauthorized'));
+        }
+        if (!res.ok && method !== 'GET') {
             const err = await res.json().catch(() => ({ error: res.statusText }));
             throw new Error(err.error || res.statusText);
         }
         return res.json();
     },
+    get(path)        { return this.request('GET', path); },
+    post(path, body) { return this.request('POST', path, body); },
+    put(path, body)  { return this.request('PUT', path, body); },
+    del(path)        { return this.request('DELETE', path); },
 
-    async put(path, body) {
-        const res = await fetch(_apiBase + path, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: res.statusText }));
-            throw new Error(err.error || res.statusText);
-        }
-        return res.json();
-    },
-
-    async del(path) {
-        const res = await fetch(_apiBase + path, { method: 'DELETE' });
-        return res.json();
-    },
+    // Auth & users
+    me()                  { return this.get('/auth/me'); },
+    login(username, password) { return this.post('/auth/login', { username, password }); },
+    setupAdmin(username, password) { return this.post('/auth/setup', { username, password }); },
+    logout()              { return this.post('/auth/logout', {}); },
+    getUsers()            { return this.get('/users'); },
+    createUser(u)         { return this.post('/users', u); },
+    updateUser(id, patch) { return this.put('/users/' + id, patch); },
+    deleteUser(id)        { return this.del('/users/' + id); },
 
     // Servers
     getServers()           { return this.get('/servers'); },
@@ -136,6 +134,7 @@ const api = {
     fileRoots()      { return this.get('/files'); },
     async listFiles(dir) {
         const res = await fetch(_apiBase + '/files?dir=' + encodeURIComponent(dir));
+        if (res.status === 401) window.dispatchEvent(new CustomEvent('xirc:unauthorized'));
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         return data;

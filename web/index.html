@@ -55,7 +55,7 @@
                         <span style="flex:1; cursor:pointer; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
                               x-text="server.name"
                               @click="selectServer(server); sidebarOpen = false"></span>
-                        <template x-if="serverStatus(server.id) !== 'connected'">
+                        <template x-if="serverStatus(server.id) !== 'connected' && isAdmin">
                             <span style="cursor:pointer; padding:0 3px; font-size:10px; opacity:0.6; flex-shrink:0; color:var(--warning);"
                                   title="Reconnect"
                                   @click.stop="reconnectServer(server.id)">↺</span>
@@ -79,7 +79,7 @@
                                         >
                                             <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
                                                   x-text="realm.display_name || realm.name"></span>
-                                            <template x-if="serverStatus(server.id) === 'connected'">
+                                            <template x-if="serverStatus(server.id) === 'connected' && isAdmin">
                                                 <span style="cursor:pointer; font-size:10px; opacity:0.5; flex-shrink:0; padding:0 2px;"
                                                       title="Rejoin channel"
                                                       @click.stop="rejoinChannel(server.id, realm.name)">↵</span>
@@ -99,7 +99,7 @@
                                         >
                                             <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
                                                   x-text="ch"></span>
-                                            <template x-if="serverStatus(server.id) === 'connected'">
+                                            <template x-if="serverStatus(server.id) === 'connected' && isAdmin">
                                                 <span style="cursor:pointer; font-size:10px; opacity:0.5; flex-shrink:0; padding:0 2px;"
                                                       title="Rejoin channel"
                                                       @click.stop="rejoinChannel(server.id, ch)">↵</span>
@@ -134,10 +134,12 @@
                 @click="setView('stats'); loadStats(); sidebarOpen = false"
             >Stats</a>
             <a
-                x-show="appMode === 'advanced'"
+                x-show="appMode === 'advanced' && isAdmin"
                 :class="{ active: activeView === 'settings' }"
                 @click="setView('settings'); sidebarOpen = false"
             >Settings</a>
+            <a x-show="me && me.via === 'session'" @click="logout()" :title="'Signed in as ' + (me && me.username)">Log out</a>
+            <a x-show="me && me.via === 'network'" @click="authMode = 'login'">Log in</a>
         </nav>
 
         <!-- Disk usage bar -->
@@ -278,7 +280,7 @@
                             <div style="padding:2px 14px 8px; font-size:11px; color:var(--text-muted); display:flex; gap:8px; align-items:center;">
                                 <span x-text="(indexStats.total_files || 0) + ' file(s) · ' + (indexStats.total_bots || 0) + ' bot(s) · ' + (indexStats.total_channels || 0) + ' channel(s)'"></span>
                                 <span>·</span>
-                                <button @click="clearSearchIndex()" class="btn btn-sm btn-danger" style="margin-left:auto;">Clear index</button>
+                                <button x-show="isAdmin" @click="clearSearchIndex()" class="btn btn-sm btn-danger" style="margin-left:auto;">Clear index</button>
                             </div>
                         </template>
                         <!-- Results -->
@@ -540,7 +542,7 @@
                                                     <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
                                                     <td class="dl-filename-cell">
                                                         <span x-text="r.filename || r.raw_line || '-'"></span>
-                                                        <template x-if="!r.parsed">
+                                                        <template x-if="!r.parsed && isAdmin">
                                                             <a
                                                                 href="#"
                                                                 style="margin-left:8px; font-size:11px; color:var(--warning);"
@@ -700,7 +702,7 @@
                                                     <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
                                                     <td class="dl-filename-cell">
                                                         <span x-text="r.filename || r.raw_line || '-'"></span>
-                                                        <template x-if="!r.parsed">
+                                                        <template x-if="!r.parsed && isAdmin">
                                                             <a
                                                                 href="#"
                                                                 style="margin-left:8px; font-size:11px; color:var(--warning);"
@@ -826,8 +828,8 @@
                     <div class="search-bar" style="padding:6px 12px;margin-bottom:0;border-bottom:1px solid var(--border);">
                         <input type="text" x-model="downloadSearch" placeholder="Filter by filename or bot...">
                     </div>
-                    <!-- Bulk actions toolbar -->
-                    <div style="display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+                    <!-- Bulk actions toolbar (delete/clear are admin-only) -->
+                    <div x-show="isAdmin" style="display:flex;gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
                         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-muted);cursor:pointer;">
                             <input type="checkbox" :checked="_dlSelectAll" @change="toggleDlSelectAll()"> Select All
                         </label>
@@ -912,6 +914,7 @@
                                                 <template x-if="dl.status === 'downloading' || dl.status === 'queued'">
                                                     <span>
                                                         <select
+                                                            x-show="isAdmin"
                                                             x-model="dl.target_dir"
                                                             @change="setTarget(dl, dl.target_dir)"
                                                             :title="dl.target_dir || 'Auto'"
@@ -928,7 +931,7 @@
                                                             </label>
                                                         </template>
                                                         <button class="btn btn-danger btn-sm" @click="cancelDownload(dl.id)">Cancel</button>
-                                                        <template x-if="dl.status === 'queued'">
+                                                        <template x-if="dl.status === 'queued' && isAdmin">
                                                             <button class="btn btn-sm" style="margin-left:4px" @click="moveToFront(dl.id)">Move to front</button>
                                                         </template>
                                                     </span>
@@ -965,6 +968,7 @@
                         <div class="tab" :class="{ active: settingsTab === 'library' }" @click="settingsTab = 'library'; loadLibrarySettings()">Library</div>
                         <div class="tab" :class="{ active: settingsTab === 'patterns' }" @click="settingsTab = 'patterns'; loadPatternSettings()">Patterns</div>
                         <div class="tab" :class="{ active: settingsTab === 'general' }" @click="settingsTab = 'general'">General</div>
+                        <div class="tab" :class="{ active: settingsTab === 'users' }" @click="settingsTab = 'users'; loadUsers()">Users</div>
                     </div>
 
                     <!-- Servers tab -->
@@ -1344,6 +1348,56 @@
                         </div>
                     </template>
 
+                    <!-- Users tab -->
+                    <template x-if="settingsTab === 'users'">
+                        <div style="padding-top:16px;">
+                            <table style="margin-top:0;">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Role</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="u in users" :key="u.id">
+                                        <tr>
+                                            <td x-text="u.username"></td>
+                                            <td>
+                                                <select :value="u.role" @change="setUserRole(u, $event.target.value)" :aria-label="'Role of ' + u.username"
+                                                        style="padding:4px 6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;">
+                                                    <option value="user">user</option>
+                                                    <option value="admin">admin</option>
+                                                </select>
+                                            </td>
+                                            <td style="white-space:nowrap;">
+                                                <button class="btn btn-sm" @click="resetUserPassword(u)">Reset password</button>
+                                                <button class="btn btn-danger btn-sm" style="margin-left:4px;" @click="deleteUser(u)" :disabled="me && u.username === me.username">Delete</button>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <template x-if="users.length === 0">
+                                <p style="color:var(--text-muted); font-size:13px; margin-top:12px;">No users yet.</p>
+                            </template>
+
+                            <!-- Add user form -->
+                            <form @submit.prevent="addUser()" style="margin-top:20px; padding:16px; border:1px solid var(--border); border-radius:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                                <input type="text" placeholder="username" x-model="newUser.username" required aria-label="New username"
+                                       style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;">
+                                <input type="password" placeholder="password (min 8)" x-model="newUser.password" required minlength="8" autocomplete="new-password" aria-label="New user password"
+                                       style="padding:6px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;">
+                                <select x-model="newUser.role" aria-label="New user role"
+                                        style="padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px;">
+                                    <option value="user">user</option>
+                                    <option value="admin">admin</option>
+                                </select>
+                                <button type="submit" class="btn btn-primary btn-sm">Add user</button>
+                            </form>
+                        </div>
+                    </template>
+
                     <!-- Patterns tab -->
                     <template x-if="settingsTab === 'patterns'">
                         <div style="padding-top:16px;">
@@ -1510,10 +1564,10 @@
                                     </template>
                                 </div>
                                 <button class="btn btn-sm" :disabled="!fileManagerParent" @click="loadFileManager(fileManagerParent)" title="Up one folder">&uarr; Up</button>
-                                <template x-if="!fileManagerNewFolderOpen">
+                                <template x-if="!fileManagerNewFolderOpen && isAdmin">
                                     <button class="btn btn-sm" @click="fmStartNewFolder()">+ New folder</button>
                                 </template>
-                                <template x-if="fileManagerNewFolderOpen">
+                                <template x-if="fileManagerNewFolderOpen && isAdmin">
                                     <span style="display:flex;gap:4px;align-items:center;">
                                         <input type="text" x-model="fileManagerNewFolderName" x-init="$el.focus()"
                                                placeholder="Folder name" class="fm-inline-input"
@@ -1535,7 +1589,7 @@
                             </div>
 
                             <!-- Bulk actions -->
-                            <div class="fm-bulk-bar" x-show="fmSelectedCount() > 0">
+                            <div class="fm-bulk-bar" x-show="fmSelectedCount() > 0 && isAdmin">
                                 <span x-text="fmSelectedCount() + ' selected'"></span>
                                 <select class="fm-move-select" @change="fmMove(fmSelectedNames(), $event.target.value); $event.target.value = ''">
                                     <option value="">Move to…</option>
@@ -1566,7 +1620,7 @@
                                         </tr>
                                         <template x-for="entry in fmDisplayEntries()" :key="entry.name">
                                             <tr class="border-b hover-row"
-                                                draggable="true"
+                                                :draggable="isAdmin"
                                                 @dragstart="fmDragStart($event, entry)"
                                                 @dragover="entry.is_dir && fmDragOverTarget($event, fmJoin(fileManagerDir, entry.name))"
                                                 @dragleave="entry.is_dir && fmDragLeaveTarget(fmJoin(fileManagerDir, entry.name))"
@@ -1593,7 +1647,7 @@
                                                 <td class="py-1 text-muted text-xs" x-text="fmSizeLabel(entry)"></td>
                                                 <td class="py-1 text-muted text-xs" x-text="formatDate(entry.modified)"></td>
                                                 <td class="py-1">
-                                                    <span style="display:flex;gap:4px;align-items:center;">
+                                                    <span x-show="isAdmin" style="display:flex;gap:4px;align-items:center;">
                                                         <button class="btn btn-sm" title="Rename" @click.stop="fmStartRename(entry)">✎</button>
                                                         <select class="fm-move-select" style="max-width:120px;"
                                                                 @change="fmMove([entry.name], $event.target.value); $event.target.value = ''">
@@ -1796,8 +1850,8 @@
                         </template>
                     </div>
 
-                    <!-- Error overview -->
-                    <div style="background:var(--bg-secondary); border-radius:6px; padding:16px;">
+                    <!-- Error overview (admin only: /api/errors is admin-only) -->
+                    <div x-show="isAdmin" style="background:var(--bg-secondary); border-radius:6px; padding:16px;">
                         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
                             <span style="font-weight:500;">
                                 Recent Errors
@@ -1870,6 +1924,7 @@
                 <!-- Server IRC input -->
                 <div class="irc-input" style="border-top:1px solid var(--border);">
                     <input
+                        x-show="isAdmin"
                         type="text"
                         placeholder="Type /command or raw IRC..."
                         x-model="ircInput"
@@ -1880,8 +1935,8 @@
                             title="Clear server log">Clear</button>
                 </div>
 
-                <!-- Connect/Disconnect buttons (advanced mode) -->
-                <div x-show="appMode === 'advanced'" style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px;">
+                <!-- Connect/Disconnect buttons (advanced mode, admin only) -->
+                <div x-show="appMode === 'advanced' && isAdmin" style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px;">
                     <button @click="api.connectServer(activeServer).catch(console.error)"
                             class="btn btn-primary btn-sm">Connect</button>
                     <button @click="api.disconnectServer(activeServer).catch(console.error)"
@@ -1933,6 +1988,36 @@
             <button @click="cancelDirPicker()" class="btn btn-sm">Cancel</button>
             <button @click="selectDir()" class="btn btn-primary btn-sm">Select</button>
         </div>
+    </div>
+
+    <!-- Login / first-admin overlay -->
+    <div x-show="authMode" x-cloak
+         style="position:fixed; inset:0; z-index:10000; background:var(--bg-primary,#12121c); display:flex; align-items:center; justify-content:center; padding:16px;">
+        <form @submit.prevent="submitAuth()"
+              style="background:var(--bg-secondary,#1e1e2e); border-radius:8px; padding:32px; width:100%; max-width:360px; box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+            <h2 style="margin:0 0 6px; font-size:18px;" x-text="authMode === 'setup' ? 'Create admin account' : 'Sign in'"></h2>
+            <p x-show="authMode === 'setup'" style="color:var(--text-secondary,#888); margin:0 0 16px; font-size:13px;">
+                First start: this account can manage servers, users and settings.
+            </p>
+            <label style="display:block; font-size:12px; margin:12px 0 4px;">Username</label>
+            <input style="width:100%; box-sizing:border-box; padding:8px 10px; background:var(--bg-primary,#12121c); border:1px solid var(--border,#333); border-radius:4px; color:inherit; font-size:13px;"
+                   x-model="authForm.username" autocomplete="username" autofocus required>
+            <label style="display:block; font-size:12px; margin:12px 0 4px;">Password</label>
+            <input style="width:100%; box-sizing:border-box; padding:8px 10px; background:var(--bg-primary,#12121c); border:1px solid var(--border,#333); border-radius:4px; color:inherit; font-size:13px;"
+                   type="password" x-model="authForm.password"
+                   :autocomplete="authMode === 'setup' ? 'new-password' : 'current-password'" required minlength="8">
+            <template x-if="authMode === 'setup'">
+                <div>
+                    <label style="display:block; font-size:12px; margin:12px 0 4px;">Repeat password</label>
+                    <input style="width:100%; box-sizing:border-box; padding:8px 10px; background:var(--bg-primary,#12121c); border:1px solid var(--border,#333); border-radius:4px; color:inherit; font-size:13px;"
+                           type="password" x-model="authForm.password2" autocomplete="new-password" required minlength="8">
+                </div>
+            </template>
+            <div x-show="authForm.error" x-text="authForm.error" role="alert" style="color:#f87171; font-size:13px; margin-top:12px;"></div>
+            <button type="submit" class="btn btn-primary" style="width:100%; margin-top:20px;"
+                    x-text="authMode === 'setup' ? 'Create account' : 'Sign in'"></button>
+            <button type="button" class="btn" x-show="me" @click="authMode = ''" style="width:100%; margin-top:8px;">Cancel</button>
+        </form>
     </div>
 
     <!-- Startup wizard overlay -->

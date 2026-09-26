@@ -233,6 +233,14 @@ document.addEventListener('alpine:init', () => {
         setupMappings: [],  // [{old_dir, new_dir, suggestion}]
         setupBanner: false,
 
+        // Auth
+        me: null,
+        authMode: '',
+        authForm: { username: '', password: '', password2: '', error: '' },
+        users: [],
+        newUser: { username: '', password: '', role: 'user' },
+        get isAdmin() { return !!this.me && this.me.role === 'admin'; },
+
         // Pattern settings
         patternSettingsList: [],
         patternScopeOptions: [],   // [{label, server_id, channel}] built from all servers+realms
@@ -510,6 +518,7 @@ document.addEventListener('alpine:init', () => {
 
         selectRealm(serverId, channelName) {
             this.selectChannel(serverId, channelName);
+            if (!this.isAdmin) return; // /irc/join is admin-only; messages already loaded above
             const realm = this._realmConfigs[this.channelKey(serverId, channelName)];
             api.joinChannel(serverId, channelName)
                 .then(() => setTimeout(() => {
@@ -1599,6 +1608,7 @@ document.addEventListener('alpine:init', () => {
         // --- WebSocket ---
 
         wsConnect() {
+            if (this.ws && this.ws.readyState <= 1) return; // already connecting/open
             if (this.ws) {
                 this.ws.close();
                 this.ws = null;
@@ -2704,10 +2714,73 @@ document.addEventListener('alpine:init', () => {
             this.applySetup();
         },
 
+        // --- Auth ---
+
+        async loadMe() {
+            const res = await fetch(_apiBase + '/auth/me');
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.username) { this.me = data; this.authMode = ''; return true; }
+            this.me = null;
+            this.authMode = data.setup_required ? 'setup' : 'login';
+            return false;
+        },
+
+        async submitAuth() {
+            const f = this.authForm;
+            f.error = '';
+            if (this.authMode === 'setup' && f.password !== f.password2) { f.error = 'Passwords do not match'; return; }
+            try {
+                this.me = this.authMode === 'setup'
+                    ? await api.setupAdmin(f.username, f.password)
+                    : await api.login(f.username, f.password);
+                this.authForm = { username: '', password: '', password2: '', error: '' };
+                this.authMode = '';
+                await this.init();
+            } catch (e) { f.error = e.message; }
+        },
+
+        async logout() {
+            await api.logout().catch(() => {});
+            location.reload();
+        },
+
+        async loadUsers() { this.users = await api.getUsers().catch(() => []) || []; },
+
+        async addUser() {
+            try {
+                await api.createUser(this.newUser);
+                this.newUser = { username: '', password: '', role: 'user' };
+                await this.loadUsers();
+            } catch (e) { alert(e.message); }
+        },
+
+        async setUserRole(u, role) {
+            try { await api.updateUser(u.id, { role }); } catch (e) { alert(e.message); }
+            await this.loadUsers();
+        },
+
+        async resetUserPassword(u) {
+            const pw = prompt('New password for ' + u.username + ' (min 8 chars)');
+            if (!pw) return;
+            try { await api.updateUser(u.id, { password: pw }); alert('Password changed; ' + u.username + ' was logged out.'); }
+            catch (e) { alert(e.message); }
+        },
+
+        async deleteUser(u) {
+            if (!confirm('Delete user ' + u.username + '?')) return;
+            try { await api.deleteUser(u.id); } catch (e) { alert(e.message); }
+            await this.loadUsers();
+        },
+
         // --- Init ---
 
         async init() {
-            await this.checkSetup();
+            if (!this._authListener) {
+                this._authListener = true;
+                window.addEventListener('xirc:unauthorized', () => { this.me = null; this.authMode = 'login'; });
+            }
+            if (!(await this.loadMe())) return; // overlay shown; submitAuth() re-runs init()
+            if (this.isAdmin) await this.checkSetup();
 
             // Load disk stats and refresh every 30 seconds
             await this.loadDiskStats();
@@ -2782,7 +2855,7 @@ document.addEventListener('alpine:init', () => {
             await this.loadSavedSearches();
 
             // Load errors
-            await this.loadErrors();
+            if (this.isAdmin) await this.loadErrors();
 
             // Start WebSocket
             this.wsConnect();
