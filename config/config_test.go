@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -80,9 +81,10 @@ func TestLoadConfigEnvOverride(t *testing.T) {
 }
 
 func TestLoadConfigFileNotFound(t *testing.T) {
+	// Missing files are now handled gracefully with defaults + env
 	_, err := Load("/nonexistent/path.yaml")
-	if err == nil {
-		t.Error("expected error for nonexistent file")
+	if err != nil {
+		t.Errorf("missing file should not error: %v", err)
 	}
 }
 
@@ -153,5 +155,45 @@ func TestWriteStorageDirs_Atomic(t *testing.T) {
 	// Temp file should be cleaned up
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
 		t.Error("temp file was not removed after rename")
+	}
+}
+
+func TestLoad_MissingFileUsesDefaultsAndEnv(t *testing.T) {
+	t.Setenv("XIRC_STORAGE_DOWNLOADS_DIR", "/downloads")
+	cfg, err := Load(filepath.Join(t.TempDir(), "nope.yaml"))
+	if err != nil {
+		t.Fatalf("missing config should not error: %v", err)
+	}
+	if cfg.Server.Port != 8085 {
+		t.Errorf("port default: got %d", cfg.Server.Port)
+	}
+	if cfg.Storage.DownloadsDir != "/downloads" {
+		t.Errorf("env override: got %q", cfg.Storage.DownloadsDir)
+	}
+}
+
+func TestAuthDefaultsAndEnvList(t *testing.T) {
+	t.Setenv("XIRC_AUTH_TRUSTED_NETWORKS", "192.168.0.0/16, 10.0.0.0/8")
+	cfg, err := Load(filepath.Join(t.TempDir(), "nope.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.TrustedRole != "admin" {
+		t.Errorf("trusted_role default: %q", cfg.Auth.TrustedRole)
+	}
+	if len(cfg.Auth.TrustedProxies) != 2 {
+		t.Errorf("trusted_proxies default: %v", cfg.Auth.TrustedProxies)
+	}
+	want := []string{"192.168.0.0/16", "10.0.0.0/8"}
+	if !reflect.DeepEqual(cfg.Auth.TrustedNetworks, want) {
+		t.Errorf("trusted_networks: got %v want %v", cfg.Auth.TrustedNetworks, want)
+	}
+}
+
+func TestLoad_BadYAMLStillErrors(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "bad.yaml")
+	os.WriteFile(p, []byte("server: [\n"), 0644)
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected parse error")
 	}
 }

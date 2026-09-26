@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"reflect"
 	"strconv"
@@ -72,6 +73,15 @@ type MaintenanceConfig struct {
 	IntervalHours             int `yaml:"interval_hours"`
 }
 
+type AuthConfig struct {
+	// TrustedNetworks are CIDRs whose clients skip login. Empty = always log in.
+	TrustedNetworks []string `yaml:"trusted_networks"`
+	// TrustedRole is the role granted to trusted-network clients: admin|user.
+	TrustedRole string `yaml:"trusted_role"`
+	// TrustedProxies are peers whose X-Forwarded-For/-Proto headers are believed.
+	TrustedProxies []string `yaml:"trusted_proxies"`
+}
+
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	Database      DatabaseConfig      `yaml:"database"`
@@ -81,6 +91,7 @@ type Config struct {
 	Notifications NotificationsConfig `yaml:"notifications"`
 	Patterns      []PatternConfig     `yaml:"patterns"`
 	Maintenance   MaintenanceConfig   `yaml:"maintenance"`
+	Auth          AuthConfig          `yaml:"auth"`
 }
 
 func defaults() Config {
@@ -111,6 +122,10 @@ func defaults() Config {
 			IndexMaxFiles:             200000,
 			IntervalHours:             6,
 		},
+		Auth: AuthConfig{
+			TrustedRole:    "admin",
+			TrustedProxies: []string{"127.0.0.1/32", "::1/128"},
+		},
 	}
 }
 
@@ -118,12 +133,15 @@ func Load(path string) (*Config, error) {
 	cfg := defaults()
 
 	data, err := ioutil.ReadFile(path)
-	if err != nil {
+	switch {
+	case os.IsNotExist(err):
+		log.Printf("config: %s not found, using defaults + environment", path)
+	case err != nil:
 		return nil, fmt.Errorf("reading config file: %w", err)
-	}
-
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config file: %w", err)
+	default:
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parsing config file: %w", err)
+		}
 	}
 
 	applyEnvOverrides(&cfg)
@@ -184,7 +202,11 @@ func applyEnvToStruct(v reflect.Value, prefix string) {
 		field := v.Field(i)
 		fieldType := t.Field(i)
 
-		envKey := prefix + "_" + strings.ToUpper(fieldType.Name)
+		name := strings.Split(fieldType.Tag.Get("yaml"), ",")[0]
+		if name == "" || name == "-" {
+			name = fieldType.Name
+		}
+		envKey := prefix + "_" + strings.ToUpper(name)
 
 		if field.Kind() == reflect.Struct {
 			applyEnvToStruct(field, envKey)
@@ -206,6 +228,16 @@ func applyEnvToStruct(v reflect.Value, prefix string) {
 		case reflect.Bool:
 			if b, err := strconv.ParseBool(envVal); err == nil {
 				field.SetBool(b)
+			}
+		case reflect.Slice:
+			if field.Type().Elem().Kind() == reflect.String {
+				var parts []string
+				for _, p := range strings.Split(envVal, ",") {
+					if p = strings.TrimSpace(p); p != "" {
+						parts = append(parts, p)
+					}
+				}
+				field.Set(reflect.ValueOf(parts))
 			}
 		}
 	}
