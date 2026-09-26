@@ -4,9 +4,11 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/RealDtx/maxwell-irc/config"
+	"github.com/RealDtx/maxwell-irc/db"
 	"github.com/RealDtx/maxwell-irc/library"
 )
 
@@ -159,4 +161,31 @@ func TestLoadLibrary_CustomCategoriesFile(t *testing.T) {
 		t.Fatalf("expected the configured categories_file path to be used: %v", err)
 	}
 	_ = mgr
+}
+
+func TestRunCreateAdmin_EnvPassword(t *testing.T) {
+	store, err := db.NewSQLiteStore(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	store.Migrate()
+	t.Setenv("XIRC_ADMIN_PASSWORD", "password123")
+	if err := runCreateAdmin(store, "Boss", strings.NewReader(""), false); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := store.GetUserByName("boss")
+	if u == nil || u.Role != "admin" {
+		t.Fatalf("admin not created: %+v", u)
+	}
+}
+
+func TestRunCreateAdmin_NoPasswordNonTTY(t *testing.T) {
+	store, _ := db.NewSQLiteStore(filepath.Join(t.TempDir(), "t.db"))
+	defer store.Close()
+	store.Migrate()
+	os.Unsetenv("XIRC_ADMIN_PASSWORD")
+	if err := runCreateAdmin(store, "boss", strings.NewReader(""), false); err == nil {
+		t.Fatal("expected error without password source")
+	}
 }

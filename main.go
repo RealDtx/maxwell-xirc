@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -153,9 +154,31 @@ func runCLIWizard(badDirs []string, state *server.SetupState) {
 	}
 }
 
+// runCreateAdmin reads the password from XIRC_ADMIN_PASSWORD, or prompts
+// twice on a TTY (echo is visible; ponytail: add x/term for hidden input if wanted).
+func runCreateAdmin(store db.Store, name string, in io.Reader, isTTY bool) error {
+	pw := os.Getenv("XIRC_ADMIN_PASSWORD")
+	if pw == "" {
+		if !isTTY {
+			return errors.New("set XIRC_ADMIN_PASSWORD or run interactively (docker exec -it)")
+		}
+		r := bufio.NewReader(in)
+		fmt.Fprint(os.Stderr, "Password: ")
+		a, _ := r.ReadString('\n')
+		fmt.Fprint(os.Stderr, "Repeat:   ")
+		b, _ := r.ReadString('\n')
+		if strings.TrimRight(a, "\r\n") != strings.TrimRight(b, "\r\n") {
+			return errors.New("passwords do not match")
+		}
+		pw = strings.TrimRight(a, "\r\n")
+	}
+	return server.CreateOrResetAdmin(store, name, pw)
+}
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	debugFlag := flag.Bool("debug", false, "enable verbose debug logging")
+	createAdmin := flag.String("create-admin", "", "create or reset an admin user, then exit (password from XIRC_ADMIN_PASSWORD or prompt)")
 	flag.Parse()
 
 	if *debugFlag {
@@ -183,6 +206,20 @@ func main() {
 
 	if err := store.Migrate(); err != nil {
 		log.Fatalf("failed to run migrations: %v", err)
+	}
+
+	if *createAdmin != "" {
+		if err := runCreateAdmin(store, *createAdmin, os.Stdin, isTerminal()); err != nil {
+			log.Fatalf("create-admin: %v", err)
+		}
+		fmt.Printf("admin %q ready\n", strings.ToLower(strings.TrimSpace(*createAdmin)))
+		return
+	}
+
+	auth, err := server.NewAuth(cfg.Auth, store, cfg.Server.Prefix)
+	if err != nil {
+		log.Printf("FATAL (config): %v (exit 78)", err)
+		os.Exit(exitcodes.ExitConfig)
 	}
 
 	homeDir, err := os.UserHomeDir()
@@ -280,6 +317,7 @@ func main() {
 	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState, cfg.Server.Prefix, webFS)
 	srv.SetLibrary(libMgr)
 	srv.SetDownloadsDir(cfg.Storage.DownloadsDir)
+	srv.SetAuth(auth)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{
