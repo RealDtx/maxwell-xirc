@@ -47,11 +47,11 @@ No parameters (global across servers). Response:
 ```json
 {
   "channels": [
-    { "server_id": 1, "channel": "#moviegods", "bots": 42, "files": 30000,
+    { "server_id": 1, "channel": "#example-dl", "bots": 42, "files": 30000,
       "advertised_bytes": 41099511627776, "last_seen_at": "…" }
   ],
   "bots": [
-    { "server_id": 1, "channel": "#moviegods", "bot_nick": "MG-BOT|01",
+    { "server_id": 1, "channel": "#example-dl", "bot_nick": "ExampleBot|01",
       "files": 900, "advertised_bytes": 109951162777, "last_seen_at": "…",
       "transfers": 3, "avg_speed": 1048576, "peak_speed": 2097152 }
   ]

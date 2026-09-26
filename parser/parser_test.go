@@ -312,8 +312,8 @@ func TestParser_CatchesResultFromDifferentChannel(t *testing.T) {
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	// Session started for #mg-chat, but bot responds via DM
-	p.StartSearch(srv.ID, "#mg-chat", "movie", "", 0)
+	// Session started for #example-chat, but bot responds via DM
+	p.StartSearch(srv.ID, "#example-chat", "movie", "", 0)
 
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
@@ -329,7 +329,7 @@ func TestParser_CatchesResultFromDifferentChannel(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Results should still be stored — attributed to the active session's channel
-	results, err := store.GetSearchResults("movie", srv.ID, "#mg-chat")
+	results, err := store.GetSearchResults("movie", srv.ID, "#example-chat")
 	if err != nil {
 		t.Fatalf("GetSearchResults failed: %v", err)
 	}
@@ -400,13 +400,13 @@ func TestParser_FallbackCrossChannel_WithinWindow(t *testing.T) {
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	// Session on #mg-chat, bot responds on #moviegods (different channel)
-	p.StartSearch(srv.ID, "#mg-chat", "movie", "", 0)
+	// Session on #example-chat, bot responds on #example-dl (different channel)
+	p.StartSearch(srv.ID, "#example-chat", "movie", "", 0)
 
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
-		Channel:  "#moviegods", // different channel — triggers fallback
+		Channel:  "#example-dl", // different channel — triggers fallback
 		Nick:     "xdcc_bot",
 		Data: map[string]string{
 			"type":    "privmsg",
@@ -416,7 +416,7 @@ func TestParser_FallbackCrossChannel_WithinWindow(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	results, err := store.GetSearchResults("movie", srv.ID, "#mg-chat")
+	results, err := store.GetSearchResults("movie", srv.ID, "#example-chat")
 	if err != nil {
 		t.Fatalf("GetSearchResults failed: %v", err)
 	}
@@ -442,9 +442,9 @@ func TestParser_FallbackExpired_Ignored(t *testing.T) {
 	// Create a session with an artificially old timestamp
 	p.mu.Lock()
 	p.sessionCounter++
-	p.activeSessions[sessionKey(srv.ID, "#mg-chat")] = &searchSession{
+	p.activeSessions[sessionKey(srv.ID, "#example-chat")] = &searchSession{
 		ServerID:      srv.ID,
-		Channel:       "#mg-chat",
+		Channel:       "#example-chat",
 		Query:         "movie",
 		SearchBot:     "",
 		RealmID:       0,
@@ -457,7 +457,7 @@ func TestParser_FallbackExpired_Ignored(t *testing.T) {
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
-		Channel:  "#moviegods",
+		Channel:  "#example-dl",
 		Nick:     "xdcc_bot",
 		Data: map[string]string{
 			"type":    "privmsg",
@@ -467,7 +467,7 @@ func TestParser_FallbackExpired_Ignored(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	results, err := store.GetSearchResults("movie", srv.ID, "#mg-chat")
+	results, err := store.GetSearchResults("movie", srv.ID, "#example-chat")
 	if err != nil {
 		t.Fatalf("GetSearchResults failed: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestParser_SearchBotFilter_RejectsWrongBot(t *testing.T) {
 	store.CreateServer(srv)
 
 	// Session with specific search bot
-	p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+	p.StartSearch(srv.ID, "#test", "movie", "ExampleBot", 0)
 
 	// Message from a DIFFERENT bot — should be ignored
 	bus.Publish(irc.Event{
@@ -528,14 +528,14 @@ func TestParser_SearchBotFilter_AcceptsCorrectBot(t *testing.T) {
 	store.CreateServer(srv)
 
 	// Session with specific search bot
-	p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+	p.StartSearch(srv.ID, "#test", "movie", "ExampleBot", 0)
 
 	// Message from the correct bot — should be processed
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
 		Channel:  "#test",
-		Nick:     "BotReign",
+		Nick:     "ExampleBot",
 		Data: map[string]string{
 			"type":    "privmsg",
 			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
@@ -582,7 +582,7 @@ func TestParser_AutoDetect_SavesFirstBot(t *testing.T) {
 			Type:     irc.EventIRCMessage,
 			ServerID: srv.ID,
 			Channel:  "#test",
-			Nick:     "BotReign",
+			Nick:     "ExampleBot",
 			Data: map[string]string{
 				"type":    "privmsg",
 				"message": fmt.Sprintf("#%d    34x [1.4G] Some.Movie.2024.1080p.mkv", i+5),
@@ -603,8 +603,8 @@ func TestParser_AutoDetect_SavesFirstBot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRealm failed: %v", err)
 	}
-	if got.SearchBot != "BotReign" {
-		t.Errorf("expected realm search_bot 'BotReign', got '%s'", got.SearchBot)
+	if got.SearchBot != "ExampleBot" {
+		t.Errorf("expected realm search_bot 'ExampleBot', got '%s'", got.SearchBot)
 	}
 
 	bus.Unsubscribe(evCh)
@@ -652,7 +652,7 @@ func TestParser_QueryRelevanceFilter_RejectsIrrelevant(t *testing.T) {
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
 		Channel:  "#test",
-		Nick:     "BotReign",
+		Nick:     "ExampleBot",
 		Data: map[string]string{
 			"type":    "privmsg",
 			"message": "#12   8x [700M] Unrelated.Game.2024.iso",
@@ -681,14 +681,14 @@ func TestParser_QueryRelevanceFilter_AcceptsRelevant(t *testing.T) {
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
 
-	p.StartSearch(srv.ID, "#test", "movie", "BotReign", 0)
+	p.StartSearch(srv.ID, "#test", "movie", "ExampleBot", 0)
 
 	// Bot sends a parseable line that DOES match "movie"
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
 		Channel:  "#test",
-		Nick:     "BotReign",
+		Nick:     "ExampleBot",
 		Data: map[string]string{
 			"type":    "privmsg",
 			"message": "#5    34x [1.4G] Some.Movie.2024.1080p.mkv",
@@ -736,7 +736,7 @@ func TestParser_PassiveIndexingOnDownloadChannel(t *testing.T) {
 
 	srv := &db.Server{Name: "test", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
-	store.CreateRealm(&db.Realm{ServerID: srv.ID, Name: "#mg-chat", DownloadChannel: "#MovieGods", Enabled: true})
+	store.CreateRealm(&db.Realm{ServerID: srv.ID, Name: "#example-chat", DownloadChannel: "#Example-DL", Enabled: true})
 
 	// Real-world broadcast lines (no search session active).
 	lines := []struct {
@@ -745,18 +745,18 @@ func TestParser_PassiveIndexingOnDownloadChannel(t *testing.T) {
 		// MG style with mIRC bold codes
 		{"[MG]-HDTV|EU|S|Oldman", "\x02#1322\x02 0x [1.4G] Fallout.2024.S02E04.German.DL.EAC3.1080p.AMZN.WEB.H265-ZeroTwo.mkv"},
 		// EWG style with color code prefix
-		{"[EWG]Rich-01", "\x0303#307\x03  16x [1.3G] Guns Up 2025 1080p WEB-DL HEVC x265 5.1 BONE.mkv"},
+		{"[EX]Bot-01", "\x0303#307\x03  16x [1.3G] Guns Up 2025 1080p WEB-DL HEVC x265 5.1 BONE.mkv"},
 		// UPDATED prefix variant
 		{"[MG]-HDTV|EU|S|FantasyVIII", "** UPDATED ** \x02#234\x02 0x [826M] Die.Rosenheim.Cops.S18E08.German.720p.WebHD.H264-RWF.mkv"},
 		// Noise lines that must NOT be indexed
-		{"[EWG]-[STR8UP]-2", "** Bandwidth Usage ** Current: 0.0kB/s, Record: 4318.7kB/s"},
+		{"[EX]-[BOT]-2", "** Bandwidth Usage ** Current: 0.0kB/s, Record: 4318.7kB/s"},
 		{"[MG]-4k-Movies|POS", "Total Offered: 553GB  Total Transferred: 2.1EB"},
 	}
 	for _, l := range lines {
 		bus.Publish(irc.Event{
 			Type:     irc.EventIRCMessage,
 			ServerID: srv.ID,
-			Channel:  "#moviegods", // case differs from configured #MovieGods
+			Channel:  "#example-dl", // case differs from configured #Example-DL
 			Nick:     l.nick,
 			Data:     map[string]string{"type": "privmsg", "message": l.msg},
 		})
@@ -791,7 +791,7 @@ func TestParser_PassiveIndexingOnDownloadChannel(t *testing.T) {
 	bus.Publish(irc.Event{
 		Type:     irc.EventIRCMessage,
 		ServerID: srv.ID,
-		Channel:  "#mg-chat",
+		Channel:  "#example-chat",
 		Nick:     "SomeBot",
 		Data:     map[string]string{"type": "privmsg", "message": "#99 5x [1.0G] Chatter.File.mkv"},
 	})

@@ -39,8 +39,8 @@ The script prompts for the following (press Enter to accept the default):
 | Setting | Default | Notes |
 |---------|---------|-------|
 | Target server name (profile) | `maxwell` | Names the profile dir `.maxwell/` |
-| SSH host | `192.168.20.2` | IP or hostname of the Pi |
-| SSH user | `pi` | Must have passwordless sudo |
+| SSH host | `maxwell.local` | IP or hostname of the Pi |
+| SSH user | `maxwell` | Must have passwordless sudo |
 | Install directory | `/opt/maxwell-irc` | Where the binary and data live on target |
 | Service OS username | `maxwell-irc` | Dedicated unprivileged user |
 | HTTP port | `8085` | maxwell-irc binds to 127.0.0.1:PORT |
@@ -103,7 +103,7 @@ sudo chmod 750 /opt/maxwell-irc/data
 `make deploy` runs rsync as your SSH user, so it needs write access:
 
 ```bash
-sudo usermod -aG maxwell-irc pi       # replace 'pi' with your SSH user if different
+sudo usermod -aG maxwell-irc maxwell  # replace 'maxwell' with your SSH user if different
 sudo chmod g+w /opt/maxwell-irc
 sudo chmod g+w /opt/maxwell-irc/data
 ```
@@ -144,7 +144,7 @@ This will:
 ### Enable start on boot
 
 ```bash
-ssh pi@192.168.20.2 "sudo systemctl enable maxwell-irc"
+ssh maxwell@maxwell.local "sudo systemctl enable maxwell-irc"
 ```
 
 ### Verify
@@ -155,10 +155,10 @@ sudo systemctl status maxwell-irc
 journalctl -u maxwell-irc -f
 
 # From another machine on the network (nginx):
-curl http://192.168.20.2/
+curl http://maxwell.local/
 
 # Direct (if port is reachable without nginx):
-curl http://192.168.20.2:8085/
+curl http://maxwell.local:8085/
 ```
 
 ---
@@ -178,7 +178,7 @@ make deploy PROFILE=maxwell PI_CONFIG=/path/to/other.yaml
 To target a different host without changing the profile:
 
 ```bash
-make deploy PROFILE=maxwell PI_HOST=10.0.0.5 PI_USER=dtx
+make deploy PROFILE=maxwell PI_HOST=10.0.0.5 PI_USER=maxwell
 ```
 
 ---
@@ -192,7 +192,7 @@ Run `make preconfig PROFILE=maxwell` at any time to update settings and regenera
 ## Multiple targets
 
 ```bash
-make preconfig PROFILE=maxwell   # Pi at 192.168.20.2
+make preconfig PROFILE=maxwell   # Pi at maxwell.local
 make preconfig PROFILE=rpi2      # second Pi
 
 make deploy PROFILE=maxwell

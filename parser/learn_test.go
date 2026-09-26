@@ -16,7 +16,7 @@ func TestGeneratePatternFromAnnotations(t *testing.T) {
 		expectedMapping map[string]int
 	}{
 		{
-			name:    "BotReign full example",
+			name:    "ExampleBot full example",
 			rawLine: "001) 116x | 2.3G | Some.Movie.mkv | /msg [MG]-Bot XDCC SEND 989",
 			annotations: []Annotation{
 				mustAnnotationSpan("001) 116x | 2.3G | Some.Movie.mkv | /msg [MG]-Bot XDCC SEND 989", "001", "skip_number"),

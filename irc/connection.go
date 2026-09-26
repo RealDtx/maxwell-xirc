@@ -12,7 +12,7 @@ import (
 	"github.com/RealDtx/maxwell-irc/internal/debug"
 )
 
-// detectDownloadChanRe matches IRC channel names ending in "-chat" (e.g. #mg-chat).
+// detectDownloadChanRe matches IRC channel names ending in "-chat" (e.g. #example-chat).
 var detectDownloadChanRe = regexp.MustCompile(`(?i)(#[\w-]+-chat)\b`)
 
 type ConnectionStatus string

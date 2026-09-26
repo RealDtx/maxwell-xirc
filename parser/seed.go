@@ -65,13 +65,13 @@ func BuiltinPatterns() []BuiltinPattern {
 			Priority: 10,
 			Dead:     true,
 		},
-		// BotReign/search-bot format: NNN) Nx | SizeU | filename | /msg BotNick XDCC SEND PackNum
+		// ExampleBot/search-bot format: NNN) Nx | SizeU | filename | /msg BotNick XDCC SEND PackNum
 		{
 			Name:     "botreign-pipe-xdcc",
 			Regex:    `^\d+\)\s+(?<downloads_count>\d+)x\s*\|\s*(?<filesize>[0-9][0-9.]*[KMGTP]?)\s*\|\s*(?<filename>.+?)\s*\|\s*/msg\s+(?<bot_nick>\S+)\s+XDCC\s+SEND\s+(?<pack_number>\d+)`,
 			Priority: 75,
 		},
-		// EliteWarez/EWG format: filename  (Command:  /msg PackBot XDCC SEND #N  ) Gets: N Size: SizeU
+		// Command-in-parens format: filename  (Command:  /msg PackBot XDCC SEND #N  ) Gets: N Size: SizeU
 		{
 			Name:     "ewg-command-xdcc",
 			Regex:    `^(?<filename>.+?)\s{2,}\(Command:\s*/msg\s+(?<bot_nick>\S+)\s+XDCC\s+SEND\s+#(?<pack_number>\d+)\s*\)\s*Gets:\s*(?<downloads_count>\d+)\s*Size:\s*(?<filesize>[0-9][0-9.]*\s*[KMGTP]?B?)`,
@@ -96,7 +96,7 @@ func BuiltinPatterns() []BuiltinPattern {
 			Regex:    `(?i)^added\s+-\s+\[(?<filesize>[^\]]+)\]\s+-\s+(?<filename>.+?)\s+-\s+/msg\s+(?<bot_nick>\S+)\s+XDCC\s+SEND\s+(?<pack_number>\d+)`,
 			Priority: 77,
 		},
-		// New-pack announcement (EWG): Added - filename - /MSG BotNick XDCC SEND N
+		// New-pack announcement: Added - filename - /MSG BotNick XDCC SEND N
 		{
 			Name:     "added-dash-xdcc",
 			Regex:    `(?i)^added\s+-\s+(?<filename>.+?)\s+-\s+/msg\s+(?<bot_nick>\S+)\s+XDCC\s+SEND\s+(?<pack_number>\d+)`,

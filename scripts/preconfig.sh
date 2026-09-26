@@ -53,8 +53,8 @@ fi
 
 echo
 echo "  -- Deployment target --"
-ask "SSH host (IP or hostname of the Pi)" "192.168.20.2" PI_HOST
-ask "SSH user (must have passwordless sudo)" "pi" PI_USER
+ask "SSH host (IP or hostname of the Pi)" "maxwell.local" PI_HOST
+ask "SSH user (must have passwordless sudo)" "maxwell" PI_USER
 
 # ── installation ──────────────────────────────────────────────────────────────
 

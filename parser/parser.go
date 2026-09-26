@@ -245,7 +245,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		// Fall back to the most recently created session on the same server,
 		// but only if it was created within the fallback window.  This covers
 		// both DMs from bots AND bot responses on different channels (e.g.
-		// #moviegods responding to a search started on #mg-chat) while
+		// #example-dl responding to a search started on #example-chat) while
 		// preventing stale sessions from capturing periodic bot announcements.
 		now := time.Now()
 		prefix := fmt.Sprintf("%d:", ev.ServerID)

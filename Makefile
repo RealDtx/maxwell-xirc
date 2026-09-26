@@ -10,8 +10,8 @@ PROFILE_DIR = .$(PROFILE)
 -include $(PROFILE_DIR)/settings.mk
 
 # Fallback values used when no profile exists (or overridden on the command line)
-PI_HOST     ?= 192.168.20.2
-PI_USER     ?= pi
+PI_HOST     ?= maxwell.local
+PI_USER     ?= maxwell
 INSTALL_DIR ?= /opt/maxwell-irc
 
 build:
