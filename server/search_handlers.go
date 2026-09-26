@@ -526,17 +526,14 @@ func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Preview {
-		writeJSON(w, http.StatusOK, map[string]string{
-			"regex":         result.Regex,
-			"field_mapping": result.FieldMapping,
-		})
+		writeJSON(w, http.StatusOK, map[string]string{"regex": result.Regex})
 		return
 	}
 
 	p := db.ParsePattern{
 		Name:         req.Name,
 		Regex:        result.Regex,
-		FieldMapping: result.FieldMapping,
+		FieldMapping: "{}",
 		Enabled:      true,
 		Priority:     50,
 		ServerID:     req.ServerID,
@@ -597,10 +594,9 @@ func (s *Server) handleLearnPattern(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"pattern_id":    p.ID,
-		"regex":         result.Regex,
-		"field_mapping": result.FieldMapping,
-		"newly_parsed":  newlyParsed,
+		"pattern_id":   p.ID,
+		"regex":        result.Regex,
+		"newly_parsed": newlyParsed,
 	})
 }
 

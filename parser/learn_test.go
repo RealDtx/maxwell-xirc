@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"encoding/json"
 	"reflect"
 	"regexp"
 	"strings"
@@ -87,12 +86,14 @@ func TestGeneratePatternFromAnnotations(t *testing.T) {
 				t.Fatalf("generated regex did not match original line: %q", result.Regex)
 			}
 
-			var got map[string]int
-			if err := json.Unmarshal([]byte(result.FieldMapping), &got); err != nil {
-				t.Fatalf("failed to unmarshal field_mapping: %v", err)
+			got := map[string]int{}
+			for i, name := range re.SubexpNames() {
+				if name != "" {
+					got[name] = i
+				}
 			}
 			if !reflect.DeepEqual(got, tc.expectedMapping) {
-				t.Fatalf("unexpected field_mapping: got %v want %v", got, tc.expectedMapping)
+				t.Fatalf("unexpected named groups: got %v want %v", got, tc.expectedMapping)
 			}
 		})
 	}

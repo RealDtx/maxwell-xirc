@@ -87,7 +87,6 @@ document.addEventListener('alpine:init', () => {
             pendingEnd: null,
             patternName: '',
             previewRegex: '',
-            previewFieldMapping: '',
             saving: false,
             savedCount: null,
             error: '',
@@ -1140,7 +1139,6 @@ document.addEventListener('alpine:init', () => {
                 pendingEnd: null,
                 patternName: '',
                 previewRegex: '',
-                previewFieldMapping: '',
                 saving: false,
                 savedCount: null,
                 error: '',
@@ -1228,7 +1226,6 @@ document.addEventListener('alpine:init', () => {
                 });
                 if (res.error) { t.error = res.error; return; }
                 t.previewRegex        = res.regex        || '';
-                t.previewFieldMapping = res.field_mapping || '';
             } catch (e) {
                 t.error = 'Preview failed: ' + e.message;
             }
@@ -2646,13 +2643,15 @@ document.addEventListener('alpine:init', () => {
                 try { re = new RegExp(p.regex); } catch (e) { continue; }
                 const m = re.exec(line);
                 if (!m) continue;
-                // Parse field mapping
+                // Named groups first; legacy positional field_mapping as fallback
                 let fm = p.field_mapping;
                 if (typeof fm === 'string') { try { fm = JSON.parse(fm); } catch (e) { fm = {}; } }
                 const knownFields = ['pack_number', 'filename', 'filesize', 'downloads_count', 'bot_nick'];
                 const fields = [];
                 for (const field of knownFields) {
-                    if (fm && fm[field] != null) {
+                    if (m.groups && m.groups[field] !== undefined) {
+                        fields.push({ name: field, value: m.groups[field] || '' });
+                    } else if (fm && fm[field] != null) {
                         const idx = parseInt(fm[field], 10);
                         if (!isNaN(idx)) {
                             fields.push({ name: field, value: m[idx] != null ? m[idx] : '' });

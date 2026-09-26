@@ -109,9 +109,7 @@ type ParsePattern struct {
 	Builtin       bool       `json:"builtin"`
 	Enabled       bool       `json:"enabled"`
 	MatchCount    int        `json:"match_count"`
-	FailCount     int        `json:"fail_count"`
 	LastMatchedAt *time.Time `json:"last_matched_at"`
-	AutoDisabled  bool       `json:"auto_disabled"`
 	Tags          string     `db:"tags" json:"tags"`
 	// ServerID and Channel scope this pattern to a specific realm.
 	// NULL/empty means the pattern applies globally (all channels).

@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -16,18 +15,9 @@ type Annotation struct {
 	Field string `json:"field"`
 }
 
-// LearnResult holds the generated regex and field_mapping JSON.
+// LearnResult holds the generated regex; fields are named capture groups.
 type LearnResult struct {
-	Regex        string `json:"regex"`
-	FieldMapping string `json:"field_mapping"`
-}
-
-type learnFieldMapping struct {
-	PackNumber     int `json:"pack_number,omitempty"`
-	DownloadsCount int `json:"downloads_count,omitempty"`
-	Filesize       int `json:"filesize,omitempty"`
-	Filename       int `json:"filename,omitempty"`
-	BotNick        int `json:"bot_nick,omitempty"`
+	Regex string `json:"regex"`
 }
 
 func GeneratePatternFromAnnotations(rawLine string, annotations []Annotation) (*LearnResult, error) {
@@ -60,8 +50,7 @@ func GeneratePatternFromAnnotations(rawLine string, annotations []Annotation) (*
 	}
 
 	var b strings.Builder
-	mapping := learnFieldMapping{}
-	groupIndex := 1
+	seen := map[string]bool{}
 	cursor := 0
 
 	for _, ann := range sorted {
@@ -70,24 +59,14 @@ func GeneratePatternFromAnnotations(rawLine string, annotations []Annotation) (*
 		}
 
 		fragment, _ := annotationPatternFragment(ann.Field)
-		b.WriteString(fragment)
-		switch ann.Field {
-		case "pack_number":
-			mapping.PackNumber = groupIndex
-			groupIndex++
-		case "downloads_count":
-			mapping.DownloadsCount = groupIndex
-			groupIndex++
-		case "filesize":
-			mapping.Filesize = groupIndex
-			groupIndex++
-		case "filename":
-			mapping.Filename = groupIndex
-			groupIndex++
-		case "bot_nick":
-			mapping.BotNick = groupIndex
-			groupIndex++
+		if fragment[0] == '(' && fragment[1] != '?' {
+			if seen[ann.Field] {
+				return nil, fmt.Errorf("field %s annotated more than once", ann.Field)
+			}
+			seen[ann.Field] = true
+			fragment = "(?<" + ann.Field + ">" + fragment[1:]
 		}
+		b.WriteString(fragment)
 
 		cursor = ann.End
 	}
@@ -101,15 +80,7 @@ func GeneratePatternFromAnnotations(rawLine string, annotations []Annotation) (*
 		return nil, fmt.Errorf("generated regex is invalid: %w", err)
 	}
 
-	fieldMappingJSON, err := json.Marshal(mapping)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal field mapping: %w", err)
-	}
-
-	return &LearnResult{
-		Regex:        generatedRegex,
-		FieldMapping: string(fieldMappingJSON),
-	}, nil
+	return &LearnResult{Regex: generatedRegex}, nil
 }
 
 func annotationPatternFragment(field string) (string, bool) {

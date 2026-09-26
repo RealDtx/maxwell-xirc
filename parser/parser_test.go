@@ -800,4 +800,13 @@ func TestParser_PassiveIndexingOnDownloadChannel(t *testing.T) {
 	if stats.TotalFiles != 3 {
 		t.Fatalf("expected still 3 indexed files after non-download-channel message, got %d", stats.TotalFiles)
 	}
+
+	// Passive indexing counts toward pattern stats once flushed.
+	p.flushMatchCounts()
+	all, _ := store.GetAllParsePatterns()
+	for _, pat := range all {
+		if pat.Name == "hash-x-bracket" && (pat.MatchCount != 3 || pat.LastMatchedAt == nil) {
+			t.Errorf("hash-x-bracket: match_count=%d last_matched_at=%v, want 3 + set", pat.MatchCount, pat.LastMatchedAt)
+		}
+	}
 }

@@ -292,8 +292,8 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		log.Println("shutting down...")
+		p.Stop() // before httpServer.Close: main exits once ListenAndServe returns
 		httpServer.Close()
-		p.Stop()
 		ircMgr.Shutdown()
 		hub.Stop()
 		eng.Stop()

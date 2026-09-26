@@ -67,7 +67,14 @@ type Parser struct {
 	// interactive search path stays uncached so freshly trained patterns
 	// apply immediately.
 	broadcastPatterns map[string]*patternCache
+
+	// matchCounts accumulates per-pattern hits (searches + passive indexing)
+	// between flushes, so the hot path never writes a counter row per line.
+	matchCounts map[int64]int
 }
+
+// statsFlushInterval is how often batched pattern match counts hit the DB.
+const statsFlushInterval = time.Minute
 
 // dlChannelCacheTTL bounds how stale the download-channel set (and the
 // broadcast pattern set) can get after realms or patterns are edited.
@@ -93,6 +100,7 @@ func New(store db.Store, bus *irc.EventBus) *Parser {
 		botPatternCache:   make(map[string]int64),
 		dlChannels:        make(map[int64]*dlChannelCache),
 		broadcastPatterns: make(map[string]*patternCache),
+		matchCounts:       make(map[int64]int),
 	}
 }
 
@@ -104,6 +112,7 @@ func (p *Parser) Start() {
 func (p *Parser) Stop() {
 	close(p.stopCh)
 	p.bus.Unsubscribe(p.eventCh)
+	p.flushMatchCounts()
 }
 
 func (p *Parser) StartSearch(serverID int64, channel, query, searchBot string, realmID int64) {
@@ -159,10 +168,14 @@ func messageMatchesQuery(message, query string) bool {
 }
 
 func (p *Parser) loop() {
+	ticker := time.NewTicker(statsFlushInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-p.stopCh:
 			return
+		case <-ticker.C:
+			p.flushMatchCounts()
 		case ev, ok := <-p.eventCh:
 			if !ok {
 				return
@@ -382,10 +395,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 		p.botPatternCache[botCacheKey(session.ServerID, session.Channel, ev.Nick)] = matchedPatternID
 		p.mu.Unlock()
 
-		// Update pattern match count (success only — no auto-disable on failure)
-		if err := p.store.RecordPatternMatch(matchedPatternID); err != nil {
-			log.Printf("WARN: failed to record pattern match for id=%d: %v", matchedPatternID, err)
-		}
+		p.countMatch(matchedPatternID)
 	}
 
 	if result == nil {
@@ -510,10 +520,11 @@ func (p *Parser) indexBroadcast(ev irc.Event, message string) {
 		return
 	}
 
-	result, _, err := MatchLine(message, patterns)
+	result, patternID, err := MatchLine(message, patterns)
 	if err != nil || result.PackNumber == nil || result.Filename == nil || *result.Filename == "" {
 		return
 	}
+	p.countMatch(patternID)
 
 	botNick := ev.Nick
 	if result.BotNick != nil && *result.BotNick != "" {
@@ -531,5 +542,27 @@ func (p *Parser) indexBroadcast(ev irc.Event, message string) {
 		RawLine:        message,
 	}); err != nil {
 		log.Printf("failed to index broadcast from %s: %v", botNick, err)
+	}
+}
+
+func (p *Parser) countMatch(patternID int64) {
+	p.mu.Lock()
+	p.matchCounts[patternID]++
+	p.mu.Unlock()
+}
+
+// flushMatchCounts writes the batched match counts to the DB. Counts that
+// fail to persist are dropped — they are statistics, not data.
+func (p *Parser) flushMatchCounts() {
+	p.mu.Lock()
+	counts := p.matchCounts
+	p.matchCounts = make(map[int64]int)
+	p.mu.Unlock()
+
+	now := time.Now()
+	for id, n := range counts {
+		if err := p.store.RecordPatternMatch(id, n, now); err != nil {
+			log.Printf("WARN: failed to record %d matches for pattern id=%d: %v", n, id, err)
+		}
 	}
 }

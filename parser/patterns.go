@@ -82,10 +82,28 @@ func MatchLine(line string, patterns []db.ParsePattern) (*ParsedResult, int64, e
 			continue
 		}
 
+		// Named groups ((?<filename>…)) are the primary mapping; a legacy
+		// positional field_mapping is only consulted when present.
 		var fm fieldMapping
-		if err := json.Unmarshal([]byte(p.FieldMapping), &fm); err != nil {
-			log.Printf("invalid field_mapping in pattern %q (id=%d): %v", p.Name, p.ID, err)
-			continue
+		if p.FieldMapping != "" {
+			if err := json.Unmarshal([]byte(p.FieldMapping), &fm); err != nil {
+				log.Printf("invalid field_mapping in pattern %q (id=%d): %v", p.Name, p.ID, err)
+				continue
+			}
+		}
+		for i, name := range re.SubexpNames() {
+			switch name {
+			case "pack_number":
+				fm.PackNumber = i
+			case "downloads_count":
+				fm.DownloadsCount = i
+			case "filesize":
+				fm.Filesize = i
+			case "filename":
+				fm.Filename = i
+			case "bot_nick":
+				fm.BotNick = i
+			}
 		}
 
 		result := &ParsedResult{}

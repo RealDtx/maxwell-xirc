@@ -301,8 +301,8 @@ func TestLearnPatternPreview(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp["regex"] == "" || resp["field_mapping"] == "" {
-		t.Fatalf("expected regex and field_mapping, got %+v", resp)
+	if !strings.Contains(resp["regex"], "(?<pack_number>") {
+		t.Fatalf("expected named-group regex, got %+v", resp)
 	}
 }
 

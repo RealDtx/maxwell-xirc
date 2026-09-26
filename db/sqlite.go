@@ -755,19 +755,18 @@ func (s *SQLiteStore) DeleteSavedSearch(id int64) error {
 
 // --- Parse Patterns ---
 
-const patternSelectCols = `id, name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, last_matched_at, auto_disabled, tags, server_id, channel`
+const patternSelectCols = `id, name, regex, field_mapping, priority, builtin, enabled, match_count, last_matched_at, tags, server_id, channel`
 
 func scanPattern(rows *sql.Rows) (ParsePattern, error) {
 	var p ParsePattern
 	err := rows.Scan(&p.ID, &p.Name, &p.Regex, &p.FieldMapping, &p.Priority,
-		&p.Builtin, &p.Enabled, &p.MatchCount, &p.FailCount, &p.LastMatchedAt,
-		&p.AutoDisabled, &p.Tags, &p.ServerID, &p.Channel)
+		&p.Builtin, &p.Enabled, &p.MatchCount, &p.LastMatchedAt, &p.Tags, &p.ServerID, &p.Channel)
 	return p, err
 }
 
 func (s *SQLiteStore) GetParsePatterns() ([]ParsePattern, error) {
 	rows, err := s.db.Query(
-		"SELECT " + patternSelectCols + " FROM parse_patterns WHERE enabled=1 AND auto_disabled=0 ORDER BY priority DESC",
+		"SELECT " + patternSelectCols + " FROM parse_patterns WHERE enabled=1 ORDER BY priority DESC",
 	)
 	if err != nil {
 		return nil, err
@@ -807,7 +806,7 @@ func (s *SQLiteStore) GetAllParsePatterns() ([]ParsePattern, error) {
 
 func (s *SQLiteStore) GetParsePatternsForChannel(serverID int64, channel string) ([]ParsePattern, error) {
 	rows, err := s.db.Query(
-		"SELECT "+patternSelectCols+" FROM parse_patterns WHERE enabled=1 AND auto_disabled=0 AND (server_id IS NULL OR channel='' OR (server_id=? AND channel=?)) ORDER BY priority DESC",
+		"SELECT "+patternSelectCols+" FROM parse_patterns WHERE enabled=1 AND (server_id IS NULL OR channel='' OR (server_id=? AND channel=?)) ORDER BY priority DESC",
 		serverID, channel,
 	)
 	if err != nil {
@@ -828,10 +827,10 @@ func (s *SQLiteStore) GetParsePatternsForChannel(serverID int64, channel string)
 
 func (s *SQLiteStore) CreateParsePattern(p *ParsePattern) error {
 	result, err := s.db.Exec(
-		`INSERT INTO parse_patterns (name, regex, field_mapping, priority, builtin, enabled, match_count, fail_count, auto_disabled, tags, server_id, channel)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO parse_patterns (name, regex, field_mapping, priority, builtin, enabled, tags, server_id, channel)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.Name, p.Regex, p.FieldMapping, p.Priority, p.Builtin, p.Enabled,
-		p.MatchCount, p.FailCount, p.AutoDisabled, p.Tags, p.ServerID, p.Channel,
+		p.Tags, p.ServerID, p.Channel,
 	)
 	if err != nil {
 		return err
@@ -840,19 +839,19 @@ func (s *SQLiteStore) CreateParsePattern(p *ParsePattern) error {
 	return nil
 }
 
-func (s *SQLiteStore) RecordPatternMatch(patternID int64) error {
+func (s *SQLiteStore) RecordPatternMatch(patternID int64, n int, at time.Time) error {
 	_, err := s.db.Exec(
-		`UPDATE parse_patterns SET match_count=match_count+1, fail_count=0, last_matched_at=? WHERE id=?`,
-		time.Now().UTC(), patternID,
+		`UPDATE parse_patterns SET match_count=match_count+?, last_matched_at=? WHERE id=?`,
+		n, at.UTC(), patternID,
 	)
 	return err
 }
 
 func (s *SQLiteStore) UpdateParsePattern(p *ParsePattern) error {
 	_, err := s.db.Exec(
-		`UPDATE parse_patterns SET name=?, regex=?, field_mapping=?, priority=?, enabled=?, match_count=?, fail_count=?, last_matched_at=?, auto_disabled=?, tags=?, server_id=?, channel=? WHERE id=?`,
+		`UPDATE parse_patterns SET name=?, regex=?, field_mapping=?, priority=?, enabled=?, tags=?, server_id=?, channel=? WHERE id=?`,
 		p.Name, p.Regex, p.FieldMapping, p.Priority, p.Enabled,
-		p.MatchCount, p.FailCount, p.LastMatchedAt, p.AutoDisabled, p.Tags, p.ServerID, p.Channel, p.ID,
+		p.Tags, p.ServerID, p.Channel, p.ID,
 	)
 	return err
 }

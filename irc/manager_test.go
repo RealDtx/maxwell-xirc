@@ -66,7 +66,7 @@ func (m *mockStore) GetParsePatternsForChannel(_ int64, _ string) ([]db.ParsePat
 	return nil, nil
 }
 func (m *mockStore) UpdateParsePattern(p *db.ParsePattern) error                     { return nil }
-func (m *mockStore) RecordPatternMatch(patternID int64) error                        { return nil }
+func (m *mockStore) RecordPatternMatch(int64, int, time.Time) error                  { return nil }
 func (m *mockStore) CreateParsePattern(p *db.ParsePattern) error                     { return nil }
 func (m *mockStore) CreateDownloadStat(s *db.DownloadStat) error                     { return nil }
 func (m *mockStore) GetDownloadStatsSummary() (*db.DownloadStatsSummary, error)      { return nil, nil }
