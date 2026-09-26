@@ -1,0 +1,54 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCapabilities_ReadOnlyDownloadsDisablesRequests(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores permissions")
+	}
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	dl := t.TempDir()
+	os.Chmod(dl, 0555)
+	defer os.Chmod(dl, 0755)
+	srv.SetDownloadsDir(dl)
+	srv.SetCapabilityInputs(filepath.Join(dl, ".tmp"), t.TempDir(), nil)
+	caps := srv.RecheckCapabilities()
+	if caps.Downloads.OK || !strings.Contains(caps.Downloads.Reason, "not writable") {
+		t.Fatalf("downloads capability: %+v", caps.Downloads)
+	}
+
+	req := httptest.NewRequest("POST", "/api/downloads/request", strings.NewReader(`{"server_id":1,"channel":"#x","bot_nick":"b","pack_number":1}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "not writable") {
+		t.Errorf("request while disabled: %d %s", w.Code, w.Body)
+	}
+
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/api/capabilities", nil))
+	var got Capabilities
+	json.NewDecoder(w.Body).Decode(&got)
+	if got.Downloads.OK || len(got.Roots) == 0 {
+		t.Errorf("GET capabilities: %+v", got)
+	}
+}
+
+func TestCapabilities_MissingTempDirIsFineIfParentWritable(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	dl := t.TempDir()
+	srv.SetDownloadsDir(dl)
+	srv.SetCapabilityInputs(filepath.Join(dl, ".tmp"), t.TempDir(), nil) // .tmp not created yet: engine MkdirAlls it
+	if caps := srv.RecheckCapabilities(); !caps.Downloads.OK {
+		t.Errorf("downloads should be OK: %+v", caps.Downloads)
+	}
+}

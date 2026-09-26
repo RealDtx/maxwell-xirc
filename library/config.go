@@ -191,6 +191,9 @@ func NewManager(path string, cfg Config) *Manager {
 	return &Manager{cfg: cfg, path: path}
 }
 
+// Path is the categories.yaml location this manager saves to.
+func (m *Manager) Path() string { return m.path }
+
 // Get returns a copy of the current config.
 func (m *Manager) Get() Config {
 	m.mu.RLock()

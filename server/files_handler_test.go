@@ -185,3 +185,24 @@ func TestFilesRoots(t *testing.T) {
 		}
 	}
 }
+
+func TestFileManager_ReadOnlyRootReturns403WithReason(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores permissions")
+	}
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "a.mkv"), []byte("x"), 0644)
+	os.Chmod(root, 0555)
+	defer os.Chmod(root, 0755)
+	srv.SetDownloadsDir(root)
+
+	body := `{"action":"rename","dir":"` + root + `","name":"a.mkv","new_name":"b.mkv"}`
+	req := httptest.NewRequest("POST", "/api/files", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "permission denied: "+root) {
+		t.Errorf("got %d %s", w.Code, w.Body)
+	}
+}

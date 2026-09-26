@@ -32,6 +32,7 @@ type Server struct {
 	downloadsDir string
 	auth         *Auth
 	setupMu      sync.Mutex // serialises /api/auth/setup and last-admin checks
+	caps         capState
 }
 
 // SetLibrary wires the library manager in — set once at startup.
@@ -149,6 +150,10 @@ func (s *Server) routes() {
 
 	// Errors endpoint
 	s.mux.HandleFunc("/api/errors", s.handleGetErrors)
+
+	// Capabilities endpoint (filesystem permission snapshot)
+	s.mux.HandleFunc("/api/capabilities", s.handleCapabilities)
+	s.mux.HandleFunc("/api/capabilities/recheck", s.handleCapabilitiesRecheck)
 
 	// Storage stats endpoint
 	s.mux.HandleFunc("/api/storage", s.handleStorageStats)

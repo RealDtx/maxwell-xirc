@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/RealDtx/maxwell-irc/fscheck"
 )
 
 type fileEntry struct {
@@ -78,8 +80,8 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 
 	infos, err := os.ReadDir(clean)
 	if err != nil {
-		if os.IsPermission(err) {
-			writeError(w, http.StatusForbidden, "permission denied")
+		if fscheck.IsPermission(err) {
+			writeError(w, http.StatusForbidden, fscheck.Describe(err, clean).Error())
 		} else {
 			writeError(w, http.StatusNotFound, "directory not found")
 		}
@@ -193,7 +195,7 @@ func (s *Server) handleFileAction(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			return os.RemoveAll(p) // a symlink is removed itself, never its target
+			return fscheck.Describe(os.RemoveAll(p), dir) // a symlink is removed itself, never its target
 		}))
 	case "rename":
 		dir, ok := checkDir(req.Dir)
@@ -209,7 +211,7 @@ func (s *Server) handleFileAction(w http.ResponseWriter, r *http.Request) {
 			err = noClobber(dst)
 		}
 		if err == nil {
-			err = os.Rename(src, dst)
+			err = fscheck.Describe(os.Rename(src, dst), dir)
 		}
 		if err != nil {
 			writeError(w, statusFor(err), err.Error())
@@ -227,9 +229,12 @@ func (s *Server) handleFileAction(w http.ResponseWriter, r *http.Request) {
 		}
 		p := filepath.Join(dir, req.Name)
 		if err := os.Mkdir(p, 0775); err != nil {
-			if os.IsExist(err) {
+			switch {
+			case os.IsExist(err):
 				writeError(w, http.StatusConflict, "already exists")
-			} else {
+			case fscheck.IsPermission(err):
+				writeError(w, http.StatusForbidden, fscheck.Describe(err, dir).Error())
+			default:
 				writeError(w, http.StatusInternalServerError, err.Error())
 			}
 			return
@@ -305,11 +310,13 @@ func moveItem(roots []string, srcDir, name, destDir string) error {
 	}
 	// ponytail: rename only; destinations share one filesystem (checked on the Pi).
 	// Add copy+delete for cross-device moves if that ever changes.
-	return os.Rename(src, dst)
+	return fscheck.Describe(os.Rename(src, dst), destDir)
 }
 
 func statusFor(err error) int {
 	switch {
+	case fscheck.IsPermission(err):
+		return http.StatusForbidden
 	case errors.Is(err, os.ErrNotExist):
 		return http.StatusNotFound
 	case errors.Is(err, os.ErrExist):

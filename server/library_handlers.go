@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 
+	"github.com/RealDtx/maxwell-irc/fscheck"
 	"github.com/RealDtx/maxwell-irc/library"
 )
 
@@ -26,6 +28,10 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.library.Set(cfg); err != nil {
+			if fscheck.IsPermission(err) {
+				writeError(w, http.StatusForbidden, fscheck.Describe(err, filepath.Dir(s.library.Path())).Error())
+				return
+			}
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}

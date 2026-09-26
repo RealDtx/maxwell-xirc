@@ -38,6 +38,11 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if c := s.capabilities().Downloads; !c.OK {
+		writeError(w, http.StatusServiceUnavailable, "downloads disabled: "+c.Reason)
+		return
+	}
+
 	var req struct {
 		ServerID    int64  `json:"server_id"`
 		Channel     string `json:"channel"`

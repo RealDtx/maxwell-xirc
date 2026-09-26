@@ -14,6 +14,7 @@ import (
 	"github.com/RealDtx/maxwell-irc/config"
 	"github.com/RealDtx/maxwell-irc/db"
 	"github.com/RealDtx/maxwell-irc/dcc"
+	"github.com/RealDtx/maxwell-irc/fscheck"
 	"github.com/RealDtx/maxwell-irc/irc"
 	"github.com/RealDtx/maxwell-irc/library"
 	"github.com/RealDtx/maxwell-irc/routing"
@@ -565,7 +566,7 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	if destDir != "" {
 		if moved, err := routing.MoveFile(destPath, destDir); err != nil {
 			log.Printf("routing move failed for download %d: %v", downloadID, err)
-			moveNote = fmt.Sprintf("could not move to %s: %v", destDir, err)
+			moveNote = fmt.Sprintf("could not move to %s: %v", destDir, fscheck.Describe(err, destDir))
 			if fallback := e.downloadsDir(); fallback != "" && filepath.Clean(fallback) != filepath.Clean(destDir) {
 				if moved, ferr := routing.MoveFile(destPath, fallback); ferr == nil {
 					finalPath = moved

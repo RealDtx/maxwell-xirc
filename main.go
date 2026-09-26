@@ -15,10 +15,12 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/RealDtx/maxwell-irc/config"
 	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/fscheck"
 	"github.com/RealDtx/maxwell-irc/internal/debug"
 	"github.com/RealDtx/maxwell-irc/internal/exitcodes"
 	ircpkg "github.com/RealDtx/maxwell-irc/irc"
@@ -58,8 +60,8 @@ func checkDirectories(mediaDir, downloadsDir string) []string {
 		}
 
 		if os.IsPermission(err) || errors.Is(err, syscall.EROFS) {
-			log.Printf("FATAL (config): destination dir %q not writable — fix ownership or ACL, then restart (exit 78)", dir)
-			os.Exit(exitcodes.ExitConfig)
+			log.Printf("warning: %s — dependent features disabled until fixed (see /api/capabilities)", fscheck.Probe(dir).Reason)
+			continue
 		}
 		if os.IsNotExist(err) {
 			bad = append(bad, dir)
@@ -279,7 +281,13 @@ func main() {
 	_ = browserNotifier // Used by engine for explicit notifications
 
 	msgBuf := ircpkg.NewMessageBuffer(bus, 1000)
-	msgBuf.SetLogDir(filepath.Dir(cfg.Database.Path) + "/logs")
+	logDir := filepath.Join(filepath.Dir(cfg.Database.Path), "logs")
+	os.MkdirAll(logDir, 0o755)
+	if st := fscheck.Probe(logDir); st.Write {
+		msgBuf.SetLogDir(logDir)
+	} else {
+		log.Printf("warning: channel logging disabled: %s", st.Reason)
+	}
 	msgBuf.Start()
 	defer msgBuf.Stop()
 
@@ -319,6 +327,19 @@ func main() {
 	srv.SetDownloadsDir(cfg.Storage.DownloadsDir)
 	srv.SetAuth(auth)
 
+	srv.SetCapabilityInputs(cfg.Storage.TempDir, logDir, bus)
+	caps := srv.RecheckCapabilities()
+	for _, c := range []struct {
+		name string
+		cap  server.Capability
+	}{{"downloads", caps.Downloads}, {"library", caps.Library}, {"library config", caps.LibraryConfig}} {
+		if !c.cap.OK {
+			log.Printf("warning: %s disabled: %s", c.name, c.cap.Reason)
+		}
+	}
+	capStop := make(chan struct{})
+	srv.StartCapabilityRefresh(5*time.Minute, capStop)
+
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpServer := &http.Server{
 		Addr:    addr,
@@ -330,6 +351,7 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		log.Println("shutting down...")
+		close(capStop)
 		p.Stop() // before httpServer.Close: main exits once ListenAndServe returns
 		httpServer.Close()
 		ircMgr.Shutdown()

@@ -83,3 +83,73 @@ func TestRunTransfer_UnwritableDestinationFallsBackToDownloads(t *testing.T) {
 		t.Errorf("file not in downloads dir: %v", err)
 	}
 }
+
+// A move failure's reason must be descriptive (owner/mode, via
+// fscheck.Describe), not just the raw OS error.
+func TestRunTransfer_UnwritableTargetRecordsDescriptiveReason(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	dir, err := ioutil.TempDir("", "engine-move-reason-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	targetDir := filepath.Join(dir, "media", "locked")
+	downloadsDir := filepath.Join(dir, "downloads")
+	tempDir := filepath.Join(dir, "downloads", ".tmp")
+	for _, d := range []string{targetDir, tempDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.Chmod(targetDir, 0555)
+	defer os.Chmod(targetDir, 0755)
+
+	bus := irc.NewEventBus()
+	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{DownloadsDir: downloadsDir, TempDir: tempDir}, 1)
+	dl, err := engine.queue.Add(1, "#c", "Bot", 1, "ep.mkv", 4, false, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dl.TargetDir = targetDir
+	if err := store.UpdateDownload(dl); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		c.Write([]byte("data"))
+		c.Close()
+	}()
+	offer := &dcc.DCCOffer{Filename: "ep.mkv", IP: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port, Size: 4}
+	engine.runTransfer(dl.ID, offer, filepath.Join(tempDir, "ep.mkv"), 0)
+
+	got, err := store.GetDownload(dl.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "completed" {
+		t.Errorf("status %q", got.Status)
+	}
+	if filepath.Dir(got.DestinationPath) != downloadsDir {
+		t.Errorf("file not in downloads dir: %s", got.DestinationPath)
+	}
+	if !strings.Contains(got.ErrorMessage, "permission denied: "+targetDir) {
+		t.Errorf("reason not descriptive: %q", got.ErrorMessage)
+	}
+	if entries, _ := os.ReadDir(tempDir); len(entries) != 0 {
+		t.Error("file left in temp dir")
+	}
+}
