@@ -255,6 +255,9 @@ StandardError=journal
 # (ProtectSystem=strict, ProtectHome, PrivateTmp) are omitted because
 # they require mount namespaces which may not be available on all kernels.
 NoNewPrivileges=yes
+# Group-writable files/dirs so the shared media group (and other users in
+# it) can keep managing what xirc downloads and creates.
+UMask=0002
 
 [Install]
 WantedBy=multi-user.target

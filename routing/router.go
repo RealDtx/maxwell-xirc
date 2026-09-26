@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/RealDtx/maxwell-irc/db"
 )
@@ -55,14 +57,16 @@ func MoveFile(srcPath, destDir string) (string, error) {
 		return destPath, nil
 	}
 
-	// Log why rename failed (e.g. "invalid cross-device link" = EXDEV, temp
-	// and destination are on different mounts) and the file size, so the
-	// server log tells us whether the copy fallback is expected.
+	// Only a cross-device rename (EXDEV) is worth a copy; anything else
+	// (permission denied, missing dir) would fail the copy the same way.
+	if !errors.Is(err, syscall.EXDEV) {
+		return "", err
+	}
 	size := int64(-1)
 	if info, statErr := os.Stat(srcPath); statErr == nil {
 		size = info.Size()
 	}
-	log.Printf("rename %q -> %q failed (%v), falling back to copy (size=%d bytes)", srcPath, destPath, err, size)
+	log.Printf("rename %q -> %q crosses filesystems, falling back to copy (size=%d bytes)", srcPath, destPath, size)
 
 	// Fall back to copy + delete (cross-filesystem)
 	if err := copyFile(srcPath, destPath); err != nil {

@@ -127,6 +127,17 @@ func (q *Queue) MarkFailed(id int64, errMsg string) error {
 	return q.store.UpdateDownload(dl)
 }
 
+// SetMessage records a note on a download without changing its status,
+// e.g. a completed download whose file could not be moved where intended.
+func (q *Queue) SetMessage(id int64, msg string) error {
+	dl, err := q.store.GetDownload(id)
+	if err != nil {
+		return err
+	}
+	dl.ErrorMessage = msg
+	return q.store.UpdateDownload(dl)
+}
+
 func (q *Queue) MarkNeedsAction(id int64, msg string) error {
 	dl, err := q.store.GetDownload(id)
 	if err != nil {

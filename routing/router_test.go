@@ -200,3 +200,26 @@ func TestCopyFile(t *testing.T) {
 		t.Error("copyFile should not remove the source file")
 	}
 }
+
+func TestMoveFile_PermissionDeniedDoesNotCopy(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir, err := ioutil.TempDir("", "movefile_perm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	src := filepath.Join(dir, "a.mkv")
+	locked := filepath.Join(dir, "locked")
+	os.WriteFile(src, []byte("x"), 0644)
+	os.Mkdir(locked, 0555)
+	defer os.Chmod(locked, 0755)
+
+	if _, err := MoveFile(src, locked); err == nil {
+		t.Fatal("expected permission error")
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Errorf("source must stay put: %v", err)
+	}
+}

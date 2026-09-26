@@ -1447,6 +1447,9 @@ document.addEventListener('alpine:init', () => {
                 return phaseText[dl.phase] || 'Finishing…';
             }
             if (dl.status === 'completed') {
+                if (dl.error_message) {
+                    return '⚠ ' + (dl.error_message.length > 40 ? dl.error_message.slice(0, 37) + '...' : dl.error_message);
+                }
                 return dl.average_speed ? formatSpeed(dl.average_speed) : '-';
             }
             if (dl.status === 'failed' || dl.status === 'needs_action') {

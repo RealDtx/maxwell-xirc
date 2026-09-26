@@ -573,9 +573,30 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 			log.Printf("failed to load routing rules for download %d: %v", downloadID, err)
 		}
 	}
+	// A failed move must not leave the file silently in the hidden temp dir:
+	// fall back to the downloads dir and record why on the download.
+	moveNote := ""
 	if destDir != "" {
 		if moved, err := routing.MoveFile(destPath, destDir); err != nil {
 			log.Printf("routing move failed for download %d: %v", downloadID, err)
+			moveNote = fmt.Sprintf("could not move to %s: %v", destDir, err)
+			if fallback := e.downloadsDir(); fallback != "" && filepath.Clean(fallback) != filepath.Clean(destDir) {
+				if moved, ferr := routing.MoveFile(destPath, fallback); ferr == nil {
+					finalPath = moved
+					moveNote += "; saved to " + fallback + " instead"
+				} else {
+					moveNote += fmt.Sprintf("; fallback to %s failed too (%v), file left at %s", fallback, ferr, destPath)
+				}
+			} else {
+				moveNote += ", file left at " + destPath
+			}
+			e.bus.Publish(irc.Event{
+				Type: irc.EventNotification,
+				Data: map[string]string{
+					"severity": "warning",
+					"message":  fmt.Sprintf("%s: %s", offer.Filename, moveNote),
+				},
+			})
 		} else {
 			finalPath = moved
 		}
@@ -723,6 +744,11 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		}
 	}
 
+	if moveNote != "" { // before finishTransfer, so the "completed" reload shows it
+		if err := e.queue.SetMessage(downloadID, moveNote); err != nil {
+			log.Printf("failed to record move note for download %d: %v", downloadID, err)
+		}
+	}
 	e.finishTransfer(downloadID, dl, finalPath, "completed", tr)
 }
 
@@ -765,6 +791,13 @@ func (e *Engine) finishTransfer(downloadID int64, dl *db.Download, finalPath, st
 			"avg_speed":   tr.AverageSpeed(),
 		},
 	})
+}
+
+func (e *Engine) downloadsDir() string {
+	if e.storageCfg == nil {
+		return ""
+	}
+	return e.storageCfg.DownloadsDir
 }
 
 // processExtractedFile finishes one file pulled out of an archive: routed to

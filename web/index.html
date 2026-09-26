@@ -903,7 +903,7 @@
                                                     <span x-text="dl.status === 'completed' ? '100%' : '-'"></span>
                                                 </template>
                                             </td>
-                                            <td x-text="dlSpeedInfo(dl)"></td>
+                                            <td :title="dl.error_message || ''" :style="dl.status === 'completed' && dl.error_message ? 'color:var(--warning)' : ''" x-text="dlSpeedInfo(dl)"></td>
                                             <td x-text="fmtDate(dl.created_at)"></td>
                                             <td :title="dlTimeTooltip(dl)" x-text="dlTimeInfo(dl)"></td>
                                             <td style="white-space:nowrap;">
