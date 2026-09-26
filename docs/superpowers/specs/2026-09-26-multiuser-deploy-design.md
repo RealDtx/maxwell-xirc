@@ -263,7 +263,7 @@ done with reason; startup no longer exits.
 - `ENTRYPOINT ["xirc", "--config", "/data/config.yaml"]`.
 - Channel logs land in `/data/logs` automatically: `main.go` derives the
   log dir from `filepath.Dir(database.path)`. With MySQL the log dir falls
-  back to `./data/logs` relative to cwd — the image sets `WORKDIR /data`
+  becomes `./logs` (`filepath.Dir("")` is `.`) — the image sets `WORKDIR /data`
   so that also resolves under the volume.
 
 ### Config loading
