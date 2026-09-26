@@ -4,15 +4,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gorilla/websocket"
 	wsPkg "github.com/RealDtx/maxwell-irc/ws"
+	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Internal network only, behind nginx
-	},
-}
+// Default CheckOrigin: Origin host must equal Host. Proxies must preserve
+// Host (both shipped configs do). Blocks cross-site WebSocket hijacking.
+var upgrader = websocket.Upgrader{}
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if s.wsHub == nil {

@@ -1,0 +1,166 @@
+package server
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/RealDtx/maxwell-irc/config"
+	"github.com/RealDtx/maxwell-irc/db"
+)
+
+func newAuthTestServer(t *testing.T, cfg config.AuthConfig) (*Server, db.Store) {
+	t.Helper()
+	srv, store, cleanup := newTestServerWithStore(t)
+	t.Cleanup(cleanup)
+	if cfg.TrustedRole == "" {
+		cfg.TrustedRole = "admin"
+	}
+	if cfg.TrustedProxies == nil {
+		cfg.TrustedProxies = []string{"127.0.0.1/32", "::1/128"}
+	}
+	a, err := NewAuth(cfg, store, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetAuth(a)
+	return srv, store
+}
+
+func do(srv *Server, method, path, remote string, hdr map[string]string, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.RemoteAddr = remote
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
+func TestNewAuth_RejectsBadConfig(t *testing.T) {
+	if _, err := NewAuth(config.AuthConfig{TrustedRole: "root"}, nil, ""); err == nil {
+		t.Error("bad role accepted")
+	}
+	if _, err := NewAuth(config.AuthConfig{TrustedRole: "user", TrustedNetworks: []string{"10.0.0.0/33"}}, nil, ""); err == nil {
+		t.Error("bad CIDR accepted")
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	a, _ := NewAuth(config.AuthConfig{TrustedRole: "admin", TrustedProxies: []string{"127.0.0.1/32", "::1/128"}}, nil, "")
+	cases := []struct {
+		remote, xff, want string
+	}{
+		{"203.0.113.9:5000", "", "203.0.113.9"},
+		{"203.0.113.9:5000", "192.168.1.5", "203.0.113.9"},          // untrusted peer: XFF ignored
+		{"127.0.0.1:5000", "192.168.1.5", "192.168.1.5"},            // trusted proxy
+		{"127.0.0.1:5000", "6.6.6.6, 192.168.1.5", "192.168.1.5"},   // right-most untrusted wins
+		{"127.0.0.1:5000", "192.168.1.5, 127.0.0.1", "192.168.1.5"}, // skip trusted hops
+		{"[::1]:5000", "2001:db8::7", "2001:db8::7"},
+		{"127.0.0.1:5000", "garbage", "127.0.0.1"},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = c.remote
+		if c.xff != "" {
+			r.Header.Set("X-Forwarded-For", c.xff)
+		}
+		if got := a.clientIP(r).String(); got != c.want {
+			t.Errorf("remote=%s xff=%q: got %s want %s", c.remote, c.xff, got, c.want)
+		}
+	}
+}
+
+func TestAnonymousBlockedFromAPI(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{})
+	for _, p := range []string{"/api/downloads", "/api/servers", "/ws"} {
+		if w := do(srv, "GET", p, "203.0.113.9:1", nil, ""); w.Code != http.StatusUnauthorized {
+			t.Errorf("%s: got %d want 401", p, w.Code)
+		}
+	}
+	for _, p := range []string{"/api/health", "/api/auth/me"} {
+		if w := do(srv, "GET", p, "203.0.113.9:1", nil, ""); w.Code == http.StatusUnauthorized {
+			t.Errorf("%s must be reachable anonymously", p)
+		}
+	}
+}
+
+func TestSpoofedXFFDoesNotGrantTrustedNetwork(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{TrustedNetworks: []string{"192.168.0.0/16"}})
+	w := do(srv, "GET", "/api/downloads", "203.0.113.9:1", map[string]string{"X-Forwarded-For": "192.168.1.5"}, "")
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("spoofed XFF: got %d want 401", w.Code)
+	}
+	w = do(srv, "GET", "/api/downloads", "127.0.0.1:1", map[string]string{"X-Forwarded-For": "192.168.1.5"}, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("real LAN client via proxy: got %d want 200", w.Code)
+	}
+}
+
+func TestTrustedNetworkRole(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{TrustedNetworks: []string{"192.168.0.0/16"}, TrustedRole: "user"})
+	if w := do(srv, "GET", "/api/servers", "192.168.1.5:1", nil, ""); w.Code != http.StatusOK {
+		t.Errorf("user GET servers: %d", w.Code)
+	}
+	w := do(srv, "POST", "/api/servers", "192.168.1.5:1", map[string]string{"Content-Type": "application/json"}, `{}`)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("user POST servers: got %d want 403", w.Code)
+	}
+}
+
+func TestAdminOnlyTable(t *testing.T) {
+	admin := []struct{ m, p string }{
+		{"POST", "/api/irc/raw"}, {"POST", "/api/irc/connect"}, {"POST", "/api/irc/disconnect"}, {"POST", "/api/irc/join"},
+		{"POST", "/api/servers"}, {"PUT", "/api/servers/3"}, {"DELETE", "/api/realms/2"}, {"PUT", "/api/library"},
+		{"POST", "/api/library/preview"}, {"GET", "/api/search/patterns"}, {"GET", "/api/search/unmatched"},
+		{"POST", "/api/search/patterns/learn"}, {"POST", "/api/index/clear"}, {"GET", "/api/errors"},
+		{"GET", "/api/users"}, {"DELETE", "/api/users/4"}, {"GET", "/api/setup/status"}, {"POST", "/api/capabilities/recheck"},
+		{"POST", "/api/files"}, {"GET", "/api/browse"}, {"POST", "/api/downloads/delete"}, {"POST", "/api/downloads/clear"},
+		{"POST", "/api/downloads/set-target"}, {"POST", "/api/downloads/move"},
+	}
+	for _, c := range admin {
+		if !adminOnly(c.m, c.p) {
+			t.Errorf("%s %s should be admin-only", c.m, c.p)
+		}
+	}
+	user := []struct{ m, p string }{
+		{"GET", "/api/servers"}, {"GET", "/api/realms"}, {"GET", "/api/library"}, {"POST", "/api/search/start"},
+		{"GET", "/api/index/search"}, {"POST", "/api/downloads/request"}, {"POST", "/api/downloads/cancel"},
+		{"POST", "/api/downloads/retry"}, {"POST", "/api/downloads/set-auto-extract"}, {"GET", "/api/files"},
+		{"POST", "/api/irc/message"}, {"GET", "/api/irc/status"}, {"GET", "/api/stats/downloads"},
+		{"GET", "/api/storage"}, {"GET", "/api/capabilities"}, {"POST", "/api/search/saved"}, {"GET", "/ws"},
+	}
+	for _, c := range user {
+		if adminOnly(c.m, c.p) {
+			t.Errorf("%s %s should be allowed for users", c.m, c.p)
+		}
+	}
+}
+
+func TestCrossSiteRequestsRejected(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{TrustedNetworks: []string{"192.168.0.0/16"}})
+	// A form/fetch "simple request" from a foreign page on a LAN browser.
+	w := do(srv, "POST", "/api/downloads/clear", "192.168.1.5:1", map[string]string{"Content-Type": "text/plain"}, `{"status":"completed"}`)
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("text/plain POST: got %d want 415", w.Code)
+	}
+}
+
+func TestSessionCookieAuthenticates(t *testing.T) {
+	srv, store := newAuthTestServer(t, config.AuthConfig{})
+	u := &db.User{Username: "bob", PasswordHash: "x", Role: "user", CreatedAt: time.Now()}
+	store.CreateUser(u)
+	store.CreateSession(&db.Session{TokenHash: hashToken("tok"), UserID: u.ID, ExpiresAt: time.Now().Add(time.Hour)})
+	hdr := map[string]string{"Cookie": sessionCookie + "=tok"}
+	if w := do(srv, "GET", "/api/downloads", "203.0.113.9:1", hdr, ""); w.Code != http.StatusOK {
+		t.Errorf("valid session: %d", w.Code)
+	}
+	store.CreateSession(&db.Session{TokenHash: hashToken("old"), UserID: u.ID, ExpiresAt: time.Now().Add(-time.Hour)})
+	hdr = map[string]string{"Cookie": sessionCookie + "=old"}
+	if w := do(srv, "GET", "/api/downloads", "203.0.113.9:1", hdr, ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("expired session: got %d want 401", w.Code)
+	}
+}

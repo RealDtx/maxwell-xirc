@@ -29,6 +29,7 @@ type Server struct {
 	// downloadsDir is storage.downloads_dir from config.yaml — a root
 	// alongside the library's category dirs (see configuredRoots).
 	downloadsDir string
+	auth         *Auth
 }
 
 // SetLibrary wires the library manager in — set once at startup.
@@ -60,8 +61,18 @@ func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.En
 	return s
 }
 
+// SetAuth enables authentication. main() always calls it; tests that don't
+// exercise auth leave it unset and get the bare mux.
+func (s *Server) SetAuth(a *Auth) {
+	s.auth = a
+	logAuthConfig(a)
+}
+
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	if s.auth == nil {
+		return s.mux
+	}
+	return s.auth.middleware(s.mux)
 }
 
 func (s *Server) routes() {
