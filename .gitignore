@@ -22,3 +22,6 @@ docs/.claude/
 
 # Go build artifacts
 vendor/
+
+# Superpowers scratch workspaces
+.superpowers/
