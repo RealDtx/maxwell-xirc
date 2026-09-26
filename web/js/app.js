@@ -241,6 +241,30 @@ document.addEventListener('alpine:init', () => {
         newUser: { username: '', password: '', role: 'user' },
         get isAdmin() { return !!this.me && this.me.role === 'admin'; },
 
+        // Filesystem capabilities (Task 10 backend)
+        caps: null,
+        get capIssues() {
+            if (!this.caps) return [];
+            const names = { downloads: 'Downloads', library: 'Library sorting', library_read: 'Library browsing', library_config: 'Library settings', logging: 'Channel logging' };
+            return Object.keys(names).filter(k => this.caps[k] && !this.caps[k].ok)
+                .map(k => ({ name: names[k], reason: this.caps[k].reason }));
+        },
+        capFix(reason) {
+            const m = /: (\/\S+)/.exec(reason || '');
+            let dir = m ? m[1] : '<dir>';
+            dir = dir.replace(/[()]+$/, '');
+            return this.caps && this.caps.docker
+                ? 'Set PUID/PGID in docker-compose to the owner of the host directory mounted at ' + dir
+                : 'sudo chown -R xirc:xirc ' + dir;
+        },
+        rootWritable(path) {
+            if (!this.caps) return true;
+            const r = (this.caps.roots || []).find(x => path === x.path || path.startsWith(x.path + '/'));
+            return !r || r.write;
+        },
+        async loadCaps() { this.caps = await api.getCapabilities().catch(() => null); },
+        async recheckCaps() { this.caps = await api.recheckCapabilities().catch(() => this.caps); },
+
         // Pattern settings
         patternSettingsList: [],
         patternScopeOptions: [],   // [{label, server_id, channel}] built from all servers+realms
@@ -1794,6 +1818,8 @@ document.addEventListener('alpine:init', () => {
                         this.loadSettingsRealms(this.settingsServerId);
                     }
                 }
+            } else if (type === 'capabilities') {
+                this.caps = data.data;
             }
         },
 
@@ -2790,6 +2816,7 @@ document.addEventListener('alpine:init', () => {
                 window.addEventListener('xirc:unauthorized', () => { this.me = null; this.authMode = 'login'; });
             }
             if (!(await this.loadMe())) return; // overlay shown; submitAuth() re-runs init()
+            await this.loadCaps();
             if (this.isAdmin) await this.checkSetup();
 
             // Load disk stats and refresh every 30 seconds

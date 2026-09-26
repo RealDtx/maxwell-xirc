@@ -169,6 +169,17 @@
     <!-- Main content -->
     <main class="main">
 
+        <div x-show="isAdmin && capIssues.length" x-cloak role="status"
+             style="background:#5c3a1a; color:#fff; padding:10px 16px; font-size:13px; border-radius:6px; margin:8px;">
+            <template x-for="i in capIssues" :key="i.name">
+                <div style="margin-bottom:6px;">
+                    <strong x-text="i.name + ' disabled'"></strong> — <span x-text="i.reason"></span>
+                    <div style="font-family:monospace; opacity:.85;" x-text="'Fix: ' + capFix(i.reason)"></div>
+                </div>
+            </template>
+            <button class="btn" @click="recheckCaps()">Recheck</button>
+        </div>
+
         <!-- Channel view -->
         <template x-if="activeView === 'channel'">
             <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
@@ -354,7 +365,8 @@
                                                     <button class="btn btn-sm"
                                                             :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!canDownload(r) || isDownloadPending(r)"
+                                                            :disabled="!canDownload(r) || isDownloadPending(r) || (caps && !caps.downloads.ok)"
+                                                            :title="caps && !caps.downloads.ok ? caps.downloads.reason : ''"
                                                             x-text="downloadPackLabel(r)"></button>
                                                 </td>
                                             </tr>
@@ -399,7 +411,8 @@
                                                                 <button class="btn btn-sm"
                                                                         :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                                         @click="downloadPack(r)"
-                                                                        :disabled="!canDownload(r) || isDownloadPending(r)"
+                                                                        :disabled="!canDownload(r) || isDownloadPending(r) || (caps && !caps.downloads.ok)"
+                                                            :title="caps && !caps.downloads.ok ? caps.downloads.reason : ''"
                                                                         x-text="downloadPackLabel(r)"></button>
                                                             </td>
                                                         </tr>
@@ -557,7 +570,8 @@
                                                         <button
                                                             :class="'btn btn-sm ' + (isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary')"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!canDownload(r) || isDownloadPending(r)"
+                                                            :disabled="!canDownload(r) || isDownloadPending(r) || (caps && !caps.downloads.ok)"
+                                                            :title="caps && !caps.downloads.ok ? caps.downloads.reason : ''"
                                                             x-text="downloadPackLabel(r)"></button>
                                                     </td>
                                                 </tr>
@@ -717,7 +731,8 @@
                                                         <button
                                                             :class="'btn btn-sm ' + (isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary')"
                                                             @click="downloadPack(r)"
-                                                            :disabled="!canDownload(r) || isDownloadPending(r)"
+                                                            :disabled="!canDownload(r) || isDownloadPending(r) || (caps && !caps.downloads.ok)"
+                                                            :title="caps && !caps.downloads.ok ? caps.downloads.reason : ''"
                                                             x-text="downloadPackLabel(r)"></button>
                                                     </td>
                                                 </tr>
@@ -1186,7 +1201,9 @@
                                 <div style="display:flex; gap:8px;">
                                     <button class="btn btn-sm" @click="detectLibrarySettings()">Re-detect from folders</button>
                                     <button class="btn btn-sm" @click="reloadLibrarySettings()">Reload</button>
-                                    <button class="btn btn-primary btn-sm" @click="saveLibrarySettings()">Save</button>
+                                    <button class="btn btn-primary btn-sm" @click="saveLibrarySettings()"
+                                            :disabled="caps && !caps.library_config.ok"
+                                            :title="caps && !caps.library_config.ok ? caps.library_config.reason : ''">Save</button>
                                 </div>
                             </div>
 
@@ -1565,14 +1582,18 @@
                                 </div>
                                 <button class="btn btn-sm" :disabled="!fileManagerParent" @click="loadFileManager(fileManagerParent)" title="Up one folder">&uarr; Up</button>
                                 <template x-if="!fileManagerNewFolderOpen && isAdmin">
-                                    <button class="btn btn-sm" @click="fmStartNewFolder()">+ New folder</button>
+                                    <button class="btn btn-sm" @click="fmStartNewFolder()"
+                                            :disabled="!rootWritable(fileManagerDir)"
+                                            :title="!rootWritable(fileManagerDir) ? 'Read-only: ' + fileManagerDir : ''">+ New folder</button>
                                 </template>
                                 <template x-if="fileManagerNewFolderOpen && isAdmin">
                                     <span style="display:flex;gap:4px;align-items:center;">
                                         <input type="text" x-model="fileManagerNewFolderName" x-init="$el.focus()"
                                                placeholder="Folder name" class="fm-inline-input"
                                                @keydown.enter="fmCreateFolder()" @keydown.escape="fmCancelNewFolder()">
-                                        <button class="btn btn-sm btn-primary" @click="fmCreateFolder()">Create</button>
+                                        <button class="btn btn-sm btn-primary" @click="fmCreateFolder()"
+                                                :disabled="!rootWritable(fileManagerDir)"
+                                                :title="!rootWritable(fileManagerDir) ? 'Read-only: ' + fileManagerDir : ''">Create</button>
                                         <button class="btn btn-sm" @click="fmCancelNewFolder()">Cancel</button>
                                     </span>
                                 </template>
@@ -1591,7 +1612,9 @@
                             <!-- Bulk actions -->
                             <div class="fm-bulk-bar" x-show="fmSelectedCount() > 0 && isAdmin">
                                 <span x-text="fmSelectedCount() + ' selected'"></span>
-                                <select class="fm-move-select" @change="fmMove(fmSelectedNames(), $event.target.value); $event.target.value = ''">
+                                <select class="fm-move-select" @change="fmMove(fmSelectedNames(), $event.target.value); $event.target.value = ''"
+                                        :disabled="!rootWritable(fileManagerDir)"
+                                        :title="!rootWritable(fileManagerDir) ? 'Read-only: ' + fileManagerDir : ''">
                                     <option value="">Move to…</option>
                                     <template x-for="t in downloadTargets.filter(t => t !== fileManagerDir)" :key="t">
                                         <option :value="t" x-text="t"></option>
@@ -1599,6 +1622,8 @@
                                 </select>
                                 <button class="btn btn-sm btn-danger"
                                         @click="fmConfirmDelete('selected', () => fmDeleteNames(fmSelectedNames()))"
+                                        :disabled="!rootWritable(fileManagerDir)"
+                                        :title="!rootWritable(fileManagerDir) ? 'Read-only: ' + fileManagerDir : ''"
                                         x-text="_fmConfirm === 'selected' ? 'Confirm? (folders deleted with contents)' : 'Delete'"></button>
                             </div>
 
@@ -1648,16 +1673,22 @@
                                                 <td class="py-1 text-muted text-xs" x-text="formatDate(entry.modified)"></td>
                                                 <td class="py-1">
                                                     <span x-show="isAdmin" style="display:flex;gap:4px;align-items:center;">
-                                                        <button class="btn btn-sm" title="Rename" @click.stop="fmStartRename(entry)">✎</button>
+                                                        <button class="btn btn-sm" @click.stop="fmStartRename(entry)"
+                                                                :disabled="!rootWritable(fileManagerDir)"
+                                                                :title="!rootWritable(fileManagerDir) ? 'Read-only: ' + fileManagerDir : 'Rename'">✎</button>
                                                         <select class="fm-move-select" style="max-width:120px;"
-                                                                @change="fmMove([entry.name], $event.target.value); $event.target.value = ''">
+                                                                @change="fmMove([entry.name], $event.target.value); $event.target.value = ''"
+                                                                :disabled="!rootWritable(fileManagerDir)"
+                                                                :title="!rootWritable(fileManagerDir) ? 'Read-only: ' + fileManagerDir : ''">
                                                             <option value="">Move to…</option>
                                                             <template x-for="t in downloadTargets.filter(t => t !== fileManagerDir)" :key="t">
                                                                 <option :value="t" x-text="t"></option>
                                                             </template>
                                                         </select>
-                                                        <button class="btn btn-sm btn-danger" title="Delete"
+                                                        <button class="btn btn-sm btn-danger"
                                                                 @click="fmConfirmDelete('row:' + entry.name, () => fmDeleteNames([entry.name]))"
+                                                                :disabled="!rootWritable(fileManagerDir)"
+                                                                :title="!rootWritable(fileManagerDir) ? 'Read-only: ' + fileManagerDir : 'Delete'"
                                                                 x-text="_fmConfirm === ('row:' + entry.name) ? 'Confirm?' : '🗑'"></button>
                                                     </span>
                                                 </td>

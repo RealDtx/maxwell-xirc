@@ -158,4 +158,8 @@ const api = {
     getSetupStatus() { return this.get('/setup/status'); },
     getSetupDefaults() { return this.get('/setup/defaults'); },
     completeSetup(mappings) { return this.post('/setup/complete', { mappings }); },
+
+    // Capabilities
+    getCapabilities()     { return this.get('/capabilities'); },
+    recheckCapabilities() { return this.post('/capabilities/recheck', {}); },
 };
