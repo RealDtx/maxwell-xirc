@@ -418,6 +418,9 @@ func (c *Connection) SendMessage(target, message string) error {
 		log.Printf("WARNING: SendMessage called but client is nil for server %d target=%s", c.server.ID, target)
 		return fmt.Errorf("not connected to server %d", c.server.ID)
 	}
+	if HasLineBreak(target, message) {
+		return fmt.Errorf("target/message must not contain line breaks")
+	}
 	debug.Debugf("irc: SendMessage target=%s msg=%.50q", target, message)
 	client.Privmsg(target, message)
 	// Echo own sent message into the bus so the MessageBuffer captures it.
@@ -480,6 +483,9 @@ func (c *Connection) RequestPack(channel, botNick string, packNumber int) error 
 		return fmt.Errorf("not connected to %s", c.server.Name)
 	}
 
+	if HasLineBreak(botNick) {
+		return fmt.Errorf("invalid bot nick %q", botNick)
+	}
 	msg := fmt.Sprintf("xdcc send #%d", packNumber)
 	client.Privmsg(botNick, msg)
 	return nil

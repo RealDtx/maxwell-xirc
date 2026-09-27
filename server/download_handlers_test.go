@@ -299,3 +299,31 @@ func TestIsValidTargetDir_LibraryCategoryDir(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestDownload_RejectsLineBreaks(t *testing.T) {
+	srv, _, cleanup := newTestServerWithEngine(t)
+	defer cleanup()
+	dl := t.TempDir()
+	srv.SetDownloadsDir(dl)
+	srv.SetCapabilityInputs(filepath.Join(dl, ".tmp"), t.TempDir(), nil)
+	for _, body := range []string{
+		`{"server_id":1,"channel":"#x","bot_nick":"Bot\r\nQUIT :pwned","pack_number":1}`,
+		`{"server_id":1,"channel":"#x\nQUIT","bot_nick":"Bot","pack_number":1}`,
+	} {
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, httptest.NewRequest("POST", "/api/downloads/request", strings.NewReader(body)))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d want 400", body, w.Code)
+		}
+	}
+}
+
+func TestIRCNames_RejectsLineBreaks(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/api/irc/1/names?channel=%23a%0D%0AQUIT", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("got %d want 400", w.Code)
+	}
+}

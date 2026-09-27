@@ -155,6 +155,25 @@ func TestAdminOnlyTable(t *testing.T) {
 	}
 }
 
+// TestUserRoleForbiddenOnAdminRules drives every adminRules entry through the
+// real middleware as a user-role principal.
+func TestUserRoleForbiddenOnAdminRules(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{TrustedNetworks: []string{"192.168.0.0/16"}, TrustedRole: "user"})
+	json := map[string]string{"Content-Type": "application/json"}
+	for _, r := range adminRules {
+		for _, p := range []string{r.prefix, r.prefix + "/x"} {
+			if w := do(srv, "POST", p, "192.168.1.5:1", json, `{}`); w.Code != http.StatusForbidden {
+				t.Errorf("user POST %s: got %d want 403", p, w.Code)
+			}
+			if !r.nonGetOnly {
+				if w := do(srv, "GET", p, "192.168.1.5:1", nil, ""); w.Code != http.StatusForbidden {
+					t.Errorf("user GET %s: got %d want 403", p, w.Code)
+				}
+			}
+		}
+	}
+}
+
 func TestCrossSiteRequestsRejected(t *testing.T) {
 	srv, _ := newAuthTestServer(t, config.AuthConfig{TrustedNetworks: []string{"192.168.0.0/16"}})
 	// A form/fetch "simple request" from a foreign page on a LAN browser.

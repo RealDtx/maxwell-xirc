@@ -87,7 +87,17 @@ func (c *RawClient) dial() (net.Conn, error) {
 }
 
 func (c *RawClient) send(conn net.Conn, format string, args ...interface{}) {
-	line := fmt.Sprintf(format, args...)
+	writeLine(conn, fmt.Sprintf(format, args...))
+}
+
+// writeLine is the single exit to the wire. A line carrying CR/LF/NUL (e.g.
+// from a user-supplied target or message) is dropped, never split into
+// extra IRC commands.
+func writeLine(conn net.Conn, line string) {
+	if HasLineBreak(line) {
+		log.Printf("irc send refused: line contains CR/LF/NUL: %.80q", line)
+		return
+	}
 	if _, err := fmt.Fprintf(conn, "%s\r\n", line); err != nil {
 		log.Printf("irc send error: %v", err)
 	}
@@ -266,7 +276,7 @@ func (c *RawClient) SendLine(line string) {
 		return
 	}
 	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	fmt.Fprintf(conn, "%s\r\n", line)  //nolint:errcheck
+	writeLine(conn, line)
 	conn.SetWriteDeadline(time.Time{}) // clear deadline
 }
 
@@ -337,4 +347,15 @@ func parseLine(line string) *ircLine {
 		result.params = parts[1:]
 	}
 	return result
+}
+
+// HasLineBreak reports whether any s contains CR, LF or NUL — characters that
+// would split or truncate an IRC protocol line.
+func HasLineBreak(s ...string) bool {
+	for _, v := range s {
+		if strings.ContainsAny(v, "\r\n\x00") {
+			return true
+		}
+	}
+	return false
 }

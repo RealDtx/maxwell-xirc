@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/RealDtx/maxwell-irc/irc"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,7 +23,7 @@ func (s *Server) handleIRCNames(w http.ResponseWriter, r *http.Request) {
 	}
 
 	channel := r.URL.Query().Get("channel")
-	if channel == "" {
+	if channel == "" || irc.HasLineBreak(channel) {
 		writeError(w, http.StatusBadRequest, "channel required")
 		return
 	}

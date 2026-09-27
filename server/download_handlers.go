@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/irc"
 	"github.com/RealDtx/maxwell-irc/routing"
 )
 
@@ -61,6 +62,10 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 
 	if req.ServerID == 0 {
 		writeError(w, http.StatusBadRequest, "server_id is required")
+		return
+	}
+	if irc.HasLineBreak(req.Channel, req.BotNick) {
+		writeError(w, http.StatusBadRequest, "channel/bot_nick must not contain line breaks")
 		return
 	}
 
