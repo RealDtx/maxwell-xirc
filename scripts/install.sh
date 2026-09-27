@@ -70,21 +70,24 @@ done
 goarch() { case "$(uname -m)" in x86_64) echo amd64;; aarch64|arm64) echo arm64;; armv7l) echo armv7;; *) return 1;; esac; }
 need_go() { sed -n 's/^go \([0-9.]*\).*/\1/p' "$REPO_DIR/go.mod"; }
 BIN_SRC=""
-if [[ -x "$SCRIPT_DIR/xirc" ]]; then BIN_SRC="$SCRIPT_DIR/xirc"
-elif [[ -x "$REPO_DIR/xirc" ]]; then BIN_SRC="$REPO_DIR/xirc"
+WORK="$(mktemp -d)"   # build/download output; never the checkout (stale, root-owned)
+trap 'rm -rf "$WORK"' EXIT
+if [[ -x "$SCRIPT_DIR/xirc" ]]; then
+    ask_yn "Use the prebuilt $SCRIPT_DIR/xirc (from $(date -r "$SCRIPT_DIR/xirc" '+%Y-%m-%d %H:%M'))? n = build or download" y a
+    [[ $a == y ]] && BIN_SRC="$SCRIPT_DIR/xirc"
+fi
+if [[ -n "$BIN_SRC" ]]; then :
 elif command -v go >/dev/null && [[ -f "$REPO_DIR/go.mod" ]] && \
      [[ "$(printf '%s\n%s\n' "$(need_go)" "$(go env GOVERSION | sed 's/^go//')" | sort -V | head -1)" == "$(need_go)" ]]; then
     say "Building from source with $(go version)…"
-    (cd "$REPO_DIR" && CGO_ENABLED=0 go build -ldflags="-s -w" -o "$REPO_DIR/xirc" .)
-    BIN_SRC="$REPO_DIR/xirc"
+    (cd "$REPO_DIR" && CGO_ENABLED=0 go build -ldflags="-s -w" -o "$WORK/xirc" .)
+    BIN_SRC="$WORK/xirc"
 elif A="$(goarch)"; then
     say "Downloading the newest release for linux-${A}…"
     URL="$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases" \
         | grep -o "https://[^\"]*/xirc-linux-${A}\"" | head -1 | tr -d '"')" || true
     if [[ -n "$URL" ]]; then
-        DOWNLOAD="$(mktemp)"
-        trap 'rm -f "$DOWNLOAD"' EXIT
-        curl -fsSL -o "$DOWNLOAD" "$URL" && chmod +x "$DOWNLOAD" && BIN_SRC="$DOWNLOAD"
+        curl -fsSL -o "$WORK/xirc" "$URL" && chmod +x "$WORK/xirc" && BIN_SRC="$WORK/xirc"
     fi
 fi
 if [[ -z "$BIN_SRC" ]]; then
@@ -193,6 +196,7 @@ EOF
 fi
 
 UNIT=/etc/systemd/system/xirc.service
+FIRST_INSTALL=y; [[ -f "$UNIT" ]] && FIRST_INSTALL=n
 NEW_UNIT="$(mktemp)"
 cat > "$NEW_UNIT" <<EOF
 [Unit]
@@ -226,6 +230,29 @@ else
     say "Left $UNIT unchanged."
 fi
 rm -f "$NEW_UNIT"
+
+# ── admin account (before the service can take web visitors) ──────────────────
+echo
+ADMIN_CREATED=n
+if [[ $FIRST_INSTALL == y ]]; then
+    say "Create the admin account now, so nobody else can claim it on first visit."
+    ask_yn "Create an admin account?" y a
+else
+    ask_yn "Create an admin account (or reset an existing admin's password)?" n a
+fi
+while [[ $a == y ]]; do
+    ask "Admin username" "admin" ADMIN_NAME
+    read -rsp "  Password (min. 8 characters): " ADMIN_PW; echo >&2
+    read -rsp "  Repeat password: " ADMIN_PW2; echo >&2
+    if [[ "$ADMIN_PW" != "$ADMIN_PW2" ]]; then say "! Passwords do not match."; continue; fi
+    # Password goes through the environment, never the command line (ps).
+    if (cd "$INSTALL_DIR" && XIRC_ADMIN_PASSWORD="$ADMIN_PW" runuser -u xirc -- "$INSTALL_DIR/xirc" --config "$CONFIG" --create-admin "$ADMIN_NAME" </dev/null); then
+        ADMIN_CREATED=y; break
+    fi
+    ask_yn "! Creating the admin failed (see above). Try again?" y a
+done
+unset ADMIN_PW ADMIN_PW2
+
 systemctl daemon-reload
 systemctl enable --now xirc
 systemctl restart xirc
@@ -309,7 +336,8 @@ if [[ "$PROXY" == none ]]; then URL="http://127.0.0.1:${PORT}/ (localhost only �
 elif [[ $MODE == site ]]; then URL="http://${SERVER_NAME}/"
 else URL="http://<your-site>${PREFIX}/"; fi
 say "Open: $URL"
-say "The first visit asks you to create the admin account."
+if [[ $ADMIN_CREATED == y ]]; then say "Log in as '${ADMIN_NAME}'."
+else say "If no admin exists yet, the first visit creates one — open it before exposing xirc to others."; fi
 [[ "$PROXY" != none ]] && say "HTTPS: sudo certbot --${PROXY/both/nginx}   (the login cookie is marked Secure over HTTPS)"
 say "Re-run this script any time; it asks before changing existing files."
 hr
