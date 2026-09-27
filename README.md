@@ -11,48 +11,47 @@ A self-hosted XDCC web client for downloading files via IRC bots, designed to ru
 - Auto-extract — optionally unpack tar archives after download with automatic routing
 - DCC passive mode — works behind NAT without port forwarding
 - Multi-server support — connect to multiple IRC servers and channels
+- Multi-user login — session-based auth with admin/user roles; trusted networks can skip login
 - Preconfig + deploy workflow — repeatable deployments via rsync and systemd
-- Nginx integration — generates vhost or subpath location block configs
+- Nginx and Apache integration — an install wizard configures either automatically, or generate vhost/subpath configs yourself
 - Docker support — docker compose for local development and testing
 - Post-download hooks — notifications with quiet hours support
 - Auto-detect download channel — reads IRC topic on join to find XDCC bot
 
-## Quick Start
+## Install
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/RealDtx/maxwell-irc.git
-   cd maxwell-irc
-   ```
+**On a Linux server (Debian/Ubuntu/Raspberry Pi OS)**
+```bash
+git clone https://github.com/RealDtx/maxwell-xirc.git && cd maxwell-xirc
+sudo scripts/install.sh
+```
+The wizard asks for download/media/database paths, checks permissions,
+installs a systemd service and optionally configures nginx or Apache.
+Open the printed URL — the first visit creates the admin account.
 
-2. Generate configuration:
-   ```bash
-   make preconfig PROFILE=pi
-   ```
+**Docker**
+```bash
+cd deploy && cp .env.example .env   # set DOWNLOADS_DIR, MEDIA_DIR, PUID/PGID
+docker compose up -d
+```
+Reset a password: `docker exec -it xirc xirc --create-admin <name>`.
 
-3. Perform first-time Pi setup (create user, directories, nginx):
-   ```bash
-   # See docs/install.md for detailed instructions
-   ```
+**From a dev machine to a Pi** — `make preconfig`, then `make deploy`; see
+[docs/install.md](docs/install.md).
 
-4. Deploy to Raspberry Pi:
-   ```bash
-   make deploy PROFILE=pi
-   ```
-
-For full installation instructions, see [docs/install.md](docs/install.md).
+Only need a reverse-proxy config? `scripts/install.sh --print-proxy apache --server-name xirc.example.com`
 
 ## Requirements
 
 **Development machine:**
-- Go 1.21+
+- Go (see `go.mod` for the minimum version)
 - make
 - rsync
 - ssh (for remote deployment)
 
 **Target device:**
 - Raspberry Pi OS 64-bit (Bookworm or later) or any Linux server
-- nginx (recommended)
+- nginx or Apache (recommended, optional — `scripts/install.sh` can configure either)
 
 ## Configuration
 
@@ -62,7 +61,9 @@ Copy `config.example.yaml` to `config.yaml` and customize:
 cp config.example.yaml config.yaml
 ```
 
-Configuration can also be overridden via environment variables (e.g., `XIRC_SERVER_PORT=9000`).
+Configuration can also be overridden via environment variables: `XIRC_<SECTION>_<KEY>` using the
+yaml key, e.g. `XIRC_SERVER_PORT=9000` or `XIRC_STORAGE_DOWNLOADS_DIR=/downloads`. List values are
+comma-separated, e.g. `XIRC_AUTH_TRUSTED_NETWORKS=192.168.0.0/16,10.0.0.0/8`.
 
 The preconfig wizard (`make preconfig`) generates a complete configuration automatically.
 
