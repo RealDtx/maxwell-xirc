@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # maXwell IRC deployment preconfig — generates a named profile directory with all
-# deployment artefacts: config.yaml, maxwell-irc.service, nginx config, settings.mk.
+# deployment artefacts: config.yaml, xirc.service, reverse-proxy config, settings.mk.
 # Run with: bash scripts/preconfig.sh   or   make preconfig [PROFILE=name]
 set -euo pipefail
+
+source "$(dirname "$0")/proxy-templates.sh"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -60,8 +62,8 @@ ask "SSH user (must have passwordless sudo)" "maxwell" PI_USER
 
 echo
 echo "  -- Installation --"
-ask "Install directory on target" "/opt/maxwell-irc" INSTALL_DIR
-ask "Service OS username" "maxwell-irc" XIRC_USER
+ask "Install directory on target" "/opt/xirc" INSTALL_DIR
+ask "Service OS username" "xirc" XIRC_USER
 ask "HTTP port maxwell-irc listens on" "8085" XIRC_PORT
 
 # ── storage ───────────────────────────────────────────────────────────────────
@@ -98,7 +100,7 @@ ask "Database driver" "sqlite" DB_DRIVER
 case "${DB_DRIVER,,}" in
     sqlite)
         DB_DRIVER="sqlite"
-        ask "SQLite file path (on target)" "${INSTALL_DIR}/data/maxwell-irc.db" DB_PATH
+        ask "SQLite file path (on target)" "${INSTALL_DIR}/data/xirc.db" DB_PATH
         DB_DSN=""
         ;;
     mysql|mariadb)
@@ -112,7 +114,7 @@ case "${DB_DRIVER,,}" in
     *)
         echo "  Unknown driver '${DB_DRIVER}' — defaulting to sqlite."
         DB_DRIVER="sqlite"
-        ask "SQLite file path (on target)" "${INSTALL_DIR}/data/maxwell-irc.db" DB_PATH
+        ask "SQLite file path (on target)" "${INSTALL_DIR}/data/xirc.db" DB_PATH
         DB_DSN=""
         ;;
 esac
@@ -130,47 +132,33 @@ if [[ "$DCC_PASSIVE" == "y" ]]; then
     ask "External IP for passive DCC (public IP of the Pi / router)" "" DCC_EXTERNAL_IP
 fi
 
-# ── nginx ─────────────────────────────────────────────────────────────────────
+# ── reverse proxy + login ────────────────────────────────────────────────────
 
 echo
-ask_yn "Generate nginx reverse proxy config" "y" USE_NGINX
-
-NGINX_MODE=""
-NGINX_SERVER_NAME=""
-NGINX_LISTEN_PORT=""
-NGINX_PREFIX=""
-
-if [[ "$USE_NGINX" == "y" ]]; then
-    echo
-    echo "  Nginx mode:"
-    echo "    s) Standalone  — new server block with its own server_name"
-    echo "    i) Subpath     — location blocks to include in an existing server"
-    echo
-    ask "Mode" "i" NGINX_MODE
-    case "${NGINX_MODE,,}" in
-        s|standalone)
-            NGINX_MODE="standalone"
-            ask "Nginx server_name (hostname for the vhost)" "maxwell-irc.local" NGINX_SERVER_NAME
-            ask "Nginx listen port" "80" NGINX_LISTEN_PORT
-            NGINX_PREFIX=""
-            ;;
-        *)
-            NGINX_MODE="subpath"
-            ask "URL prefix (no trailing slash)" "/mxirc" NGINX_PREFIX
-            NGINX_LISTEN_PORT=""
-            NGINX_SERVER_NAME=""
-            ;;
-    esac
+echo "  -- Reverse proxy --"
+ask "Reverse proxy (nginx / apache / none)" "nginx" PROXY
+PROXY="${PROXY,,}"
+PROXY_MODE=""; PROXY_PREFIX=""; PROXY_SERVER_NAME=""
+if [[ "$PROXY" == "nginx" || "$PROXY" == "apache" ]]; then
+    echo "    s) Own site   — new ${PROXY} site with its own hostname"
+    echo "    i) Subpath    — snippet to include in an existing site"
+    ask "Mode" "i" PROXY_MODE
+    if [[ "${PROXY_MODE,,}" == s* ]]; then
+        PROXY_MODE="site"
+        ask "Hostname for the site" "xirc.local" PROXY_SERVER_NAME
+    else
+        PROXY_MODE="subpath"
+        ask "URL prefix (no trailing slash)" "/xirc" PROXY_PREFIX
+    fi
 else
-    echo
-    echo "  *** IMPORTANT SECURITY WARNING ***"
-    echo "  Nginx is disabled.  maXwell IRC will listen on 127.0.0.1:${XIRC_PORT}."
-    echo "  Do NOT expose port ${XIRC_PORT} directly to the internet."
-    echo "  You MUST place maXwell IRC behind a TLS-terminating reverse proxy before"
-    echo "  any public access.  Without a proxy, the WebSocket and session"
-    echo "  cookies are transmitted in plaintext."
-    echo
+    PROXY="none"
+    echo "  Without a proxy, put xirc behind TLS before exposing it to the internet."
 fi
+
+echo
+echo "  -- Login --"
+ask "Networks that skip login (comma-separated CIDRs, empty = always log in)" "" TRUSTED_NETWORKS
+ask "Role for those networks (admin / user)" "admin" TRUSTED_ROLE
 
 # ── generate files ────────────────────────────────────────────────────────────
 
@@ -197,7 +185,7 @@ else
 fi
 
 PREFIX_LINE=""
-[[ -n "$NGINX_PREFIX" ]] && PREFIX_LINE="  prefix: ${NGINX_PREFIX}"
+[[ -n "$PROXY_PREFIX" ]] && PREFIX_LINE="  prefix: ${PROXY_PREFIX}"
 
 cat > "${PROFILE_DIR}/config.yaml" <<CONFIG
 server:
@@ -228,10 +216,14 @@ downloads:
 notifications:
   quiet_hours_start: ""
   quiet_hours_end: ""
+
+auth:
+  trusted_networks: [${TRUSTED_NETWORKS}]
+  trusted_role: ${TRUSTED_ROLE}
 CONFIG
 
-# --- maxwell-irc.service ---
-cat > "${PROFILE_DIR}/maxwell-irc.service" <<SERVICE
+# --- xirc.service ---
+cat > "${PROFILE_DIR}/xirc.service" <<SERVICE
 [Unit]
 Description=maXwell IRC - XDCC IRC Web Client
 After=network.target
@@ -242,7 +234,7 @@ Type=simple
 User=${XIRC_USER}
 Group=${XIRC_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/maxwell-irc --config ${INSTALL_DIR}/config.yaml
+ExecStart=${INSTALL_DIR}/xirc --config ${INSTALL_DIR}/config.yaml
 Restart=always
 RestartSec=5
 StartLimitIntervalSec=120
@@ -263,88 +255,12 @@ UMask=0002
 WantedBy=multi-user.target
 SERVICE
 
-# --- nginx-maxwell-irc.conf (or sentinel) ---
-if [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "standalone" ]]; then
-    cat > "${PROFILE_DIR}/nginx-maxwell-irc.conf" <<NGINX
-server {
-    listen ${NGINX_LISTEN_PORT};
-    server_name ${NGINX_SERVER_NAME};
-
-    # Restrict to internal networks only
-    allow 192.168.0.0/16;
-    allow 10.0.0.0/8;
-    allow 172.16.0.0/12;
-    deny all;
-
-    location / {
-        proxy_pass http://127.0.0.1:${XIRC_PORT};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    location /ws {
-        proxy_pass http://127.0.0.1:${XIRC_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_read_timeout 86400;
-    }
-}
-NGINX
-    rm -f "${PROFILE_DIR}/.no-nginx"
-    rm -f "${PROFILE_DIR}/nginx-maxwell-irc-location.conf"
-
-elif [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "subpath" ]]; then
-    cat > "${PROFILE_DIR}/nginx-maxwell-irc-location.conf" <<NGINX
-# maXwell IRC location blocks — include this inside your existing nginx server block:
-#   include /etc/nginx/snippets/maxwell-irc.conf;
-
-# Redirect bare prefix to trailing slash
-location = ${NGINX_PREFIX} {
-    return 301 ${NGINX_PREFIX}/;
-}
-
-# Main proxy (nginx strips the prefix before forwarding)
-location ${NGINX_PREFIX}/ {
-    allow 192.168.0.0/16;
-    allow 10.0.0.0/8;
-    allow 172.16.0.0/12;
-    deny all;
-
-    proxy_pass http://127.0.0.1:${XIRC_PORT}/;
-    proxy_set_header Host \$host;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-}
-
-# WebSocket (must be separate — needs upgrade headers)
-location ${NGINX_PREFIX}/ws {
-    allow 192.168.0.0/16;
-    allow 10.0.0.0/8;
-    allow 172.16.0.0/12;
-    deny all;
-
-    proxy_pass http://127.0.0.1:${XIRC_PORT}/ws;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade \$http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host \$host;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_read_timeout 86400;
-}
-NGINX
-    rm -f "${PROFILE_DIR}/.no-nginx"
-    rm -f "${PROFILE_DIR}/nginx-maxwell-irc.conf"
-
-else
-    touch "${PROFILE_DIR}/.no-nginx"
-    rm -f "${PROFILE_DIR}/nginx-maxwell-irc.conf"
-    rm -f "${PROFILE_DIR}/nginx-maxwell-irc-location.conf"
+# --- reverse-proxy config (via scripts/proxy-templates.sh renderers) ---
+rm -f "${PROFILE_DIR}"/nginx-*.conf "${PROFILE_DIR}"/apache-*.conf "${PROFILE_DIR}/.no-nginx"
+if [[ "$PROXY" != "none" ]]; then
+    suffix=""; [[ "$PROXY_MODE" == "subpath" ]] && suffix="-location"
+    PORT="$XIRC_PORT" PREFIX="$PROXY_PREFIX" SERVER_NAME="$PROXY_SERVER_NAME" \
+        "render_${PROXY}_${PROXY_MODE}" > "${PROFILE_DIR}/${PROXY}-xirc${suffix}.conf"
 fi
 
 # --- .gitignore ---
@@ -361,11 +277,10 @@ echo
 hr
 echo "  Generated: ${PROFILE_DIR}/"
 echo "    config.yaml       application config"
-echo "    maxwell-irc.service  systemd unit"
-if [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "standalone" ]]; then
-    echo "    nginx-maxwell-irc.conf          nginx vhost config"
-elif [[ "$USE_NGINX" == "y" && "$NGINX_MODE" == "subpath" ]]; then
-    echo "    nginx-maxwell-irc-location.conf nginx location snippet (include in your server block)"
+echo "    xirc.service      systemd unit"
+if [[ "$PROXY" != "none" ]]; then
+    suffix=""; [[ "$PROXY_MODE" == "subpath" ]] && suffix="-location"
+    echo "    ${PROXY}-xirc${suffix}.conf   ${PROXY} $( [[ "$PROXY_MODE" == "site" ]] && echo "site config" || echo "snippet (include in your existing site)" )"
 fi
 echo "    settings.mk       Makefile deploy variables"
 hr

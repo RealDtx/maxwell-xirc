@@ -61,17 +61,16 @@ deploy: build-pi
 	rsync -avz --delete web/ "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/web/
 	rsync -avz $(PROFILE_DIR)/xirc.service "$(PI_USER)@$(PI_HOST)":/tmp/
 	ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/xirc.service /etc/systemd/system/xirc.service && sudo systemctl daemon-reload"
-	@if [ -f "$(PROFILE_DIR)/nginx-xirc.conf" ]; then \
-	  rsync -avz $(PROFILE_DIR)/nginx-xirc.conf "$(PI_USER)@$(PI_HOST)":/tmp/; \
-	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-xirc.conf /etc/nginx/sites-available/xirc \
-	    && sudo ln -sf /etc/nginx/sites-available/xirc /etc/nginx/sites-enabled/xirc \
-	    && sudo nginx -t && sudo systemctl reload nginx"; \
-	fi
-	@if [ -f "$(PROFILE_DIR)/nginx-maxwell-irc-location.conf" ]; then \
-	  rsync -avz $(PROFILE_DIR)/nginx-maxwell-irc-location.conf "$(PI_USER)@$(PI_HOST)":/tmp/; \
-	  ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/nginx-maxwell-irc-location.conf /etc/nginx/snippets/maxwell-irc.conf \
-	    && sudo nginx -t && sudo systemctl reload nginx"; \
-	fi
+	@for f in nginx-xirc.conf nginx-xirc-location.conf apache-xirc.conf apache-xirc-location.conf; do \
+	  [ -f "$(PROFILE_DIR)/$$f" ] || continue; \
+	  rsync -avz "$(PROFILE_DIR)/$$f" "$(PI_USER)@$(PI_HOST)":/tmp/; \
+	  case $$f in \
+	    nginx-xirc.conf) ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/$$f /etc/nginx/sites-available/xirc && sudo ln -sf /etc/nginx/sites-available/xirc /etc/nginx/sites-enabled/xirc && sudo nginx -t && sudo systemctl reload nginx" ;; \
+	    nginx-xirc-location.conf) ssh "$(PI_USER)@$(PI_HOST)" "sudo cp /tmp/$$f /etc/nginx/snippets/xirc.conf && sudo nginx -t && sudo systemctl reload nginx" ;; \
+	    apache-xirc.conf) ssh "$(PI_USER)@$(PI_HOST)" "sudo a2enmod -q proxy proxy_http proxy_wstunnel rewrite headers && sudo cp /tmp/$$f /etc/apache2/sites-available/xirc.conf && sudo a2ensite -q xirc && sudo apachectl configtest && sudo systemctl reload apache2" ;; \
+	    apache-xirc-location.conf) ssh "$(PI_USER)@$(PI_HOST)" "sudo a2enmod -q proxy proxy_http proxy_wstunnel rewrite headers && sudo cp /tmp/$$f /etc/apache2/conf-available/xirc.conf && sudo apachectl configtest && sudo systemctl reload apache2" ;; \
+	  esac; \
+	done
 	@if [ -n "$(PI_CONFIG)" ]; then \
 	  rsync -avz --progress "$(PI_CONFIG)" "$(PI_USER)@$(PI_HOST)":$(INSTALL_DIR)/config.yaml; \
 	elif [ -f "$(PROFILE_DIR)/config.yaml" ]; then \
