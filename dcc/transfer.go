@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -88,7 +89,7 @@ func (t *Transfer) AverageSpeed() int64 {
 }
 
 func (t *Transfer) Start() error {
-	addr := fmt.Sprintf("%s:%d", t.offer.IP, t.offer.Port)
+	addr := net.JoinHostPort(t.offer.IP, strconv.Itoa(t.offer.Port))
 	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("connecting to %s: %w", addr, err)

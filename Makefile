@@ -20,6 +20,7 @@ build:
 	$(GO) build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY) .
 
 test:
+	$(GO) vet ./...
 	$(GO) test ./...
 
 test-verbose:

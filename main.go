@@ -9,10 +9,12 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -342,7 +344,7 @@ func main() {
 	capStop := make(chan struct{})
 	srv.StartCapabilityRefresh(5*time.Minute, capStop)
 
-	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	addr := net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))
 	httpServer := &http.Server{
 		Addr:    addr,
 		Handler: srv.Handler(),

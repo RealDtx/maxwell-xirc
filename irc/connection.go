@@ -3,7 +3,9 @@ package irc
 import (
 	"fmt"
 	"log"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -58,7 +60,7 @@ type ConnectionStatusEvent struct {
 
 // newIRCClient creates the appropriate IRCClient for the given server config.
 func newIRCClient(srv *db.Server) IRCClient {
-	addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+	addr := net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port))
 	nick := srv.Nickname
 	if nick == "" {
 		nick = "mxirc"
