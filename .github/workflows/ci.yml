@@ -28,3 +28,6 @@ jobs:
 
       - name: Build linux/amd64
         run: go build -ldflags="-s -w" -o maxwell-irc-amd64 .
+
+      - name: Check deploy scripts
+        run: bash -n scripts/*.sh && bash scripts/test-proxy-templates.sh
