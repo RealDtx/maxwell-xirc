@@ -454,3 +454,20 @@ func TestEngineSetRuntimeRace(t *testing.T) {
 	}
 	<-done
 }
+
+// TestUniqueDestPathLockedUsesPassedDir verifies uniqueDestPathLocked builds
+// the candidate path under the tempDir it was given, not whatever TempDir is
+// live when it runs — a concurrent SetRuntime between the caller's MkdirAll
+// and this call must not retarget the path to an uncreated directory.
+func TestUniqueDestPathLockedUsesPassedDir(t *testing.T) {
+	e := NewEngine(nil, nil, nil, &config.StorageConfig{TempDir: "/a/.tmp"}, 3)
+	e.SetRuntime("/b", "/b/.tmp", "1GB", 3) // live TempDir is now /b/.tmp
+
+	e.transferMu.Lock()
+	got := e.uniqueDestPathLocked("file.txt", "/a/.tmp")
+	e.transferMu.Unlock()
+
+	if want := filepath.Join("/a/.tmp", "file.txt"); got != want {
+		t.Fatalf("uniqueDestPathLocked = %q, want %q (passed dir, not live TempDir /b/.tmp)", got, want)
+	}
+}

@@ -38,12 +38,18 @@ func (m *Maintenance) config() config.MaintenanceConfig {
 	return m.cfg
 }
 
-// SetConfig swaps the settings; the periodic timer restarts with the new
-// interval (<= 0 stops periodic runs). No immediate pass.
+// SetConfig swaps the settings. If IntervalHours changes, the periodic
+// timer restarts on the new interval (<= 0 stops periodic runs); if it's
+// unchanged, the running ticker is left alone so a settings save unrelated
+// to the schedule can't keep postponing the next run. No immediate pass.
 func (m *Maintenance) SetConfig(cfg config.MaintenanceConfig) {
 	m.mu.Lock()
+	intervalChanged := cfg.IntervalHours != m.cfg.IntervalHours
 	m.cfg = cfg
 	m.mu.Unlock()
+	if !intervalChanged {
+		return
+	}
 	select {
 	case m.resetCh <- struct{}{}:
 	default:

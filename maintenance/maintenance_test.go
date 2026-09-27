@@ -143,20 +143,57 @@ func TestSetConfigRestartsTicker(t *testing.T) {
 	m.onRun = func() { atomic.AddInt32(&runs, 1) }
 	m.Start()
 	defer m.Stop()
+
+	// interval 0: only the immediate pass from Start() should run.
 	time.Sleep(20 * time.Millisecond)
 	if n := atomic.LoadInt32(&runs); n != 1 {
 		t.Fatalf("interval 0: runs = %d, want only the immediate pass", n)
 	}
+
 	m.SetConfig(config.MaintenanceConfig{IntervalHours: 5})
-	time.Sleep(60 * time.Millisecond)
+	deadline := time.Now().Add(2 * time.Second)
+	for atomic.LoadInt32(&runs) < 3 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
 	if n := atomic.LoadInt32(&runs); n < 3 {
 		t.Fatalf("after SetConfig(5ms): runs = %d, want periodic runs", n)
 	}
+
 	m.SetConfig(config.MaintenanceConfig{IntervalHours: 0})
-	time.Sleep(10 * time.Millisecond)
+	// Give a pass already in flight room to finish before snapshotting, so
+	// it can't land after "before" and produce a false "still ticking".
+	time.Sleep(50 * time.Millisecond)
 	before := atomic.LoadInt32(&runs)
 	time.Sleep(30 * time.Millisecond)
 	if atomic.LoadInt32(&runs) != before {
 		t.Fatal("interval 0 again: periodic runs continued")
+	}
+}
+
+// TestSetConfigSameIntervalDoesNotResetTicker verifies that saving settings
+// which don't touch IntervalHours doesn't send a ticker-reset signal — a
+// live ticker keeps counting toward its next tick instead of being
+// postponed by every unrelated settings save.
+func TestSetConfigSameIntervalDoesNotResetTicker(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	m := New(store, config.MaintenanceConfig{IntervalHours: 5, SearchResultRetentionDays: 1})
+
+	m.SetConfig(config.MaintenanceConfig{IntervalHours: 5, SearchResultRetentionDays: 2})
+
+	select {
+	case <-m.resetCh:
+		t.Fatal("SetConfig with unchanged IntervalHours sent a ticker-reset signal")
+	default:
+	}
+	if got := m.config().SearchResultRetentionDays; got != 2 {
+		t.Fatalf("SearchResultRetentionDays = %d, want 2 (other fields must still update)", got)
+	}
+
+	m.SetConfig(config.MaintenanceConfig{IntervalHours: 7, SearchResultRetentionDays: 2})
+	select {
+	case <-m.resetCh:
+	default:
+		t.Fatal("SetConfig with a changed IntervalHours must send a ticker-reset signal")
 	}
 }

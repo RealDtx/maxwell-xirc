@@ -81,7 +81,10 @@ func (e *Engine) runtime() (config.StorageConfig, int) {
 }
 
 // SetRuntime changes storage dirs, the free-space floor and the concurrency
-// limit live. Transfers already running keep the paths they started with.
+// limit live. A transfer already running keeps the temp path it started
+// with, but its final destination is resolved at finish time via
+// downloadsDir(), so it lands under the new downloads dir if this changes
+// mid-transfer.
 func (e *Engine) SetRuntime(downloadsDir, tempDir, minFreeSpace string, maxConcurrent int) {
 	e.mu.Lock()
 	e.storage.DownloadsDir, e.storage.TempDir, e.storage.MinFreeSpace = downloadsDir, tempDir, minFreeSpace
@@ -398,7 +401,7 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	}
 
 	e.transferMu.Lock()
-	destPath := e.uniqueDestPathLocked(offer.Filename)
+	destPath := e.uniqueDestPathLocked(offer.Filename, st.TempDir)
 	e.activeDestPaths[filepath.Base(destPath)] = true
 	e.transferMu.Unlock()
 
@@ -416,11 +419,14 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	}()
 }
 
-// uniqueDestPathLocked returns a unique destination path for filename, inserting
-// a numeric counter before the extension when the plain name is already in use
-// (active transfer or existing final file on disk). Must be called with transferMu held.
-func (e *Engine) uniqueDestPathLocked(filename string) string {
-	st, _ := e.runtime()
+// uniqueDestPathLocked returns a unique destination path for filename under
+// tempDir, inserting a numeric counter before the extension when the plain
+// name is already in use (active transfer or existing final file on disk).
+// tempDir is passed in (the caller's own runtime() snapshot) rather than
+// read live here, so it matches the dir handleMessage just MkdirAll'd —
+// a concurrent SetRuntime can't point this at a directory that doesn't
+// exist yet. Must be called with transferMu held.
+func (e *Engine) uniqueDestPathLocked(filename, tempDir string) string {
 	ext := filepath.Ext(filename)
 	base := strings.TrimSuffix(filename, ext)
 	for i := 0; ; i++ {
@@ -430,7 +436,7 @@ func (e *Engine) uniqueDestPathLocked(filename string) string {
 		} else {
 			name = fmt.Sprintf("%s.%d%s", base, i, ext)
 		}
-		candidate := filepath.Join(st.TempDir, name)
+		candidate := filepath.Join(tempDir, name)
 		if e.activeDestPaths[name] {
 			continue
 		}
