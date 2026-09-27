@@ -26,14 +26,14 @@ sudo scripts/install.sh
 
 The wizard:
 
-1. **Finds a binary** — `./xirc` next to the script or in the repo root, else
-   builds from source if a Go toolchain matching `go.mod`'s version is on
-   `PATH`, else downloads the newest release asset for your architecture
-   (`amd64`/`arm64`/`armv7`) from GitHub, else stops with instructions.
-2. **Asks for paths** — install directory (`/opt/xirc`), downloads directory
+1. **Asks for paths** — install directory (`/opt/xirc`), downloads directory
    (`/srv/downloads`), temp directory, media directory (`/srv/media`),
    database (SQLite path or MySQL/MariaDB DSN), and the port xirc listens on
    (`8085`, bound to `127.0.0.1`).
+2. **Finds a binary** — `./xirc` next to the script or in the repo root, else
+   builds from source if a Go toolchain matching `go.mod`'s version is on
+   `PATH`, else downloads the newest release asset for your architecture
+   (`amd64`/`arm64`/`armv7`) from GitHub, else stops with instructions.
 3. **Creates the `xirc` system user** (no login shell) if it doesn't exist.
 4. **Checks each directory**: offers to create it (owned by `xirc`) if
    missing; if it exists but isn't writable by `xirc`, offers to (a) `chown
@@ -402,10 +402,10 @@ reason instead of crashing or silently failing:
 | Downloads or temp dir | New downloads are refused (503) with the reason; the queue stops starting new transfers |
 | Media dir (or a category dir under it) | Finished downloads stay in the downloads directory instead of being sorted, with the reason recorded on the download |
 | Media dir (not readable) | Library browsing is hidden |
-| A file-manager root | The root is hidden (unreadable) or shown read-only (move/rename/delete return 403 with the reason) |
+| A file-manager root (not writable) | Move/rename/delete/create-folder are disabled for it, with the reason as a tooltip — the root itself still shows in the destination list |
+| A file-manager root (not readable) | Not hidden from the list; opening it fails with a 403 and the reason |
 | Log directory | Channel logging turns off (one warning logged) |
 | `categories.yaml`'s directory | Library settings become read-only in the UI |
-| An extraction target | Auto-extract is skipped for that download, with the reason |
 
 **Where to see it:** any disabled control shows the reason as a tooltip.
 Admins additionally see a banner listing every failing capability with a fix
