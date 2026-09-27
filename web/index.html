@@ -984,6 +984,7 @@
                         <div class="tab" :class="{ active: settingsTab === 'patterns' }" @click="settingsTab = 'patterns'; loadPatternSettings()">Patterns</div>
                         <div class="tab" :class="{ active: settingsTab === 'general' }" @click="settingsTab = 'general'">General</div>
                         <div class="tab" :class="{ active: settingsTab === 'users' }" @click="settingsTab = 'users'; loadUsers()">Users</div>
+                        <div class="tab" x-show="isAdmin" :class="{ active: settingsTab === 'system' }" @click="settingsTab = 'system'; loadSystemSettings()">System</div>
                     </div>
 
                     <!-- Servers tab -->
@@ -1412,6 +1413,128 @@
                                 </select>
                                 <button type="submit" class="btn btn-primary btn-sm">Add user</button>
                             </form>
+                        </div>
+                    </template>
+
+                    <!-- System tab -->
+                    <template x-if="settingsTab === 'system' && isAdmin">
+                        <div style="padding-top:16px;">
+                            <template x-if="!systemForm">
+                                <p style="color:var(--text-muted); font-size:13px;">Loading…</p>
+                            </template>
+                            <template x-if="systemForm">
+                                <div style="max-width:480px;">
+                                    <template x-if="systemError">
+                                        <p style="color:var(--danger); font-size:12px; margin:0 0 12px;" x-text="systemError"></p>
+                                    </template>
+                                    <template x-if="systemNotice">
+                                        <p style="color:var(--success); font-size:12px; margin:0 0 12px;" x-text="systemNotice"></p>
+                                    </template>
+                                    <template x-if="systemSettings.warnings && systemSettings.warnings.length">
+                                        <p style="color:var(--warning); font-size:12px; margin:0 0 12px;" x-text="systemSettings.warnings.join(' ')"></p>
+                                    </template>
+
+                                    <div class="settings-card" style="margin-bottom:16px;">
+                                        <h3 style="margin-bottom:12px;">Storage</h3>
+                                        <div class="form-group">
+                                            <label>Downloads folder</label>
+                                            <input type="text" x-model="systemForm.storage.downloads_dir"
+                                                   :disabled="systemLocked('storage.downloads_dir')"
+                                                   :title="systemLocked('storage.downloads_dir') ? 'Set by environment variable ' + systemEnvVar('storage.downloads_dir') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Temp folder</label>
+                                            <input type="text" x-model="systemForm.storage.temp_dir"
+                                                   :disabled="systemLocked('storage.temp_dir')"
+                                                   :title="systemLocked('storage.temp_dir') ? 'Set by environment variable ' + systemEnvVar('storage.temp_dir') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Minimum free space</label>
+                                            <input type="text" x-model="systemForm.storage.min_free_space" placeholder="1GB"
+                                                   :disabled="systemLocked('storage.min_free_space')"
+                                                   :title="systemLocked('storage.min_free_space') ? 'Set by environment variable ' + systemEnvVar('storage.min_free_space') : ''">
+                                        </div>
+                                    </div>
+
+                                    <div class="settings-card" style="margin-bottom:16px;">
+                                        <h3 style="margin-bottom:12px;">Downloads</h3>
+                                        <div class="form-group">
+                                            <label>Max parallel downloads</label>
+                                            <input type="number" min="1" max="20" x-model.number="systemForm.downloads.max_concurrent"
+                                                   :disabled="systemLocked('downloads.max_concurrent')"
+                                                   :title="systemLocked('downloads.max_concurrent') ? 'Set by environment variable ' + systemEnvVar('downloads.max_concurrent') : ''">
+                                        </div>
+                                    </div>
+
+                                    <div class="settings-card" style="margin-bottom:16px;">
+                                        <h3 style="margin-bottom:12px;">Maintenance</h3>
+                                        <div class="form-group">
+                                            <label>Keep search results (days, 0 = forever)</label>
+                                            <input type="number" min="0" x-model.number="systemForm.maintenance.search_result_retention_days"
+                                                   :disabled="systemLocked('maintenance.search_result_retention_days')"
+                                                   :title="systemLocked('maintenance.search_result_retention_days') ? 'Set by environment variable ' + systemEnvVar('maintenance.search_result_retention_days') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Max indexed files (0 = no cap)</label>
+                                            <input type="number" min="0" x-model.number="systemForm.maintenance.index_max_files"
+                                                   :disabled="systemLocked('maintenance.index_max_files')"
+                                                   :title="systemLocked('maintenance.index_max_files') ? 'Set by environment variable ' + systemEnvVar('maintenance.index_max_files') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Run every (hours, 0 = only at start)</label>
+                                            <input type="number" min="0" x-model.number="systemForm.maintenance.interval_hours"
+                                                   :disabled="systemLocked('maintenance.interval_hours')"
+                                                   :title="systemLocked('maintenance.interval_hours') ? 'Set by environment variable ' + systemEnvVar('maintenance.interval_hours') : ''">
+                                        </div>
+                                    </div>
+
+                                    <div class="settings-card" style="margin-bottom:16px;">
+                                        <h3 style="margin-bottom:12px;">Login</h3>
+                                        <div class="form-group">
+                                            <label>Networks that skip login (comma-separated CIDRs)</label>
+                                            <input type="text" x-model="systemForm.auth.trusted_networks" placeholder="192.168.1.0/24, 10.0.0.0/8"
+                                                   :disabled="systemLocked('auth.trusted_networks')"
+                                                   :title="systemLocked('auth.trusted_networks') ? 'Set by environment variable ' + systemEnvVar('auth.trusted_networks') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Role for those networks</label>
+                                            <select x-model="systemForm.auth.trusted_role"
+                                                    :disabled="systemLocked('auth.trusted_role')"
+                                                    :title="systemLocked('auth.trusted_role') ? 'Set by environment variable ' + systemEnvVar('auth.trusted_role') : ''">
+                                                <option value="admin">admin</option>
+                                                <option value="user">user</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Trusted proxies (comma-separated)</label>
+                                            <input type="text" x-model="systemForm.auth.trusted_proxies" placeholder="127.0.0.1/32, ::1/128"
+                                                   :disabled="systemLocked('auth.trusted_proxies')"
+                                                   :title="systemLocked('auth.trusted_proxies') ? 'Set by environment variable ' + systemEnvVar('auth.trusted_proxies') : ''">
+                                        </div>
+                                    </div>
+
+                                    <div class="settings-card" style="margin-bottom:16px;">
+                                        <h3 style="margin-bottom:12px;">Server (read-only)</h3>
+                                        <p style="font-size:12px; color:var(--text-secondary); margin:4px 0;">
+                                            Host: <span x-text="systemSettings.readonly.server.host"></span>:<span x-text="systemSettings.readonly.server.port"></span><span x-text="systemSettings.readonly.server.prefix"></span>
+                                        </p>
+                                        <p style="font-size:12px; color:var(--text-secondary); margin:4px 0;">
+                                            Database: <span x-text="systemSettings.readonly.database.driver"></span> — <span x-text="systemSettings.readonly.database.path"></span>
+                                        </p>
+                                        <p style="font-size:12px; color:var(--text-secondary); margin:4px 0;">
+                                            Config file: <span x-text="systemSettings.readonly.config_path"></span>
+                                        </p>
+                                        <p style="font-size:12px; color:var(--text-secondary); margin:4px 0;">
+                                            Media root: <span x-text="systemSettings.readonly.media_dir"></span> — change it under Settings → Library.
+                                        </p>
+                                    </div>
+
+                                    <template x-if="!systemSettings.persist.ok">
+                                        <p style="color:var(--warning); font-size:12px; margin:0 0 12px;" x-text="systemSettings.persist.reason"></p>
+                                    </template>
+                                    <button class="btn btn-primary btn-sm" @click="saveSystemSettings()" :disabled="!systemSettings.persist.ok">Save</button>
+                                </div>
+                            </template>
                         </div>
                     </template>
 

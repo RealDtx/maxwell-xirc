@@ -147,6 +147,12 @@ document.addEventListener('alpine:init', () => {
         libraryPreviewResult: null,
         _libraryPreviewTimer: null,
 
+        // System settings (admin)
+        systemSettings: null,  // full GET/PUT response: {settings, locked, persist, readonly, warnings}
+        systemForm: null,      // editable copy of systemSettings.settings, list fields as comma strings
+        systemError: '',
+        systemNotice: '',
+
         // Mode
         appMode: localStorage.getItem('mxirc_mode') || 'simple',
         dateFormat: localStorage.getItem('mxirc_date_format') || 'DD-MM-YYYY HH:MM:SS',
@@ -2329,6 +2335,70 @@ document.addEventListener('alpine:init', () => {
             if (this._libraryOriginal) this.library = JSON.parse(this._libraryOriginal);
             this.libraryNote = '';
             this.libraryError = '';
+        },
+
+        // --- System settings (admin) ---
+
+        _systemToForm(s) {
+            return {
+                storage: { ...s.storage },
+                downloads: { ...s.downloads },
+                maintenance: { ...s.maintenance },
+                auth: {
+                    trusted_networks: (s.auth.trusted_networks || []).join(', '),
+                    trusted_role: s.auth.trusted_role,
+                    trusted_proxies: (s.auth.trusted_proxies || []).join(', '),
+                },
+            };
+        },
+        _systemSplit(text) {
+            return (text || '').split(',').map(s => s.trim()).filter(Boolean);
+        },
+        systemLocked(key) {
+            return !!(this.systemSettings && this.systemSettings.locked && this.systemSettings.locked.includes(key));
+        },
+        systemEnvVar(key) {
+            return 'XIRC_' + key.toUpperCase().replace('.', '_');
+        },
+
+        async loadSystemSettings() {
+            this.systemError = '';
+            try {
+                this.systemSettings = await api.getSettings();
+                this.systemForm = this._systemToForm(this.systemSettings.settings);
+            } catch (e) {
+                this.systemError = e.message || 'Failed to load settings';
+            }
+        },
+
+        async saveSystemSettings() {
+            this.systemError = '';
+            const networks = this._systemSplit(this.systemForm.auth.trusted_networks);
+            if (this.me && this.me.via === 'network') {
+                const current = this.systemSettings.settings.auth.trusted_networks || [];
+                const changed = networks.length === 0 || JSON.stringify(networks) !== JSON.stringify(current);
+                if (changed && !confirm("You're signed in through a trusted network. After saving you may need to log in with a user account. Continue?")) {
+                    return;
+                }
+            }
+            const payload = {
+                storage: { ...this.systemForm.storage },
+                downloads: { ...this.systemForm.downloads },
+                maintenance: { ...this.systemForm.maintenance },
+                auth: {
+                    trusted_networks: networks,
+                    trusted_role: this.systemForm.auth.trusted_role,
+                    trusted_proxies: this._systemSplit(this.systemForm.auth.trusted_proxies),
+                },
+            };
+            try {
+                this.systemSettings = await api.saveSettings(payload);
+                this.systemForm = this._systemToForm(this.systemSettings.settings);
+                this.systemNotice = 'Saved — applied';
+                setTimeout(() => { this.systemNotice = ''; }, 3000);
+            } catch (e) {
+                this.systemError = e.message || 'Save failed';
+            }
         },
 
         libraryFieldsFor(kind) {

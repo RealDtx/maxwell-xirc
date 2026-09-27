@@ -391,6 +391,30 @@ creates the user if it doesn't exist, or resets its password and role to
 
 ---
 
+## Settings in the web UI
+
+Admins can edit most of `config.yaml` live under **Settings → System**, without
+restarting or SSHing in: storage (downloads/temp folders, minimum free
+space), max parallel downloads, maintenance (search-result retention, index
+cap, how often it runs), and login (trusted networks, their role, trusted
+proxies — the same fields as [Users & login](#users--login) above). Changes
+are validated, written to `config.yaml`, and applied to the running server
+immediately.
+
+`server.*` and `database.*` (including the DSN, never exposed by any API)
+and the media root aren't editable here — the media root lives under
+**Settings → Library**; the rest only change by editing `config.yaml` and
+restarting.
+
+A field set by an `XIRC_*` environment variable (see
+[Option A](#option-a--scriptsinstallsh)) shows disabled in the UI — the env
+var always wins on the next restart, so the page won't let you override it
+there. If `config.yaml` isn't writable by the user xirc runs as, the System
+tab shows why and disables Save; see [Permissions](#permissions) below to
+fix ownership.
+
+---
+
 ## Reverse proxy
 
 The systemd install (`install.sh`, `preconfig`) binds xirc to `127.0.0.1` —

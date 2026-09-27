@@ -162,4 +162,8 @@ const api = {
     // Capabilities
     getCapabilities()     { return this.get('/capabilities'); },
     recheckCapabilities() { return this.post('/capabilities/recheck', {}); },
+
+    // Settings
+    getSettings()      { return this.get('/settings'); },
+    saveSettings(s)    { return this.put('/settings', s); },
 };
