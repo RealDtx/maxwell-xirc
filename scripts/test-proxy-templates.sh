@@ -17,12 +17,12 @@ check nginx_subpath "$(render_nginx_subpath)" "location /xirc/" "proxy_pass http
 check apache_site   "$(render_apache_site)"   "ServerName xirc.example.com" "ProxyPass / http://127.0.0.1:8085/" "ws://127.0.0.1:8085/" "ProxyPreserveHost On" "X-Forwarded-Proto"
 check apache_subpath "$(render_apache_subpath)" "ProxyPass /xirc/ http://127.0.0.1:8085/" "ws://127.0.0.1:8085/ws" "ProxyPreserveHost On"
 if command -v nginx >/dev/null; then
-    # pid/error log in the temp dir: CI runs nginx -t as a non-root user.
+    # Temp-dir paths and an unprivileged port: CI runs nginx -t as a non-root user.
     tmp=$(mktemp -d)
     {
         echo "pid $tmp/nginx.pid; error_log $tmp/error.log; events {} http { access_log off;"
         for t in client_body proxy fastcgi uwsgi scgi; do echo "${t}_temp_path $tmp/$t;"; done
-        render_nginx_site
+        render_nginx_site | sed 's/listen 80;/listen 8080;/' # nginx -t binds; <1024 needs root
         echo "}"
     } >"$tmp/n.conf"
     eflag=(); nginx -h 2>&1 | grep -q -- '-e filename' && eflag=(-e "$tmp/error.log") # nginx >= 1.19.5
