@@ -121,7 +121,10 @@ Dockerfile (`XIRC_SERVER_HOST`, `XIRC_DATABASE_PATH=/data/xirc.db`,
 `XIRC_STORAGE_DOWNLOADS_DIR=/downloads`, `XIRC_STORAGE_TEMP_DIR`,
 `XIRC_STORAGE_MEDIA_DIR=/media`, `XIRC_STORAGE_CATEGORIES_FILE`); mount a
 `/data/config.yaml` or add more `XIRC_*` environment variables to override
-anything else.
+anything else. Mount the `/data` directory (as above), not a single
+`config.yaml` file: saving System settings replaces the file atomically,
+which a single-file bind mount doesn't allow (xirc then falls back to a
+non-atomic in-place write).
 
 **MariaDB** (optional, instead of the default SQLite):
 
@@ -228,8 +231,9 @@ ssh maxwell@target "sudo usermod -aG xirc maxwell && sudo chmod -R g+w /opt/xirc
 directory you chose; the group change applies from the next SSH login.)
 Match the paths and port you answer with to what you gave `preconfig` (or
 just re-run `preconfig` afterwards to match what you chose in the wizard).
-`make deploy` will then overwrite `config.yaml`, `xirc.service` and any
-proxy files it manages with the profile's own copies.
+`make deploy` will then overwrite `xirc.service` and any proxy files it
+manages with the profile's own copies; the wizard's `config.yaml` is kept
+(see [Subsequent deploys](#subsequent-deploys)).
 
 If you'd rather not run the wizard, create the pieces by hand:
 
@@ -273,7 +277,8 @@ This will:
    `/etc/apache2/conf-available/xirc.conf` (include it yourself in your
    `<VirtualHost>`). Each case runs `nginx -t` / `apachectl configtest`
    before reloading.
-5. Push `.maxwell/config.yaml` to `<install_dir>/config.yaml`.
+5. Push `.maxwell/config.yaml` to `<install_dir>/config.yaml` — only if the
+   target has none yet (`FORCE_CONFIG=1` pushes it anyway).
 6. `sudo systemctl restart xirc`.
 
 ### Enable start on boot
@@ -302,8 +307,15 @@ curl http://maxwell.local:8085/
 make deploy PROFILE=maxwell
 ```
 
-The profile's `config.yaml` is always pushed. To push a different config file
-instead:
+The profile's `config.yaml` is only pushed when the target has none, so
+settings saved in the web UI survive deploys. To overwrite the target's file
+with the profile's anyway:
+
+```bash
+make deploy PROFILE=maxwell FORCE_CONFIG=1
+```
+
+To push a different config file instead (always pushed):
 
 ```bash
 make deploy PROFILE=maxwell PI_CONFIG=/path/to/other.yaml
@@ -399,7 +411,9 @@ space), max parallel downloads, maintenance (search-result retention, index
 cap, how often it runs), and login (trusted networks, their role, trusted
 proxies — the same fields as [Users & login](#users--login) above). Changes
 are validated, written to `config.yaml`, and applied to the running server
-immediately.
+immediately. The first save writes every editable key into `config.yaml`
+(defaults become explicit values) and leaves the file owned by the user xirc
+runs as, with its mode kept.
 
 `server.*` and `database.*` (including the DSN, never exposed by any API)
 and the media root aren't editable here — the media root lives under
@@ -407,11 +421,20 @@ and the media root aren't editable here — the media root lives under
 restarting.
 
 A field set by an `XIRC_*` environment variable (see
-[Option A](#option-a--scriptsinstallsh)) shows disabled in the UI — the env
+[Option B](#option-b--docker) and
+[Upgrading](#upgrading-from-03-or-earlier) for the naming) shows disabled in the UI — the env
 var always wins on the next restart, so the page won't let you override it
 there. If `config.yaml` isn't writable by the user xirc runs as, the System
 tab shows why and disables Save; see [Permissions](#permissions) below to
 fix ownership.
+
+After the directory-setup wizard runs on first start, restart xirc before
+editing System settings, so the running server and the System tab see the
+wizard's directories.
+
+With `make deploy`, the target's `config.yaml` belongs to the UI after the
+first deploy; `make deploy FORCE_CONFIG=1` pushes the profile's file again
+(overwriting what was saved in the UI).
 
 ---
 
@@ -469,6 +492,7 @@ reason instead of crashing or silently failing:
 | A file-manager root (not readable) | Not hidden from the list; opening it fails with a 403 and the reason |
 | Log directory | Channel logging turns off (one warning logged) |
 | `categories.yaml`'s directory | Library settings become read-only in the UI |
+| `config.yaml`'s directory | System settings can't be saved (Save disabled, with the reason) — xirc writes a temp file there and renames it over `config.yaml` |
 
 **Where to see it:** any disabled control shows the reason as a tooltip.
 Admins additionally see a banner listing every failing capability with a fix
