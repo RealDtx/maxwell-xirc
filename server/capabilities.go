@@ -28,11 +28,15 @@ type Capabilities struct {
 }
 
 type capState struct {
-	mu      sync.Mutex
-	tempDir string
-	logDir  string
-	bus     *irc.EventBus
-	current *Capabilities
+	mu sync.Mutex
+	// downloadsDir is storage.downloads_dir from config.yaml — a root
+	// alongside the library's category dirs (see configuredRoots). It lives
+	// next to tempDir because both are live-updatable storage paths.
+	downloadsDir string
+	tempDir      string
+	logDir       string
+	bus          *irc.EventBus
+	current      *Capabilities
 }
 
 // SetCapabilityInputs wires the paths and event bus capability checks need —
@@ -41,6 +45,24 @@ func (s *Server) SetCapabilityInputs(tempDir, logDir string, bus *irc.EventBus) 
 	s.caps.mu.Lock()
 	s.caps.tempDir, s.caps.logDir, s.caps.bus = tempDir, logDir, bus
 	s.caps.mu.Unlock()
+}
+
+// setStorageDirs live-updates the downloads root and queue temp dir
+// together, so a settings apply can't leave one stale relative to the
+// other. All reads go through downloadsDirNow (and, for tempDir, the lock
+// in computeCapabilities).
+func (s *Server) setStorageDirs(downloadsDir, tempDir string) {
+	s.caps.mu.Lock()
+	s.caps.downloadsDir, s.caps.tempDir = downloadsDir, tempDir
+	s.caps.mu.Unlock()
+}
+
+// downloadsDirNow returns the current downloads root; all reads of the
+// downloads root go through this getter since it's live-updatable.
+func (s *Server) downloadsDirNow() string {
+	s.caps.mu.Lock()
+	defer s.caps.mu.Unlock()
+	return s.caps.downloadsDir
 }
 
 // writableOrCreatable: an existing dir must be writable; a missing one is
@@ -71,7 +93,7 @@ func firstFailure(dirs ...string) Capability {
 
 func (s *Server) computeCapabilities() Capabilities {
 	s.caps.mu.Lock()
-	tempDir, logDir := s.caps.tempDir, s.caps.logDir
+	downloadsDir, tempDir, logDir := s.caps.downloadsDir, s.caps.tempDir, s.caps.logDir
 	s.caps.mu.Unlock()
 
 	c := Capabilities{Roots: []fscheck.DirStatus{}}
@@ -81,7 +103,7 @@ func (s *Server) computeCapabilities() Capabilities {
 	for _, r := range s.configuredRoots() {
 		c.Roots = append(c.Roots, fscheck.Probe(r))
 	}
-	c.Downloads = firstFailure(s.downloadsDir, tempDir)
+	c.Downloads = firstFailure(downloadsDir, tempDir)
 	c.Logging = firstFailure(logDir)
 	c.Library, c.LibraryRead, c.LibraryConfig = Capability{OK: true}, Capability{OK: true}, Capability{OK: true}
 	if s.library != nil {

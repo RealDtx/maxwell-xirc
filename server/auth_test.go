@@ -184,6 +184,65 @@ func TestCrossSiteRequestsRejected(t *testing.T) {
 	}
 }
 
+func TestAuthUpdateChangesTrustedNetworks(t *testing.T) {
+	a, err := NewAuth(config.AuthConfig{TrustedRole: "admin"}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/downloads", nil)
+	req.RemoteAddr = "192.168.1.5:1234"
+	if p := a.networkPrincipal(req); p != nil {
+		t.Fatalf("before update: %+v", p)
+	}
+	if err := a.Update(config.AuthConfig{TrustedNetworks: []string{"192.168.0.0/16"}, TrustedRole: "user"}); err != nil {
+		t.Fatal(err)
+	}
+	if p := a.networkPrincipal(req); p == nil || p.Role != "user" {
+		t.Fatalf("after update: %+v", p)
+	}
+	if err := a.Update(config.AuthConfig{TrustedNetworks: []string{"nope"}, TrustedRole: "user"}); err == nil {
+		t.Fatal("invalid CIDR accepted")
+	}
+	if p := a.networkPrincipal(req); p == nil || p.Role != "user" {
+		t.Fatalf("failed update changed policy: %+v", p)
+	}
+}
+
+func TestParseAuthPolicy(t *testing.T) {
+	if err := ParseAuthPolicy(config.AuthConfig{TrustedRole: "admin"}); err != nil {
+		t.Errorf("valid config rejected: %v", err)
+	}
+	if err := ParseAuthPolicy(config.AuthConfig{TrustedRole: "root"}); err == nil {
+		t.Error("bad role accepted")
+	}
+	if err := ParseAuthPolicy(config.AuthConfig{TrustedRole: "user", TrustedNetworks: []string{"nope"}}); err == nil {
+		t.Error("bad CIDR accepted")
+	}
+}
+
+// TestAuthUpdateRace exercises Update concurrently with networkPrincipal
+// resolution under -race, to catch any read of the trusted-network policy
+// that isn't a single atomic snapshot.
+func TestAuthUpdateRace(t *testing.T) {
+	a, err := NewAuth(config.AuthConfig{TrustedRole: "admin"}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/downloads", nil)
+	req.RemoteAddr = "192.168.1.5:1234"
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			a.Update(config.AuthConfig{TrustedNetworks: []string{"192.168.0.0/16"}, TrustedRole: "user"})
+		}
+	}()
+	for i := 0; i < 200; i++ {
+		a.networkPrincipal(req)
+	}
+	<-done
+}
+
 func TestSessionCookieAuthenticates(t *testing.T) {
 	srv, store := newAuthTestServer(t, config.AuthConfig{})
 	u := &db.User{Username: "bob", PasswordHash: "x", Role: "user", CreatedAt: time.Now()}

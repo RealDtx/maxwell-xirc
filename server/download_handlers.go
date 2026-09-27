@@ -345,7 +345,7 @@ func (s *Server) configuredRoots() []string {
 			add(dir)
 		}
 	}
-	add(s.downloadsDir)
+	add(s.downloadsDirNow())
 	return dirs
 }
 

@@ -10,6 +10,25 @@ import (
 	"testing"
 )
 
+// TestStorageDirsRace exercises setStorageDirs concurrently with
+// downloadsDirNow under -race, to catch any read of the downloads root that
+// isn't lock-protected.
+func TestStorageDirsRace(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			srv.setStorageDirs("/downloads", "/tmp")
+		}
+	}()
+	for i := 0; i < 200; i++ {
+		srv.downloadsDirNow()
+	}
+	<-done
+}
+
 func TestCapabilities_ReadOnlyDownloadsDisablesRequests(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores permissions")

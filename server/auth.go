@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/RealDtx/maxwell-irc/config"
@@ -42,12 +43,42 @@ func principalFrom(ctx context.Context) *Principal {
 }
 
 type Auth struct {
-	store       db.Store
+	store      db.Store
+	policy     atomic.Pointer[authPolicy]
+	cookiePath string
+	limiter    *loginLimiter // Task 6
+}
+
+// authPolicy is the trusted-network login policy: which networks skip
+// login, which proxies' X-Forwarded-For to believe, and the role granted to
+// a trusted-network client. It's swapped as one unit via Auth.Update so a
+// resolution in flight never mixes old proxies with new networks.
+type authPolicy struct {
 	trustedNets []*net.IPNet
 	proxies     []*net.IPNet
 	trustedRole string
-	cookiePath  string
-	limiter     *loginLimiter // Task 6
+}
+
+func parsePolicy(cfg config.AuthConfig) (*authPolicy, error) {
+	if cfg.TrustedRole != "admin" && cfg.TrustedRole != "user" {
+		return nil, fmt.Errorf("auth.trusted_role must be admin or user, got %q", cfg.TrustedRole)
+	}
+	nets, err := parseCIDRs(cfg.TrustedNetworks)
+	if err != nil {
+		return nil, fmt.Errorf("auth.trusted_networks: %w", err)
+	}
+	proxies, err := parseCIDRs(cfg.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("auth.trusted_proxies: %w", err)
+	}
+	return &authPolicy{nets, proxies, cfg.TrustedRole}, nil
+}
+
+// ParseAuthPolicy validates cfg exactly like NewAuth/Update, without
+// building an Auth — for the settings handler to validate before persisting.
+func ParseAuthPolicy(cfg config.AuthConfig) error {
+	_, err := parsePolicy(cfg)
+	return err
 }
 
 func parseCIDRs(list []string) ([]*net.IPNet, error) {
@@ -70,23 +101,28 @@ func parseCIDRs(list []string) ([]*net.IPNet, error) {
 }
 
 func NewAuth(cfg config.AuthConfig, store db.Store, prefix string) (*Auth, error) {
-	if cfg.TrustedRole != "admin" && cfg.TrustedRole != "user" {
-		return nil, fmt.Errorf("auth.trusted_role must be admin or user, got %q", cfg.TrustedRole)
-	}
-	nets, err := parseCIDRs(cfg.TrustedNetworks)
+	p, err := parsePolicy(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("auth.trusted_networks: %w", err)
-	}
-	proxies, err := parseCIDRs(cfg.TrustedProxies)
-	if err != nil {
-		return nil, fmt.Errorf("auth.trusted_proxies: %w", err)
+		return nil, err
 	}
 	path := strings.TrimRight(prefix, "/")
 	if path == "" {
 		path = "/"
 	}
-	return &Auth{store: store, trustedNets: nets, proxies: proxies, trustedRole: cfg.TrustedRole,
-		cookiePath: path, limiter: newLoginLimiter()}, nil
+	a := &Auth{store: store, cookiePath: path, limiter: newLoginLimiter()}
+	a.policy.Store(p)
+	return a, nil
+}
+
+// Update swaps the trusted-network policy live; in-flight requests finish
+// with the policy they started with.
+func (a *Auth) Update(cfg config.AuthConfig) error {
+	p, err := parsePolicy(cfg)
+	if err != nil {
+		return err
+	}
+	a.policy.Store(p)
+	return nil
 }
 
 func inNets(ip net.IP, nets []*net.IPNet) bool {
@@ -110,8 +146,12 @@ func remoteIP(r *http.Request) net.IP {
 // the right-most hop that is not itself a trusted proxy (left entries are
 // client-controlled).
 func (a *Auth) clientIP(r *http.Request) net.IP {
+	return clientIPFromProxies(r, a.policy.Load().proxies)
+}
+
+func clientIPFromProxies(r *http.Request, proxies []*net.IPNet) net.IP {
 	ip := remoteIP(r)
-	if ip == nil || !inNets(ip, a.proxies) {
+	if ip == nil || !inNets(ip, proxies) {
 		return ip
 	}
 	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
@@ -120,7 +160,7 @@ func (a *Auth) clientIP(r *http.Request) net.IP {
 		if h == nil {
 			break
 		}
-		if !inNets(h, a.proxies) {
+		if !inNets(h, proxies) {
 			return h
 		}
 	}
@@ -132,7 +172,7 @@ func (a *Auth) isHTTPS(r *http.Request) bool {
 		return true
 	}
 	ip := remoteIP(r)
-	if ip == nil || !inNets(ip, a.proxies) {
+	if ip == nil || !inNets(ip, a.policy.Load().proxies) {
 		return false
 	}
 	proto := r.Header.Values("X-Forwarded-Proto")
@@ -179,8 +219,16 @@ func (a *Auth) principal(r *http.Request) *Principal {
 	if p := a.sessionPrincipal(r); p != nil {
 		return p
 	}
-	if ip := a.clientIP(r); ip != nil && inNets(ip, a.trustedNets) {
-		return &Principal{Username: "lan", Role: a.trustedRole, Via: "network"}
+	return a.networkPrincipal(r)
+}
+
+// networkPrincipal checks the trusted-proxy and trusted-network rules
+// against a single policy snapshot, loaded once, so a concurrent Update
+// can't mix old proxies with new networks within one resolution.
+func (a *Auth) networkPrincipal(r *http.Request) *Principal {
+	p := a.policy.Load()
+	if ip := clientIPFromProxies(r, p.proxies); ip != nil && inNets(ip, p.trustedNets) {
+		return &Principal{Username: "lan", Role: p.trustedRole, Via: "network"}
 	}
 	return nil
 }
@@ -262,9 +310,10 @@ func (a *Auth) middleware(next http.Handler) http.Handler {
 }
 
 func logAuthConfig(a *Auth) {
-	if len(a.trustedNets) == 0 {
+	p := a.policy.Load()
+	if len(p.trustedNets) == 0 {
 		log.Printf("auth: login required for all clients")
 	} else {
-		log.Printf("auth: %d trusted network(s) skip login as role %q", len(a.trustedNets), a.trustedRole)
+		log.Printf("auth: %d trusted network(s) skip login as role %q", len(p.trustedNets), p.trustedRole)
 	}
 }

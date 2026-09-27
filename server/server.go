@@ -27,12 +27,9 @@ type Server struct {
 	prefix  string
 	webFS   fs.FS
 	library *library.Manager
-	// downloadsDir is storage.downloads_dir from config.yaml — a root
-	// alongside the library's category dirs (see configuredRoots).
-	downloadsDir string
-	auth         *Auth
-	setupMu      sync.Mutex // serialises /api/auth/setup and last-admin checks
-	caps         capState
+	auth    *Auth
+	setupMu sync.Mutex // serialises /api/auth/setup and last-admin checks
+	caps    capState
 }
 
 // SetLibrary wires the library manager in — set once at startup.
@@ -41,9 +38,12 @@ func (s *Server) SetLibrary(m *library.Manager) {
 }
 
 // SetDownloadsDir wires storage.downloads_dir in — set once at startup,
-// alongside SetLibrary.
+// alongside SetLibrary. It's a thin wrapper over the capability lock that
+// guards downloadsDir; setStorageDirs is the live-update path.
 func (s *Server) SetDownloadsDir(dir string) {
-	s.downloadsDir = dir
+	s.caps.mu.Lock()
+	s.caps.downloadsDir = dir
+	s.caps.mu.Unlock()
 }
 
 func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer, setup *SetupState, prefix string, webFS fs.FS) *Server {
