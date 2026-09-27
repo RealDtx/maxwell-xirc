@@ -116,7 +116,7 @@ document.addEventListener('alpine:init', () => {
         downloadTargets: [],
         _dlTargetsLoaded: false,
         _dlPredicted: {},       // filename -> predicted path, relative to media root (from /library/preview)
-        _dlPredictedFull: {},   // filename -> predicted full path
+        _dlPredictedFull: {},   // filename -> predicted destination folder (absolute)
         _dlMediaRoot: '',
         _dlMediaRootLoaded: false,
         ircMessages: {},
@@ -1456,8 +1456,9 @@ document.addEventListener('alpine:init', () => {
             } else if (dl.target_dir) {
                 path = dl.target_dir; isFile = false;
             } else {
+                // Predicted value is the destination *folder* (library.Preview), not a file path.
                 const full = dl.filename && this._dlPredictedFull[dl.filename];
-                if (full) { path = full; isFile = true; }
+                if (full) { path = full; isFile = false; }
             }
 
             const hidden = path && /(^|\/)\.[^/]+(\/|$)/.test(path);
