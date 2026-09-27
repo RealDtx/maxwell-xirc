@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -29,59 +28,35 @@ func IsArchive(filename string) bool {
 	return false
 }
 
-// Extract unpacks archivePath into destDir and returns the paths of all
-// extracted regular files. Extraction is performed into a temporary staging
-// directory inside destDir (so it lives on the same filesystem). On failure
-// the staging directory is removed, leaving the archive untouched. Requires tar(1).
-func Extract(archivePath, destDir string) ([]string, error) {
+// Extract unpacks archivePath into a fresh staging directory inside destDir
+// (so it lives on the same filesystem) and returns the regular files it
+// contains plus the staging directory itself. On failure the staging
+// directory is removed, leaving the archive untouched. Requires tar(1).
+func Extract(archivePath, destDir string) ([]string, string, error) {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return nil, fmt.Errorf("creating extract dir: %w", err)
+		return nil, "", fmt.Errorf("creating extract dir: %w", err)
 	}
 	tempDir, err := os.MkdirTemp(destDir, ".extract_")
 	if err != nil {
-		return nil, fmt.Errorf("creating temp extract dir: %w", err)
+		return nil, "", fmt.Errorf("creating temp extract dir: %w", err)
 	}
-	// -x extract, -v list extracted names, -f read from file, -C change to tempDir
-	out, err := exec.Command("tar", "-xvf", archivePath, "-C", tempDir).Output()
-	if err != nil {
+	if out, err := exec.Command("tar", "-xf", archivePath, "-C", tempDir).CombinedOutput(); err != nil {
 		os.RemoveAll(tempDir) // clean up any partial extraction
-		return nil, fmt.Errorf("tar: %w", err)
+		return nil, "", fmt.Errorf("tar: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-
-	var files []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		line = strings.TrimSpace(strings.TrimPrefix(line, "./"))
-		if line == "" || strings.HasSuffix(line, "/") {
-			continue // skip blank lines and directory entries
-		}
-		fullPath := filepath.Join(tempDir, line)
-		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-			files = append(files, fullPath)
-		}
-	}
-	return files, nil
+	return RegularFiles(tempDir), tempDir, nil
 }
 
-// RemoveEmptyDirs removes empty subdirectories under root (but not root itself),
-// working deepest-first so that parent directories become empty once their
-// children are removed.
-func RemoveEmptyDirs(root string) {
-	var dirs []string
-	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err == nil && d.IsDir() && path != root {
-			dirs = append(dirs, path)
+// RegularFiles lists every regular file under dir (symlinks, devices and
+// other special entries are skipped). The list comes from the filesystem,
+// never from a tool's text output, so names in any encoding survive.
+func RegularFiles(dir string) []string {
+	var files []string
+	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			files = append(files, path)
 		}
 		return nil
 	})
-	// Sort deepest first so children are removed before their parents are checked.
-	sort.Slice(dirs, func(i, j int) bool {
-		return strings.Count(dirs[i], string(filepath.Separator)) >
-			strings.Count(dirs[j], string(filepath.Separator))
-	})
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if err == nil && len(entries) == 0 {
-			os.Remove(dir)
-		}
-	}
+	return files
 }

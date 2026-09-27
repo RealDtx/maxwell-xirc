@@ -1,12 +1,14 @@
 package queue
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/RealDtx/maxwell-irc/library"
+	"github.com/RealDtx/maxwell-irc/routing"
 )
 
 func writeZip(t *testing.T, path string, files map[string]string) {
@@ -50,11 +52,11 @@ func TestPlaceExtracted_CollisionKeepsOriginalAndArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	extracted, err := library.Extract(archive, dir)
+	extracted, staging, err := library.Extract(archive, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	warning := placeExtracted(archive, dir, extracted, true)
+	warning := placeExtracted(archive, dir, staging, extracted, true)
 
 	if got := readFile(t, existing); got != "original" {
 		t.Errorf("existing file clobbered: %q", got)
@@ -80,11 +82,11 @@ func TestPlaceExtracted_CleanDeletesArchive(t *testing.T) {
 	archive := filepath.Join(dir, "pack.zip")
 	writeZip(t, archive, map[string]string{"sub/ep01.mkv": "one"})
 
-	extracted, err := library.Extract(archive, dir)
+	extracted, staging, err := library.Extract(archive, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := placeExtracted(archive, dir, extracted, true); w != "" {
+	if w := placeExtracted(archive, dir, staging, extracted, true); w != "" {
 		t.Errorf("unexpected warning: %s", w)
 	}
 	if got := readFile(t, filepath.Join(dir, "ep01.mkv")); got != "one" {
@@ -96,5 +98,94 @@ func TestPlaceExtracted_CleanDeletesArchive(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 1 {
 		t.Errorf("expected only ep01.mkv left, got %v", entries)
+	}
+}
+
+func writeTar(t *testing.T, path string, hdrs []*tar.Header, bodies []string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	for i, h := range hdrs {
+		if h.Typeflag == tar.TypeReg {
+			h.Size = int64(len(bodies[i]))
+		}
+		if h.Mode == 0 {
+			h.Mode = 0644
+		}
+		if err := tw.WriteHeader(h); err != nil {
+			t.Fatal(err)
+		}
+		tw.Write([]byte(bodies[i]))
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+}
+
+func assertNoStaging(t *testing.T, dir string) {
+	t.Helper()
+	if m, _ := filepath.Glob(filepath.Join(dir, ".extract_*")); len(m) != 0 {
+		t.Errorf("staging dir left behind: %v", m)
+	}
+}
+
+// tar -v under the C locale escapes non-ASCII names; the file list must come
+// from the filesystem so the file is placed, not stranded while the archive
+// is deleted. An unrelated empty user folder must survive.
+func TestPlaceExtracted_NonASCIITarCLocale(t *testing.T) {
+	t.Setenv("LC_ALL", "C")
+	dir := t.TempDir()
+	userDir := filepath.Join(dir, "Season 2")
+	if err := os.Mkdir(userDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(dir, "pack.tar")
+	writeTar(t, archive, []*tar.Header{{Name: "sub/Größe.mkv", Typeflag: tar.TypeReg}}, []string{"data"})
+
+	extracted, staging, err := routing.Extract(archive, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := placeExtracted(archive, dir, staging, extracted, true); w != "" {
+		t.Errorf("unexpected warning: %s", w)
+	}
+	if got := readFile(t, filepath.Join(dir, "Größe.mkv")); got != "data" {
+		t.Errorf("Größe.mkv: %q", got)
+	}
+	if _, err := os.Stat(archive); !os.IsNotExist(err) {
+		t.Errorf("archive should be deleted, stat err=%v", err)
+	}
+	if _, err := os.Stat(userDir); err != nil {
+		t.Errorf("empty user folder removed: %v", err)
+	}
+	assertNoStaging(t, dir)
+}
+
+// Anything that can't be placed (here a symlink, which is not a regular
+// file) stays in staging and keeps the archive.
+func TestPlaceExtracted_LeftoverKeepsArchive(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "pack.tar")
+	writeTar(t, archive, []*tar.Header{
+		{Name: "a.mkv", Typeflag: tar.TypeReg},
+		{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "a.mkv"},
+	}, []string{"x", ""})
+
+	extracted, staging, err := routing.Extract(archive, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := placeExtracted(archive, dir, staging, extracted, true); w == "" {
+		t.Error("expected a warning about leftovers")
+	}
+	if _, err := os.Stat(archive); err != nil {
+		t.Errorf("archive deleted despite leftovers: %v", err)
+	}
+	if got := readFile(t, filepath.Join(dir, "a.mkv")); got != "x" {
+		t.Errorf("a.mkv: %q", got)
 	}
 }

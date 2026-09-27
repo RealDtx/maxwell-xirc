@@ -4,11 +4,12 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/RealDtx/maxwell-irc/routing"
 )
 
 // IsArchive reports whether filename is a zip/rar/7z archive — the formats
@@ -23,30 +24,31 @@ func IsArchive(filename string) bool {
 
 // Extract unpacks a zip/rar/7z archive into a staging directory inside
 // destDir (so it lives on the same filesystem, same approach as
-// routing.Extract) and returns the paths of every extracted regular file.
-func Extract(archivePath, destDir string) ([]string, error) {
+// routing.Extract) and returns the extracted regular files plus the staging
+// directory.
+func Extract(archivePath, destDir string) ([]string, string, error) {
 	switch strings.ToLower(filepath.Ext(archivePath)) {
 	case ".zip":
 		return extractZip(archivePath, destDir)
 	case ".rar", ".7z":
 		return extractWithTool(archivePath, destDir)
 	default:
-		return nil, fmt.Errorf("unsupported archive type %q", filepath.Ext(archivePath))
+		return nil, "", fmt.Errorf("unsupported archive type %q", filepath.Ext(archivePath))
 	}
 }
 
-func extractZip(archivePath, destDir string) ([]string, error) {
+func extractZip(archivePath, destDir string) ([]string, string, error) {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return nil, fmt.Errorf("creating extract dir: %w", err)
+		return nil, "", fmt.Errorf("creating extract dir: %w", err)
 	}
 	tempDir, err := os.MkdirTemp(destDir, ".extract_")
 	if err != nil {
-		return nil, fmt.Errorf("creating temp extract dir: %w", err)
+		return nil, "", fmt.Errorf("creating temp extract dir: %w", err)
 	}
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
 		os.RemoveAll(tempDir)
-		return nil, fmt.Errorf("opening zip: %w", err)
+		return nil, "", fmt.Errorf("opening zip: %w", err)
 	}
 	defer r.Close()
 
@@ -64,15 +66,15 @@ func extractZip(archivePath, destDir string) ([]string, error) {
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			os.RemoveAll(tempDir)
-			return nil, fmt.Errorf("creating %q: %w", filepath.Dir(target), err)
+			return nil, "", fmt.Errorf("creating %q: %w", filepath.Dir(target), err)
 		}
 		if err := extractZipEntry(f, target); err != nil {
 			os.RemoveAll(tempDir)
-			return nil, err
+			return nil, "", err
 		}
 		files = append(files, target)
 	}
-	return files, nil
+	return files, tempDir, nil
 }
 
 func extractZipEntry(f *zip.File, target string) error {
@@ -95,13 +97,13 @@ func extractZipEntry(f *zip.File, target string) error {
 
 // extractWithTool unpacks a rar/7z archive via the "7z" binary, falling
 // back to "unrar" when 7z isn't installed. Requires one of them on PATH.
-func extractWithTool(archivePath, destDir string) ([]string, error) {
+func extractWithTool(archivePath, destDir string) ([]string, string, error) {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return nil, fmt.Errorf("creating extract dir: %w", err)
+		return nil, "", fmt.Errorf("creating extract dir: %w", err)
 	}
 	tempDir, err := os.MkdirTemp(destDir, ".extract_")
 	if err != nil {
-		return nil, fmt.Errorf("creating temp extract dir: %w", err)
+		return nil, "", fmt.Errorf("creating temp extract dir: %w", err)
 	}
 
 	var runErr error
@@ -112,21 +114,14 @@ func extractWithTool(archivePath, destDir string) ([]string, error) {
 		runErr = exec.Command("unrar", "x", "-y", archivePath, tempDir+string(filepath.Separator)).Run()
 	default:
 		os.RemoveAll(tempDir)
-		return nil, fmt.Errorf("no archive tool available (7z or unrar required)")
+		return nil, "", fmt.Errorf("no archive tool available (7z or unrar required)")
 	}
 	if runErr != nil {
 		os.RemoveAll(tempDir)
-		return nil, fmt.Errorf("extracting %s: %w", filepath.Base(archivePath), runErr)
+		return nil, "", fmt.Errorf("extracting %s: %w", filepath.Base(archivePath), runErr)
 	}
 
-	var files []string
-	filepath.WalkDir(tempDir, func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() {
-			files = append(files, path)
-		}
-		return nil
-	})
-	return files, nil
+	return routing.RegularFiles(tempDir), tempDir, nil
 }
 
 func toolAvailable(name string) bool {

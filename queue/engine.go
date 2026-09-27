@@ -3,6 +3,7 @@ package queue
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -628,11 +629,12 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 		}
 		if !skipExtract {
 			var extracted []string
+			var staging string
 			var extractErr error
 			if library.IsArchive(offer.Filename) {
-				extracted, extractErr = library.Extract(finalPath, extractDir)
+				extracted, staging, extractErr = library.Extract(finalPath, extractDir)
 			} else {
-				extracted, extractErr = routing.Extract(finalPath, extractDir)
+				extracted, staging, extractErr = routing.Extract(finalPath, extractDir)
 			}
 			if extractErr != nil {
 				log.Printf("auto-extract failed for download %d (%s): %v", downloadID, offer.Filename, extractErr)
@@ -645,7 +647,7 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 				})
 				// Archive remains untouched. Download stays completed.
 			} else {
-				if warning := placeExtracted(finalPath, extractDir, extracted, matchedCat.DeleteArchive); warning != "" {
+				if warning := placeExtracted(finalPath, extractDir, staging, extracted, matchedCat.DeleteArchive); warning != "" {
 					e.bus.Publish(irc.Event{
 						Type: irc.EventNotification,
 						Data: map[string]string{"severity": "warning", "message": warning},
@@ -712,26 +714,35 @@ func (e *Engine) downloadsDir() string {
 }
 
 // placeExtracted finishes an extraction: the download is already in its
-// resolved category folder, so the extracted files are flattened directly
-// into extractDir, leftover (now empty) subdirectories removed, and the
-// archive deleted when deleteArchive is set. Flattening never overwrites: a
-// name already taken gets a " (n)" suffix. The archive is kept unless every
-// file moved to its own name — a collision or failed move means the user
-// should look before the original is gone. It returns a user-facing
-// warning, or "" when everything went cleanly.
-func placeExtracted(archivePath, extractDir string, extracted []string, deleteArchive bool) string {
-	var renamed, failed []string
+// resolved category folder, so the extracted files are flattened out of the
+// staging directory directly into extractDir, and the archive deleted when
+// deleteArchive is set. Flattening never overwrites: a name already taken
+// gets a " (n)" suffix. Only the staging directory is cleaned up — never
+// other (possibly empty, user-made) folders in extractDir. The archive is
+// kept unless every file moved to its own name and nothing is left in
+// staging — otherwise the user should look before the original is gone.
+// It returns a user-facing warning, or "" when everything went cleanly.
+func placeExtracted(archivePath, extractDir, staging string, extracted []string, deleteArchive bool) string {
+	var renamed []string
 	for _, ef := range extracted {
 		dst, err := flattenExtracted(ef, extractDir)
 		switch {
 		case err != nil:
 			log.Printf("flattening extracted file %q: %v", ef, err)
-			failed = append(failed, filepath.Base(ef))
 		case filepath.Base(dst) != filepath.Base(ef):
 			renamed = append(renamed, filepath.Base(ef)+" → "+filepath.Base(dst))
 		}
 	}
-	routing.RemoveEmptyDirs(extractDir)
+	var failed []string // anything not moved out: failed moves, symlinks, special files
+	filepath.WalkDir(staging, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			failed = append(failed, filepath.Base(path))
+		}
+		return nil
+	})
+	if len(failed) == 0 {
+		os.RemoveAll(staging)
+	}
 
 	name := filepath.Base(archivePath)
 	var problems []string
@@ -739,7 +750,7 @@ func placeExtracted(archivePath, extractDir string, extracted []string, deleteAr
 		problems = append(problems, "already existed, saved as: "+strings.Join(renamed, ", "))
 	}
 	if len(failed) > 0 {
-		problems = append(problems, "could not be moved (left in a hidden .extract_ folder): "+strings.Join(failed, ", "))
+		problems = append(problems, "could not be moved (left in hidden folder "+filepath.Base(staging)+"): "+strings.Join(failed, ", "))
 	}
 	if len(problems) > 0 {
 		msg := fmt.Sprintf("Extracted %s with conflicts — %s", name, strings.Join(problems, "; "))

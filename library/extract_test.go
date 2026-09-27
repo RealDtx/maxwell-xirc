@@ -17,7 +17,7 @@ func TestExtractZip(t *testing.T) {
 	})
 
 	destDir := filepath.Join(dir, "dest")
-	files, err := Extract(archive, destDir)
+	files, _, err := Extract(archive, destDir)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestExtractZip_ZipSlipRejected(t *testing.T) {
 	})
 
 	destDir := filepath.Join(dir, "dest")
-	files, err := Extract(archive, destDir)
+	files, _, err := Extract(archive, destDir)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -96,7 +96,7 @@ func Test7zRoundTrip(t *testing.T) {
 	}
 
 	destDir := filepath.Join(dir, "dest")
-	files, err := Extract(archive, destDir)
+	files, _, err := Extract(archive, destDir)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestUnrarRoundTrip(t *testing.T) {
 	}
 
 	destDir := filepath.Join(dir, "dest")
-	files, err := Extract(archive, destDir)
+	files, _, err := Extract(archive, destDir)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
