@@ -80,7 +80,9 @@ if [[ -n "$BIN_SRC" ]]; then :
 elif command -v go >/dev/null && [[ -f "$REPO_DIR/go.mod" ]] && \
      [[ "$(printf '%s\n%s\n' "$(need_go)" "$(go env GOVERSION | sed 's/^go//')" | sort -V | head -1)" == "$(need_go)" ]]; then
     say "Building from source with $(go version)…"
-    (cd "$REPO_DIR" && CGO_ENABLED=0 go build -ldflags="-s -w" -o "$WORK/xirc" .)
+    # -buildvcs=false: root building inside another user's checkout makes git refuse
+    # ("detected dubious ownership"), which fails VCS stamping.
+    (cd "$REPO_DIR" && CGO_ENABLED=0 go build -buildvcs=false -ldflags="-s -w" -o "$WORK/xirc" .)
     BIN_SRC="$WORK/xirc"
 elif A="$(goarch)"; then
     say "Downloading the newest release for linux-${A}…"
@@ -336,7 +338,7 @@ if [[ "$PROXY" == none ]]; then URL="http://127.0.0.1:${PORT}/ (localhost only �
 elif [[ $MODE == site ]]; then URL="http://${SERVER_NAME}/"
 else URL="http://<your-site>${PREFIX}/"; fi
 say "Open: $URL"
-if [[ $ADMIN_CREATED == y ]]; then say "Log in as '${ADMIN_NAME}'."
+if [[ $ADMIN_CREATED == y ]]; then say "Log in as '${ADMIN_NAME,,}'."
 else say "If no admin exists yet, the first visit creates one — open it before exposing xirc to others."; fi
 [[ "$PROXY" != none ]] && say "HTTPS: sudo certbot --${PROXY/both/nginx}   (the login cookie is marked Secure over HTTPS)"
 say "Re-run this script any time; it asks before changing existing files."
