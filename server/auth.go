@@ -211,6 +211,9 @@ var adminRules = []rule{
 }
 
 func adminOnly(method, path string) bool {
+	if path == "/api/library/preview" { // read-only POST under an admin-write prefix
+		return false
+	}
 	for _, r := range adminRules {
 		if path != r.prefix && !strings.HasPrefix(path, r.prefix+"/") {
 			continue

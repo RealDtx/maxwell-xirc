@@ -130,7 +130,7 @@ func TestAdminOnlyTable(t *testing.T) {
 	admin := []struct{ m, p string }{
 		{"POST", "/api/irc/raw"}, {"POST", "/api/irc/connect"}, {"POST", "/api/irc/disconnect"}, {"POST", "/api/irc/join"},
 		{"POST", "/api/servers"}, {"PUT", "/api/servers/3"}, {"DELETE", "/api/realms/2"}, {"PUT", "/api/library"},
-		{"POST", "/api/library/preview"}, {"GET", "/api/search/patterns"}, {"GET", "/api/search/unmatched"},
+		{"GET", "/api/search/patterns"}, {"GET", "/api/search/unmatched"},
 		{"POST", "/api/search/patterns/learn"}, {"POST", "/api/index/clear"}, {"GET", "/api/errors"},
 		{"GET", "/api/users"}, {"DELETE", "/api/users/4"}, {"GET", "/api/setup/status"}, {"POST", "/api/capabilities/recheck"},
 		{"POST", "/api/files"}, {"GET", "/api/browse"}, {"POST", "/api/downloads/delete"}, {"POST", "/api/downloads/clear"},
@@ -147,6 +147,7 @@ func TestAdminOnlyTable(t *testing.T) {
 		{"POST", "/api/downloads/retry"}, {"POST", "/api/downloads/set-auto-extract"}, {"GET", "/api/files"},
 		{"POST", "/api/irc/message"}, {"GET", "/api/irc/status"}, {"GET", "/api/stats/downloads"},
 		{"GET", "/api/storage"}, {"GET", "/api/capabilities"}, {"POST", "/api/search/saved"}, {"GET", "/ws"},
+		{"POST", "/api/library/preview"}, // read-only: downloads table "Auto → …" label
 	}
 	for _, c := range user {
 		if adminOnly(c.m, c.p) {
