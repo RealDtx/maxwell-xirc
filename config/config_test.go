@@ -1,7 +1,6 @@
 package config
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -110,7 +109,7 @@ func TestLoadConfigFileNotFound(t *testing.T) {
 	}
 }
 
-func TestWriteStorageDirs_UpdatesFields(t *testing.T) {
+func TestSaveKeys_UpdatingStorageDirs(t *testing.T) {
 	original := `server:
   host: 127.0.0.1
   port: 8085
@@ -120,24 +119,22 @@ storage:
   downloads_dir: /old/downloads
   temp_dir: /tmp
   min_free_space: 1GB
-  critical_free_space: 500MB
 `
-	dir, err := ioutil.TempDir("", "xirc-cfg-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
-	path := filepath.Join(dir, "config.yaml")
-	if err := ioutil.WriteFile(path, []byte(original), 0644); err != nil {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := WriteStorageDirs(path, "/new/media", "/new/downloads"); err != nil {
-		t.Fatalf("WriteStorageDirs: %v", err)
+	if err := SaveKeys(path, map[string]any{
+		"storage": map[string]string{
+			"media_dir":     "/new/media",
+			"downloads_dir": "/new/downloads",
+		},
+	}); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
 	}
 
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,25 +155,23 @@ storage:
 	}
 }
 
-func TestWriteStorageDirs_Atomic(t *testing.T) {
-	dir, err := ioutil.TempDir("", "xirc-cfg-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
+func TestSaveKeys_AtomicWrite(t *testing.T) {
+	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := ioutil.WriteFile(path, []byte("storage:\n  media_dir: /a\n  downloads_dir: /b\n"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("storage:\n  media_dir: /a\n  downloads_dir: /b\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := WriteStorageDirs(path, "/new/a", "/new/b"); err != nil {
+	if err := SaveKeys(path, map[string]any{
+		"storage": map[string]string{"media_dir": "/new/a", "downloads_dir": "/new/b"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	// Temp file should be cleaned up
-	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
-		t.Error("temp file was not removed after rename")
+	// Temp files should be cleaned up
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("temp files not cleaned up: %v", entries)
 	}
 }
 

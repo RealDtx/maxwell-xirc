@@ -71,7 +71,9 @@ func ApplyMappings(mappings []Mapping, state *SetupState) error {
 		}
 	}
 
-	if err := config.WriteStorageDirs(state.ConfigPath, newMediaDir, newDownloadsDir); err != nil {
+	if err := config.SaveKeys(state.ConfigPath, map[string]any{
+		"storage": map[string]string{"media_dir": newMediaDir, "downloads_dir": newDownloadsDir},
+	}); err != nil {
 		return err
 	}
 

@@ -35,7 +35,7 @@ type StorageConfig struct {
 }
 
 type DownloadsConfig struct {
-	MaxConcurrent int `yaml:"max_concurrent"`
+	MaxConcurrent int `yaml:"max_concurrent" json:"max_concurrent"`
 }
 
 type PatternConfig struct {
@@ -50,18 +50,18 @@ type PatternConfig struct {
 // search_results rows and caps the self-collected file index so both stay
 // bounded instead of growing forever.
 type MaintenanceConfig struct {
-	SearchResultRetentionDays int `yaml:"search_result_retention_days"`
-	IndexMaxFiles             int `yaml:"index_max_files"`
-	IntervalHours             int `yaml:"interval_hours"`
+	SearchResultRetentionDays int `yaml:"search_result_retention_days" json:"search_result_retention_days"`
+	IndexMaxFiles             int `yaml:"index_max_files" json:"index_max_files"`
+	IntervalHours             int `yaml:"interval_hours" json:"interval_hours"`
 }
 
 type AuthConfig struct {
 	// TrustedNetworks are CIDRs whose clients skip login. Empty = always log in.
-	TrustedNetworks []string `yaml:"trusted_networks"`
+	TrustedNetworks []string `yaml:"trusted_networks" json:"trusted_networks"`
 	// TrustedRole is the role granted to trusted-network clients: admin|user.
-	TrustedRole string `yaml:"trusted_role"`
+	TrustedRole string `yaml:"trusted_role" json:"trusted_role"`
 	// TrustedProxies are peers whose X-Forwarded-For/-Proto headers are believed.
-	TrustedProxies []string `yaml:"trusted_proxies"`
+	TrustedProxies []string `yaml:"trusted_proxies" json:"trusted_proxies"`
 }
 
 type Config struct {
@@ -72,6 +72,55 @@ type Config struct {
 	Patterns    []PatternConfig   `yaml:"patterns"`
 	Maintenance MaintenanceConfig `yaml:"maintenance"`
 	Auth        AuthConfig        `yaml:"auth"`
+}
+
+// EditableStorage is the part of storage the admin UI may change at runtime.
+type EditableStorage struct {
+	DownloadsDir string `yaml:"downloads_dir" json:"downloads_dir"`
+	TempDir      string `yaml:"temp_dir" json:"temp_dir"`
+	MinFreeSpace string `yaml:"min_free_space" json:"min_free_space"`
+}
+
+// Editable is the subset of Config the admin settings page edits and the
+// server applies live. Server and database settings are deliberately absent.
+type Editable struct {
+	Storage     EditableStorage   `yaml:"storage" json:"storage"`
+	Downloads   DownloadsConfig   `yaml:"downloads" json:"downloads"`
+	Maintenance MaintenanceConfig `yaml:"maintenance" json:"maintenance"`
+	Auth        AuthConfig        `yaml:"auth" json:"auth"`
+}
+
+func (c *Config) Editable() Editable {
+	return Editable{
+		Storage:     EditableStorage{c.Storage.DownloadsDir, c.Storage.TempDir, c.Storage.MinFreeSpace},
+		Downloads:   c.Downloads,
+		Maintenance: c.Maintenance,
+		Auth:        c.Auth,
+	}
+}
+
+func (c *Config) ApplyEditable(e Editable) {
+	c.Storage.DownloadsDir, c.Storage.TempDir, c.Storage.MinFreeSpace = e.Storage.DownloadsDir, e.Storage.TempDir, e.Storage.MinFreeSpace
+	c.Downloads, c.Maintenance, c.Auth = e.Downloads, e.Maintenance, e.Auth
+}
+
+// EnvLockedKeys lists the dotted yaml keys of Editable whose XIRC_* override
+// is set: a value saved from the UI would be replaced by the env var on the
+// next start, so the UI shows these read-only.
+func EnvLockedKeys() []string {
+	var out []string
+	t := reflect.TypeOf(Editable{})
+	for i := 0; i < t.NumField(); i++ {
+		sec := t.Field(i)
+		secName := strings.Split(sec.Tag.Get("yaml"), ",")[0]
+		for j := 0; j < sec.Type.NumField(); j++ {
+			key := strings.Split(sec.Type.Field(j).Tag.Get("yaml"), ",")[0]
+			if _, ok := os.LookupEnv("XIRC_" + strings.ToUpper(secName) + "_" + strings.ToUpper(key)); ok {
+				out = append(out, secName+"."+key)
+			}
+		}
+	}
+	return out
 }
 
 func defaults() Config {
@@ -123,49 +172,6 @@ func Load(path string) (*Config, error) {
 	applyEnvOverrides(&cfg)
 
 	return &cfg, nil
-}
-
-// WriteStorageDirs rewrites storage.media_dir and storage.downloads_dir in the
-// config file at path, preserving all other content. The write is atomic: a
-// temp file is written first, then renamed over the original.
-func WriteStorageDirs(path, mediaDir, downloadsDir string) error {
-	data, err := ioutil.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("reading config: %w", err)
-	}
-
-	lines := strings.Split(string(data), "\n")
-	inStorage := false
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Detect storage: section header (no leading whitespace)
-		if trimmed == "storage:" {
-			inStorage = true
-			continue
-		}
-		// Leave storage section when we hit a top-level key
-		if inStorage && len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
-			inStorage = false
-		}
-		if inStorage {
-			if strings.HasPrefix(trimmed, "media_dir:") {
-				lines[i] = "  media_dir: " + mediaDir
-			} else if strings.HasPrefix(trimmed, "downloads_dir:") {
-				lines[i] = "  downloads_dir: " + downloadsDir
-			}
-		}
-	}
-
-	result := []byte(strings.Join(lines, "\n"))
-	tmp := path + ".tmp"
-	if err := ioutil.WriteFile(tmp, result, 0644); err != nil {
-		return fmt.Errorf("writing temp config: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("replacing config: %w", err)
-	}
-	return nil
 }
 
 func applyEnvOverrides(cfg *Config) {
