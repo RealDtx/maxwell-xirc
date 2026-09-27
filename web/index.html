@@ -1424,16 +1424,6 @@
                             </template>
                             <template x-if="systemForm">
                                 <div style="max-width:480px;">
-                                    <template x-if="systemError">
-                                        <p style="color:var(--danger); font-size:12px; margin:0 0 12px;" x-text="systemError"></p>
-                                    </template>
-                                    <template x-if="systemNotice">
-                                        <p style="color:var(--success); font-size:12px; margin:0 0 12px;" x-text="systemNotice"></p>
-                                    </template>
-                                    <template x-if="systemSettings.warnings && systemSettings.warnings.length">
-                                        <p style="color:var(--warning); font-size:12px; margin:0 0 12px;" x-text="systemSettings.warnings.join(' ')"></p>
-                                    </template>
-
                                     <div class="settings-card" style="margin-bottom:16px;">
                                         <h3 style="margin-bottom:12px;">Storage</h3>
                                         <div class="form-group">
@@ -1531,6 +1521,15 @@
 
                                     <template x-if="!systemSettings.persist.ok">
                                         <p style="color:var(--warning); font-size:12px; margin:0 0 12px;" x-text="systemSettings.persist.reason"></p>
+                                    </template>
+                                    <template x-if="systemError">
+                                        <p style="color:var(--danger); font-size:12px; margin:0 0 12px;" x-text="systemError"></p>
+                                    </template>
+                                    <template x-if="systemNotice">
+                                        <p style="color:var(--success); font-size:12px; margin:0 0 12px;" x-text="systemNotice"></p>
+                                    </template>
+                                    <template x-if="systemSettings.warnings && systemSettings.warnings.length">
+                                        <p style="color:var(--warning); font-size:12px; margin:0 0 12px;" x-text="systemSettings.warnings.join(' ')"></p>
                                     </template>
                                     <button class="btn btn-primary btn-sm" @click="saveSystemSettings()" :disabled="!systemSettings.persist.ok">Save</button>
                                 </div>

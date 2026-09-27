@@ -2373,10 +2373,21 @@ document.addEventListener('alpine:init', () => {
 
         async saveSystemSettings() {
             this.systemError = '';
+            // x-model.number leaves an emptied/invalid field as a string.
+            for (const [sec, key] of [['downloads', 'max_concurrent'], ['maintenance', 'search_result_retention_days'],
+                ['maintenance', 'index_max_files'], ['maintenance', 'interval_hours']]) {
+                if (typeof this.systemForm[sec][key] !== 'number') {
+                    this.systemError = sec + '.' + key + ' must be a number';
+                    return;
+                }
+            }
             const networks = this._systemSplit(this.systemForm.auth.trusted_networks);
+            const proxies = this._systemSplit(this.systemForm.auth.trusted_proxies);
             if (this.me && this.me.via === 'network') {
-                const current = this.systemSettings.settings.auth.trusted_networks || [];
-                const changed = networks.length === 0 || JSON.stringify(networks) !== JSON.stringify(current);
+                const cur = this.systemSettings.settings.auth;
+                const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...(b || [])].sort());
+                const changed = networks.length === 0 || !same(networks, cur.trusted_networks)
+                    || !same(proxies, cur.trusted_proxies) || this.systemForm.auth.trusted_role !== cur.trusted_role;
                 if (changed && !confirm("You're signed in through a trusted network. After saving you may need to log in with a user account. Continue?")) {
                     return;
                 }
@@ -2388,7 +2399,7 @@ document.addEventListener('alpine:init', () => {
                 auth: {
                     trusted_networks: networks,
                     trusted_role: this.systemForm.auth.trusted_role,
-                    trusted_proxies: this._systemSplit(this.systemForm.auth.trusted_proxies),
+                    trusted_proxies: proxies,
                 },
             };
             try {
