@@ -26,15 +26,17 @@ git clone https://github.com/RealDtx/maxwell-xirc.git && cd maxwell-xirc
 sudo scripts/install.sh
 ```
 The wizard asks for download/media/database paths, checks permissions,
-installs a systemd service and optionally configures nginx or Apache.
-Open the printed URL — the first visit creates the admin account.
+creates the admin account, installs a systemd service and optionally
+configures nginx or Apache. Open the printed URL and log in.
 
 **Docker**
 ```bash
 cd deploy && cp .env.example .env   # set DOWNLOADS_DIR, MEDIA_DIR, PUID/PGID
+mkdir -p data && sudo chown 1000:1000 data   # your PUID:PGID
 docker compose up -d
+docker exec -it xirc xirc --create-admin <name>   # also resets a password
 ```
-Reset a password: `docker exec -it xirc xirc --create-admin <name>`.
+The port is published on `127.0.0.1` only; see [docs/install.md](docs/install.md#option-b--docker) to expose it.
 
 **From a dev machine to a Pi** — `make preconfig`, then `make deploy`; see
 [docs/install.md](docs/install.md).

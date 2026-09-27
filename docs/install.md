@@ -12,8 +12,11 @@ There are three ways to install xirc:
    target over SSH. Useful for repeatable or scripted deploys, or updating a
    server you already set up.
 
-All three end at the same place: open the printed URL and the first visit
-creates the admin account (see [Users & login](#users--login)).
+All three end at the same place: open the printed URL and log in.
+`install.sh` creates the admin account before it starts the service; with
+Docker or `make deploy`, create it with `--create-admin` (below) — otherwise
+the first visitor gets to create it. **Don't make xirc reachable from other
+machines until an admin exists.** See [Users & login](#users--login).
 
 ---
 
@@ -30,10 +33,13 @@ The wizard:
    (`/srv/downloads`), temp directory, media directory (`/srv/media`),
    database (SQLite path or MySQL/MariaDB DSN), and the port xirc listens on
    (`8085`, bound to `127.0.0.1`).
-2. **Finds a binary** — `./xirc` next to the script or in the repo root, else
-   builds from source if a Go toolchain matching `go.mod`'s version is on
+2. **Finds a binary** — offers a prebuilt `scripts/xirc` next to the script
+   (showing its date) if there is one, else builds from source into a
+   temporary directory if a Go toolchain matching `go.mod`'s version is on
    `PATH`, else downloads the newest release asset for your architecture
    (`amd64`/`arm64`/`armv7`) from GitHub, else stops with instructions.
+   Nothing is written into the checkout, so a re-run after `git pull`
+   always builds fresh.
 3. **Creates the `xirc` system user** (no login shell) if it doesn't exist.
 4. **Checks each directory**: offers to create it (owned by `xirc`) if
    missing; if it exists but isn't writable by `xirc`, offers to (a) `chown
@@ -44,16 +50,20 @@ The wizard:
    never changed without asking.
 5. **Asks about login** — networks that skip login, and the role granted to
    them (see [Users & login](#users--login)).
-6. **Writes `config.yaml` and `/etc/systemd/system/xirc.service`**, then
-   `systemctl enable --now xirc`. If either file already exists and differs,
-   it asks before overwriting; a replaced proxy file is instead backed up as
-   `<file>.bak.<timestamp>`.
-7. **Reverse proxy** — detects installed nginx/Apache and offers to configure
+6. **Writes `config.yaml` and `/etc/systemd/system/xirc.service`**. If
+   either file already exists and differs, it asks before overwriting; a
+   replaced proxy file is instead backed up as `<file>.bak.<timestamp>`.
+7. **Creates the admin account** — asks for a username and password (typed
+   hidden, passed via `XIRC_ADMIN_PASSWORD`, never on the command line) and
+   runs `xirc --create-admin` as the `xirc` user. Defaults to yes on a first
+   install; on a re-run it defaults to no (yes resets that admin's password).
+   Only then does it run `systemctl enable --now xirc`.
+8. **Reverse proxy** — detects installed nginx/Apache and offers to configure
    one or both, as either a standalone site (own hostname) or a subpath of an
    existing site. See [Reverse proxy](#reverse-proxy).
-8. **Prints a summary** — the URL to open, a reminder that the first visit
-   creates the admin account, and (if a proxy was configured) the `certbot`
-   command for HTTPS.
+9. **Prints a summary** — the URL to open, the admin to log in as (or, if
+   you skipped that step, a reminder that the first visit creates the admin),
+   and (if a proxy was configured) the `certbot` command for HTTPS.
 
 Re-running the script is safe: it detects the existing user, unit, config and
 proxy files and asks before changing each.
@@ -75,15 +85,28 @@ it — useful if you manage nginx/Apache yourself and just want the snippet.
 ```bash
 cd deploy
 cp .env.example .env   # edit DOWNLOADS_DIR, MEDIA_DIR, PUID/PGID
+mkdir -p data && sudo chown 1000:1000 data   # your PUID:PGID from .env
 docker compose up -d
+docker exec -it xirc xirc --create-admin <name>   # before exposing the port
 ```
+
+The container runs as `PUID:PGID` (compose `user:`), so `./data`,
+`DOWNLOADS_DIR` and `MEDIA_DIR` must all be writable by that uid/gid. Create
+`./data` yourself as above — if it's missing, Docker creates it owned by
+root and xirc can't open its database (it exits and restarts in a loop).
+
+The port is published on `127.0.0.1:8085` only. Create the admin first (last
+line above); then either put a reverse proxy on the host in front of it, or
+change the `ports:` line in `docker-compose.yaml` to `"8085:8085"` to reach
+xirc directly from other machines. Until an admin exists, whoever opens xirc
+first can create one.
 
 `.env` (see `deploy/.env.example`):
 
 | Variable | Purpose |
 |---|---|
-| `DOWNLOADS_DIR`, `MEDIA_DIR` | Host directories mounted into the container; must already exist and be owned by `PUID:PGID` |
-| `PUID`, `PGID` | Container user's uid/gid — set to `id -u` / `id -g` of the host directories' owner |
+| `DOWNLOADS_DIR`, `MEDIA_DIR` | Host directories mounted into the container; must already exist and be writable by `PUID:PGID` |
+| `PUID`, `PGID` | uid/gid the container runs as (default `1000`) — set to `id -u` / `id -g` of the owner of `./data` and the host directories |
 | `TZ` | Container timezone (default `UTC`) |
 | `TRUSTED_NETWORKS`, `TRUSTED_ROLE` | See [Users & login](#users--login) |
 | `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD` | Only used with the `mariadb` profile below |
@@ -110,14 +133,24 @@ Starts a `mariadb:11` container (`xirc-db`) alongside `xirc`. Set
 `database.driver: mysql` / `database.dsn` in `config.yaml` (or via
 `XIRC_DATABASE_DRIVER` / `XIRC_DATABASE_DSN`) pointing at it.
 
-**Trusted networks caveat:** by default Docker's bridge network NATs client
-connections, so xirc only ever sees the container gateway's IP — CIDR
-matching against `auth.trusted_networks` won't identify real clients, and a
-reverse proxy on the host won't be trusted either since its address isn't in
-the default `auth.trusted_proxies` (`127.0.0.1/32`, `::1/128`). To make
-`trusted_networks` or a proxy's `X-Forwarded-For` work, either run the
-container with `network_mode: host`, or add the proxy's address (as seen by
-the container) to `auth.trusted_proxies` via `XIRC_AUTH_TRUSTED_PROXIES`.
+**Client IPs behind Docker's bridge network:** connections reach the
+container from the bridge gateway (e.g. `172.18.0.1`), not from the real
+client — whether they come straight through the published port or from a
+reverse proxy on the host, whose address isn't in the default
+`auth.trusted_proxies` (`127.0.0.1/32`, `::1/128`). As long as that's the
+case:
+
+- **the login rate limit is shared by everyone** — it counts failures per
+  client IP, and every client has the same IP, so a few wrong passwords from
+  anyone lock everybody out for a minute;
+- **never put the bridge range in `trusted_networks`** (e.g.
+  `172.16.0.0/12`): every client, including anyone on the internet reaching
+  your proxy, would match it and skip login with that role.
+
+To see real client IPs, either run the container with `network_mode: host`,
+or add the host proxy's address as seen by the container (the bridge
+gateway) to `auth.trusted_proxies` via `XIRC_AUTH_TRUSTED_PROXIES`, so its
+`X-Forwarded-For` is believed.
 
 **Reset a forgotten password:**
 
@@ -187,10 +220,16 @@ first `make deploy` can push files to it. The simplest way to get there is
 to run the installer once on the target:
 
 ```bash
-scp scripts/install.sh scripts/proxy-templates.sh xirc-user@target:/tmp/
-ssh xirc-user@target "cd /tmp && sudo ./install.sh"
+scp scripts/install.sh scripts/proxy-templates.sh maxwell@target:/tmp/
+ssh -t maxwell@target "cd /tmp && sudo ./install.sh"
+
+# The installer leaves /opt/xirc owned by xirc:xirc (mode 755), but
+# `make deploy` rsyncs as your SSH user — let that user write it:
+ssh maxwell@target "sudo usermod -aG xirc maxwell && sudo chmod -R g+w /opt/xirc"
 ```
 
+(Replace `maxwell` with your SSH user and `/opt/xirc` with the install
+directory you chose; the group change applies from the next SSH login.)
 Match the paths and port you answer with to what you gave `preconfig` (or
 just re-run `preconfig` afterwards to match what you chose in the wizard).
 `make deploy` will then overwrite `config.yaml`, `xirc.service` and any
@@ -302,9 +341,11 @@ Each profile directory is added to `.gitignore` by the preconfig script.
 
 ## Users & login
 
-The first visit to xirc (no proxy needed) shows an admin-creation form
-instead of the login screen; the account you create there becomes the first
-`admin`. After that, everyone else logs in at the same URL. Admins manage
+`install.sh` creates the first `admin` for you. If no admin exists yet (you
+skipped that step, or installed via Docker / `make deploy` without running
+`--create-admin`), the first visit to xirc shows an admin-creation form
+instead of the login screen and whoever fills it in becomes `admin` — so
+create the admin before xirc is reachable from other machines. After that, everyone else logs in at the same URL. Admins manage
 further accounts under **Settings → Users** — add a user, change their role,
 reset their password, or delete them (the last remaining admin can't be
 demoted or deleted).
@@ -356,8 +397,10 @@ creates the user if it doesn't exist, or resets its password and role to
 
 ## Reverse proxy
 
-xirc always binds to `127.0.0.1` — put a reverse proxy in front to reach it
-from other devices, and never expose the raw port directly. Both nginx and
+The systemd install (`install.sh`, `preconfig`) binds xirc to `127.0.0.1` —
+put a reverse proxy in front to reach it from other devices. In Docker xirc
+listens on `0.0.0.0` inside the container, and compose publishes the port
+on `127.0.0.1` by default (see [Option B](#option-b--docker)). Both nginx and
 Apache configs come from the same templates (`scripts/proxy-templates.sh`),
 so an install.sh, preconfig-generated, or hand-rendered config all behave
 the same way.
@@ -399,7 +442,7 @@ reason instead of crashing or silently failing:
 
 | If this isn't writable | This happens |
 |---|---|
-| Downloads or temp dir | New downloads are refused (503) with the reason; the queue stops starting new transfers |
+| Downloads or temp dir | New download requests are refused (503) with the reason; downloads already in the queue still start and then fail with the write error |
 | Media dir (or a category dir under it) | Finished downloads stay in the downloads directory instead of being sorted, with the reason recorded on the download |
 | Media dir (not readable) | Library browsing is hidden |
 | A file-manager root (not writable) | Move/rename/delete/create-folder are disabled for it, with the reason as a tooltip — the root itself still shows in the destination list |
@@ -418,7 +461,49 @@ every 5 minutes, or on demand via `POST /api/capabilities/recheck`).
 # systemd install — re-own the directory for the xirc user:
 sudo chown -R xirc:xirc <dir>
 
-# Docker — set PUID/PGID (in .env) to the uid/gid that owns <dir> on the host,
-# then recreate the container:
+# Docker — the container runs as PUID:PGID from .env; either make <dir> on
+# the host writable by that uid/gid:
+sudo chown -R 1000:1000 <host dir>   # your PUID:PGID
+# …or set PUID/PGID in .env to its current owner (`stat -c '%u:%g' <host dir>`)
+# and recreate the container:
 docker compose up -d
 ```
+
+In the container `<dir>` is `/data`, `/downloads` or `/media`: the host
+directory behind it is `deploy/data`, `DOWNLOADS_DIR` or `MEDIA_DIR`.
+
+---
+
+## Upgrading from 0.3 or earlier
+
+- **Login is now required.** After the upgrade nobody is logged in: the
+  first visit creates the admin, unless you create it beforehand with
+  `xirc --create-admin <name>` (see [Users & login](#users--login)). Do that
+  before the new version is reachable from other machines.
+- **Update the reverse-proxy config first**, then add `auth.trusted_networks`.
+  The old templates sent `Host $host` and no `X-Forwarded-For` /
+  `X-Forwarded-Proto` on the `/ws` location, so xirc sees every WebSocket
+  coming from the proxy itself: trusted-network clients then get a 401 on
+  `/ws` and the live feed dies. Regenerate the config (`make preconfig` +
+  `make deploy`, re-run `install.sh`, or `install.sh --print-proxy …`), or
+  patch the `/ws` block by hand to send `Host $http_host`,
+  `X-Forwarded-For $proxy_add_x_forwarded_for` and
+  `X-Forwarded-Proto $scheme` (Apache: `ProxyPreserveHost On` plus
+  `RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}`).
+- **Environment overrides were renamed.** Names now come from the YAML keys:
+  `XIRC_<SECTION>_<YAML_KEY_UPPER>`. Keys with an underscore changed, e.g.
+  `XIRC_STORAGE_DOWNLOADSDIR` → `XIRC_STORAGE_DOWNLOADS_DIR`,
+  `XIRC_STORAGE_MEDIADIR` → `XIRC_STORAGE_MEDIA_DIR`,
+  `XIRC_STORAGE_TEMPDIR` → `XIRC_STORAGE_TEMP_DIR`. Single-word keys such as
+  `XIRC_SERVER_PORT` are unchanged. Old names are silently ignored.
+- **Docker layout changed.** The old compose file mounted the repo's
+  `../data` at `/app/data` and the whole of `/srv` at `/srv`, and baked a
+  `config.yaml` into the image. The new one (service and container `xirc`,
+  image `ghcr.io/realdtx/xirc`) has no baked config and mounts
+  `deploy/data` → `/data` (database `xirc.db`, optional `config.yaml`,
+  `categories.yaml`, logs), `DOWNLOADS_DIR` → `/downloads` and `MEDIA_DIR` →
+  `/media`, and runs as `PUID:PGID`. To carry over your data, copy the old
+  SQLite file to `deploy/data/xirc.db` (and your `categories.yaml`, if any,
+  to `deploy/data/`), `chown` everything to `PUID:PGID`, and set `media_root` in
+  `categories.yaml` to `/media`. Remove the old container first
+  (`docker rm -f maxwell-irc`) so both don't run at once.
