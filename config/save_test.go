@@ -96,3 +96,42 @@ func TestEnvLockedKeys(t *testing.T) {
 		t.Errorf("EnvLockedKeys = %q", got)
 	}
 }
+
+func TestSaveKeys_CreatesMissingDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "etc", "xirc", "config.yaml")
+	if err := SaveKeys(path, map[string]any{"downloads": map[string]any{"max_concurrent": 2}}); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
+	}
+	if data, err := os.ReadFile(path); err != nil || !strings.Contains(string(data), "max_concurrent: 2") {
+		t.Fatalf("got %q, %v", data, err)
+	}
+}
+
+// A symlinked config.yaml stays a symlink; its target gets the new content.
+func TestSaveKeys_FollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("server:\n  port: 8085\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "config.yaml")
+	if err := os.Symlink(filepath.Join("real", "config.yaml"), link); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveKeys(link, map[string]any{"downloads": map[string]any{"max_concurrent": 2}}); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
+	}
+	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("config.yaml is no longer a symlink: %v %v", st, err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || !strings.Contains(string(data), "max_concurrent: 2") || !strings.Contains(string(data), "port: 8085") {
+		t.Fatalf("target not updated: %q %v", data, err)
+	}
+	if st, _ := os.Stat(target); st.Mode().Perm() != 0o600 {
+		t.Errorf("target mode: got %v want 0600", st.Mode().Perm())
+	}
+}

@@ -2,9 +2,11 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,8 +14,12 @@ import (
 // SaveKeys writes the keys of v (anything that encodes to a YAML mapping)
 // into the config file at path, keeping comments and every other key. Nested
 // mappings merge; any other value replaces the old one. A missing file is
-// created (0640). The write is atomic: temp file in the same dir, then rename.
+// created (0640), along with its directory. The write is atomic: temp file in
+// the same dir, then rename. A symlinked path updates the symlink's target.
 func SaveKeys(path string, v any) error {
+	if p, err := filepath.EvalSymlinks(path); err == nil {
+		path = p
+	}
 	var doc yaml.Node
 	mode := os.FileMode(0640)
 	data, err := os.ReadFile(path)
@@ -50,6 +56,9 @@ func SaveKeys(path string, v any) error {
 	}
 	enc.Close()
 
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.yaml")
 	if err != nil {
 		return fmt.Errorf("writing config: %w", err)
@@ -69,7 +78,29 @@ func SaveKeys(path string, v any) error {
 	if err := os.Chmod(tmp.Name(), mode); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err := os.Rename(tmp.Name(), path); errors.Is(err, syscall.EBUSY) {
+		// A single-file bind mount (Docker) can't be renamed over: write in
+		// place instead — not atomic, hence mounting the directory is advised.
+		return writeInPlace(path, buf.Bytes())
+	} else if err != nil {
+		return fmt.Errorf("replacing config: %w", err)
+	}
+	return nil
+}
+
+func writeInPlace(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return fmt.Errorf("replacing config: %w", err)
+	}
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		return fmt.Errorf("replacing config: %w", err)
 	}
 	return nil
