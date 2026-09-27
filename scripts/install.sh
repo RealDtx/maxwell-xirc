@@ -60,7 +60,11 @@ else
     DB_DRIVER=sqlite; DB_DSN=""
     ask "SQLite database file" "${INSTALL_DIR}/data/xirc.db" DB_PATH
 fi
-ask "Port xirc listens on (localhost only)" "8085" PORT
+while true; do
+    ask "Port xirc listens on (localhost only)" "8085" PORT
+    [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1 && PORT <= 65535 )) && break
+    echo "  Enter a port number between 1 and 65535." >&2
+done
 
 # ── binary ────────────────────────────────────────────────────────────────────
 goarch() { case "$(uname -m)" in x86_64) echo amd64;; aarch64|arm64) echo arm64;; armv7l) echo armv7;; *) return 1;; esac; }
@@ -78,7 +82,9 @@ elif A="$(goarch)"; then
     URL="$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases" \
         | grep -o "https://[^\"]*/xirc-linux-${A}\"" | head -1 | tr -d '"')" || true
     if [[ -n "$URL" ]]; then
-        curl -fsSL -o /tmp/xirc.download "$URL" && chmod +x /tmp/xirc.download && BIN_SRC=/tmp/xirc.download
+        DOWNLOAD="$(mktemp)"
+        trap 'rm -f "$DOWNLOAD"' EXIT
+        curl -fsSL -o "$DOWNLOAD" "$URL" && chmod +x "$DOWNLOAD" && BIN_SRC="$DOWNLOAD"
     fi
 fi
 if [[ -z "$BIN_SRC" ]]; then
@@ -90,27 +96,44 @@ fi
 
 # ── user + dirs ───────────────────────────────────────────────────────────────
 id xirc >/dev/null 2>&1 || { useradd --system --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin xirc; say "Created system user xirc"; }
-install -d -o xirc -g xirc "$INSTALL_DIR" "$INSTALL_DIR/data"
-[[ -n "$DB_PATH" ]] && install -d -o xirc -g xirc "$(dirname "$DB_PATH")"
+ensure_owned_dir() { # $1 dir — create if missing (owned by xirc); an existing dir's ownership is never touched
+    [[ -d "$1" ]] && return
+    mkdir -p "$1" && chown xirc:xirc "$1"
+}
+ensure_owned_dir "$INSTALL_DIR"
+ensure_owned_dir "$INSTALL_DIR/data"
+[[ -n "$DB_PATH" ]] && ensure_owned_dir "$(dirname "$DB_PATH")"
 install -m 0755 "$BIN_SRC" "$INSTALL_DIR/xirc"
 
 check_dir() { # $1 dir, $2 label
     local d="$1" label="$2" a
     if [[ ! -d "$d" ]]; then
         ask_yn "$label $d does not exist. Create it (owned by xirc)?" y a
-        [[ $a == y ]] && install -d -o xirc -g xirc "$d"
+        [[ $a == y ]] && ensure_owned_dir "$d"
     fi
     [[ -d "$d" ]] || { say "! $label missing — the related feature stays disabled until it exists."; return; }
     if runuser -u xirc -- test -w "$d" -a -r "$d"; then say "✓ $label $d is writable by xirc"; return; fi
-    local grp; grp="$(stat -c %G "$d")"
+    local grp gid offer_group=y
+    grp="$(stat -c %G "$d")"; gid="$(stat -c %g "$d")"
+    [[ "$gid" -lt 1000 ]] && offer_group=n
     say "! xirc cannot write to $d (owner $(stat -c '%U:%G %a' "$d"))."
     echo "    1) chown -R xirc:xirc $d"
-    echo "    2) add xirc to group '$grp' and make it group-writable (keeps current owner)"
+    if [[ $offer_group == y ]]; then
+        echo "    2) add xirc to group '$grp' and make it group-writable (keeps current owner)"
+    else
+        say "    (group '$grp' is a system group — not offering to add xirc to it)"
+    fi
     echo "    3) leave it — xirc will disable the feature and show why"
-    ask "Choose" "2" a
+    ask "Choose" "3" a
     case "$a" in
-        1) chown -R xirc:xirc "$d";;
-        2) usermod -aG "$grp" xirc && chmod -R g+rwX "$d" && find "$d" -type d -exec chmod g+s {} +;;
+        1) ask_yn "This recursively chowns everything under $d to xirc:xirc. Continue?" n a
+           [[ $a == y ]] && chown -R xirc:xirc "$d" || say "Left unchanged.";;
+        2) if [[ $offer_group != y ]]; then
+               say "Not offered for a system group — left unchanged."
+           else
+               ask_yn "This adds xirc to group '$grp' and recursively makes $d group-writable. Continue?" n a
+               [[ $a == y ]] && { usermod -aG "$grp" xirc && chmod -R g+rwX "$d" && find "$d" -type d -exec chmod g+s {} +; } || say "Left unchanged."
+           fi;;
         *) say "Left unchanged.";;
     esac
 }
@@ -169,7 +192,9 @@ EOF
     say "Wrote $CONFIG"
 fi
 
-cat > /etc/systemd/system/xirc.service <<EOF
+UNIT=/etc/systemd/system/xirc.service
+NEW_UNIT="$(mktemp)"
+cat > "$NEW_UNIT" <<EOF
 [Unit]
 Description=xirc - XDCC IRC web client
 After=network-online.target
@@ -180,7 +205,7 @@ Type=simple
 User=xirc
 Group=xirc
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/xirc --config ${CONFIG}
+ExecStart="${INSTALL_DIR}/xirc" --config "${CONFIG}"
 Restart=always
 RestartSec=5
 RestartPreventExitStatus=78
@@ -190,6 +215,17 @@ UMask=0002
 [Install]
 WantedBy=multi-user.target
 EOF
+write_unit=y
+if [[ -f "$UNIT" ]]; then
+    if cmp -s "$NEW_UNIT" "$UNIT"; then write_unit=n
+    else ask_yn "$UNIT exists and differs. Overwrite it?" n write_unit; fi
+fi
+if [[ $write_unit == y ]]; then
+    cp "$NEW_UNIT" "$UNIT"; say "Wrote $UNIT"
+else
+    say "Left $UNIT unchanged."
+fi
+rm -f "$NEW_UNIT"
 systemctl daemon-reload
 systemctl enable --now xirc
 systemctl restart xirc
@@ -209,17 +245,51 @@ install_proxy() { # $1 nginx|apache
             apache:subpath) target=/etc/apache2/conf-available/xirc.conf; test="apachectl configtest"; reload="systemctl reload apache2";;
         esac
         if [[ -d "$(dirname "$target")" ]]; then
-            printf '%s\n' "$conf" > "$target"
-            if [[ $kind == apache ]]; then a2enmod -q proxy proxy_http proxy_wstunnel rewrite headers; [[ $MODE == site ]] && a2ensite -q xirc; fi
-            [[ "$kind:$MODE" == nginx:site ]] && ln -sf "$target" /etc/nginx/sites-enabled/xirc
-            if $test >/tmp/xirc-proxy-test.log 2>&1; then
-                $reload; say "✓ ${kind} configured"
-                [[ $MODE == subpath ]] && say "  Now include it in your site: $(proxy_enable_hint "$kind" subpath | sed 's/.*add //; s/, then.*//')"
-                return
+            local backup="" skip=n
+            if [[ -f "$target" ]]; then
+                if diff -q <(printf '%s\n' "$conf") "$target" >/dev/null 2>&1; then
+                    say "✓ ${kind} already configured (unchanged)"
+                    return
+                fi
+                ask_yn "$target already exists and differs. Overwrite it (a backup is kept)?" n a
+                if [[ $a != y ]]; then
+                    say "Left $target unchanged."
+                    skip=y
+                else
+                    backup="${target}.bak.$(date +%Y%m%d%H%M%S)"
+                    cp -p "$target" "$backup"
+                    say "Backed up existing $target to $backup"
+                fi
             fi
-            say "! ${kind} config test failed — reverting:"; sed 's/^/    /' /tmp/xirc-proxy-test.log
-            rm -f "$target" /etc/nginx/sites-enabled/xirc
-            [[ "$kind:$MODE" == apache:site ]] && a2dissite -q xirc 2>/dev/null || true
+            if [[ $skip != y ]]; then
+                printf '%s\n' "$conf" > "$target"
+                local enabled_this_run=n
+                if [[ $kind == apache ]]; then
+                    a2enmod -q proxy proxy_http proxy_wstunnel rewrite headers
+                    if [[ $MODE == site && ! -e /etc/apache2/sites-enabled/xirc.conf ]]; then
+                        a2ensite -q xirc; enabled_this_run=y
+                    fi
+                elif [[ "$kind:$MODE" == nginx:site && ! -e /etc/nginx/sites-enabled/xirc ]]; then
+                    ln -sf "$target" /etc/nginx/sites-enabled/xirc; enabled_this_run=y
+                fi
+                local test_log; test_log="$(mktemp)"
+                if $test >"$test_log" 2>&1; then
+                    rm -f "$test_log"
+                    $reload; say "✓ ${kind} configured"
+                    [[ $MODE == subpath ]] && say "  Now include it in your site: $(proxy_enable_hint "$kind" subpath | sed 's/.*add //; s/, then.*//')"
+                    return
+                fi
+                say "! ${kind} config test failed — reverting this run's changes:"; sed 's/^/    /' "$test_log"
+                rm -f "$test_log"
+                if [[ -n "$backup" ]]; then mv "$backup" "$target"; say "  restored previous $target"
+                else rm -f "$target"; fi
+                if [[ $enabled_this_run == y ]]; then
+                    case "$kind:$MODE" in
+                        nginx:site) rm -f /etc/nginx/sites-enabled/xirc;;
+                        apache:site) a2dissite -q xirc 2>/dev/null || true;;
+                    esac
+                fi
+            fi
         else
             say "! $(dirname "$target") not found (non-Debian layout?)"
         fi
