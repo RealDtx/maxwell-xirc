@@ -4,14 +4,16 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-      args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
     container_name: xirc
+    # Runs as the owner of ./data, DOWNLOADS_DIR and MEDIA_DIR on the host.
+    user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     ports:
-      # Behind a reverse proxy on this host? Use "127.0.0.1:8085:8085".
-      - "8085:8085"
+      # Localhost only until an admin exists:
+      #   docker exec -it xirc xirc --create-admin <name>
+      # then, to reach xirc from other machines without a reverse proxy on
+      # this host, change this to "8085:8085".
+      - "127.0.0.1:8085:8085"
     volumes:
       - ./data:/data
       # Keep downloads and media on the same filesystem so finished files are

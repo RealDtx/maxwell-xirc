@@ -254,7 +254,7 @@ document.addEventListener('alpine:init', () => {
             let dir = m ? m[1] : '<dir>';
             dir = dir.replace(/[()]+$/, '');
             return this.caps && this.caps.docker
-                ? 'Set PUID/PGID in docker-compose to the owner of the host directory mounted at ' + dir
+                ? 'Make the host directory mounted at ' + dir + ' writable by PUID:PGID from .env (or set PUID/PGID to its owner), then docker compose up -d'
                 : 'sudo chown -R xirc:xirc ' + dir;
         },
         rootWritable(path) {
