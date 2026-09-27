@@ -20,12 +20,13 @@ if command -v nginx >/dev/null; then
     # pid/error log in the temp dir: CI runs nginx -t as a non-root user.
     tmp=$(mktemp -d)
     {
-        echo "pid $tmp/nginx.pid; error_log $tmp/error.log; events {} http {"
+        echo "pid $tmp/nginx.pid; error_log $tmp/error.log; events {} http { access_log off;"
         for t in client_body proxy fastcgi uwsgi scgi; do echo "${t}_temp_path $tmp/$t;"; done
         render_nginx_site
         echo "}"
     } >"$tmp/n.conf"
-    out=$(nginx -t -e "$tmp/error.log" -c "$tmp/n.conf" -p "$tmp" 2>&1) || { echo "$out"; fail=1; }
+    eflag=(); nginx -h 2>&1 | grep -q -- '-e filename' && eflag=(-e "$tmp/error.log") # nginx >= 1.19.5
+    out=$(nginx -t "${eflag[@]}" -c "$tmp/n.conf" -p "$tmp" 2>&1) || { echo "$out"; fail=1; }
     rm -rf "$tmp"
 fi
 [[ $fail == 0 ]] && echo "proxy templates ok"
