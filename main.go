@@ -100,7 +100,7 @@ func loadLibrary(configPath string, cfg *config.Config) *library.Manager {
 			if err := library.Save(path, &libCfg); err != nil {
 				log.Printf("warning: failed to save upgraded library config to %s: %v", path, err)
 			} else {
-				log.Printf("library: upgraded %s to version %d (series/movie now unpack tar/zip/rar/7z)", path, libCfg.Version)
+				log.Printf("library: upgraded %s to version %d (series/movie accept tar/zip/rar/7z; explicit archive settings kept)", path, libCfg.Version)
 			}
 		}
 	}

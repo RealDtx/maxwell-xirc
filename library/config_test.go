@@ -1,6 +1,7 @@
 package library
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -8,21 +9,20 @@ import (
 // TestLoad_UpgradesOldCategoriesFile checks the one-time migration: a
 // categories.yaml written before archive support (Version 0) gets the
 // missing tar/zip/rar/7z extensions added to its series/movie categories,
-// with extraction and archive deletion turned on — other kinds are left
-// untouched, and the file's Version is bumped so this runs only once.
+// and extraction + archive deletion are turned on only where the file does
+// not mention them — other kinds are left untouched, and the file's Version
+// is bumped so this runs only once.
 func TestLoad_UpgradesOldCategoriesFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "categories.yaml")
 
-	old := Config{
-		MediaRoot: dir,
-		Categories: []Category{
-			{ID: "series", Kind: "series", Extensions: []string{"mkv", "mp4"}},
-			{ID: "movie", Kind: "movie", Extensions: []string{"mkv"}, AutoExtract: false},
-			{ID: "ebook", Kind: "ebook", Extensions: []string{"pdf", "epub"}},
-		},
-	}
-	if err := Save(path, &old); err != nil {
+	old := "media_root: " + dir + `
+categories:
+  - {id: series, kind: series, extensions: [mkv, mp4]}
+  - {id: movie, kind: movie, extensions: [mkv]}
+  - {id: ebook, kind: ebook, extensions: [pdf, epub]}
+`
+	if err := os.WriteFile(path, []byte(old), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -50,10 +50,10 @@ func TestLoad_UpgradesOldCategoriesFile(t *testing.T) {
 			}
 		}
 		if !cat.AutoExtract {
-			t.Errorf("%s: expected auto_extract=true after upgrade", id)
+			t.Errorf("%s: expected auto_extract=true after upgrade (key absent)", id)
 		}
 		if !cat.DeleteArchive {
-			t.Errorf("%s: expected delete_archive=true after upgrade", id)
+			t.Errorf("%s: expected delete_archive=true after upgrade (key absent)", id)
 		}
 	}
 
@@ -61,8 +61,43 @@ func TestLoad_UpgradesOldCategoriesFile(t *testing.T) {
 	if hasExt(ebook.Extensions, "zip") {
 		t.Errorf("ebook: unrelated kind must not gain archive extensions, got %v", ebook.Extensions)
 	}
-	if len(ebook.Extensions) != 2 {
-		t.Errorf("ebook: extensions changed, got %v", ebook.Extensions)
+	if len(ebook.Extensions) != 2 || ebook.AutoExtract || ebook.DeleteArchive {
+		t.Errorf("ebook: changed by upgrade: %+v", ebook)
+	}
+}
+
+// TestLoad_UpgradeKeepsExplicitArchiveFlags checks that the v0 migration
+// never flips an explicit auto_extract/delete_archive false to true: doing so
+// could extract and then permanently delete a user's archives.
+func TestLoad_UpgradeKeepsExplicitArchiveFlags(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "categories.yaml")
+
+	old := Config{
+		MediaRoot: dir,
+		Categories: []Category{
+			{ID: "series", Kind: "series", Extensions: []string{"mkv"}},
+			{ID: "movie", Kind: "movie", Extensions: []string{"mkv"}},
+		},
+	}
+	if err := Save(path, &old); err != nil { // writes explicit false for both flags
+		t.Fatal(err)
+	}
+
+	cfg, upgraded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !upgraded || cfg.Version != CurrentVersion {
+		t.Fatalf("expected version upgrade, got upgraded=%v version=%d", upgraded, cfg.Version)
+	}
+	for _, cat := range cfg.Categories {
+		if cat.AutoExtract || cat.DeleteArchive {
+			t.Errorf("%s: explicit false flipped: auto_extract=%v delete_archive=%v", cat.ID, cat.AutoExtract, cat.DeleteArchive)
+		}
+		if !hasExt(cat.Extensions, "zip") {
+			t.Errorf("%s: expected archive extensions still added, got %v", cat.ID, cat.Extensions)
+		}
 	}
 }
 

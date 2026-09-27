@@ -55,11 +55,16 @@ var archiveExtsToAdd = []string{"tar", "zip", "rar", "7z"}
 // files written before series/movie categories could unpack archives (season
 // packs and movie releases shared as tar/zip/rar/7z): it adds the missing
 // archive extensions and turns extraction + archive deletion on for those two
-// kinds. Tracked by Config.Version so it runs at most once per file.
-func upgradeArchiveCategories(cfg *Config) bool {
+// kinds — but only where the file omits the key. An explicit value (even the
+// false every Save-written v0 file carries) is kept: flipping it could
+// extract and then permanently delete a user's archives. raw is the file's
+// YAML, used to tell "absent" from "false". Tracked by Config.Version so it
+// runs at most once per file.
+func upgradeArchiveCategories(cfg *Config, raw []byte) bool {
 	if cfg.Version >= CurrentVersion {
 		return false
 	}
+	hasExtract, hasDelete := archiveKeysPresent(raw)
 	for i := range cfg.Categories {
 		cat := &cfg.Categories[i]
 		if cat.Kind != "series" && cat.Kind != "movie" {
@@ -70,11 +75,32 @@ func upgradeArchiveCategories(cfg *Config) bool {
 				cat.Extensions = append(cat.Extensions, ext)
 			}
 		}
-		cat.AutoExtract = true
-		cat.DeleteArchive = true
+		if i >= len(hasExtract) || !hasExtract[i] {
+			cat.AutoExtract = true
+		}
+		if i >= len(hasDelete) || !hasDelete[i] {
+			cat.DeleteArchive = true
+		}
 	}
 	cfg.Version = CurrentVersion
 	return true
+}
+
+// archiveKeysPresent reports, per category index, whether raw sets
+// auto_extract / delete_archive at all.
+func archiveKeysPresent(raw []byte) (extract, del []bool) {
+	var probe struct {
+		Categories []struct {
+			AutoExtract   *bool `yaml:"auto_extract"`
+			DeleteArchive *bool `yaml:"delete_archive"`
+		} `yaml:"categories"`
+	}
+	_ = yaml.Unmarshal(raw, &probe) // raw already parsed once by Load
+	for _, c := range probe.Categories {
+		extract = append(extract, c.AutoExtract != nil)
+		del = append(del, c.DeleteArchive != nil)
+	}
+	return extract, del
 }
 
 func hasExt(exts []string, ext string) bool {
@@ -104,7 +130,7 @@ func Load(path string) (cfg *Config, upgraded bool, err error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, false, fmt.Errorf("parsing categories file: %w", err)
 	}
-	upgraded = upgradeArchiveCategories(cfg)
+	upgraded = upgradeArchiveCategories(cfg, data)
 	return cfg, upgraded, nil
 }
 
