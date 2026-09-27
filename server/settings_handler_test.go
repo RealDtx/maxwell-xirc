@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -21,8 +22,10 @@ import (
 // newSettingsTestServer builds a fully wired Server (engine, auth, maintenance,
 // settings) from a config.yaml written under t.TempDir(). The initial auth
 // policy trusts 10.0.0.0/8 as admin, so tests drive admin requests from
-// "10.0.0.1:1".
-func newSettingsTestServer(t *testing.T) (*Server, *config.Config, string) {
+// "10.0.0.1:1". maxConcurrent seeds storage.downloads.max_concurrent in the
+// file (tests that want the env-lock/file-preservation case pass a value
+// different from what an env override will apply in memory).
+func newSettingsTestServer(t *testing.T, maxConcurrent int) (*Server, *config.Config, string) {
 	t.Helper()
 	dir := t.TempDir()
 	configDir := filepath.Join(dir, "cfg")
@@ -55,7 +58,7 @@ storage:
   temp_dir: %q
   min_free_space: 1GB
 downloads:
-  max_concurrent: 3
+  max_concurrent: %d
 maintenance:
   search_result_retention_days: 14
   index_max_files: 200000
@@ -63,7 +66,7 @@ maintenance:
 auth:
   trusted_networks: ["10.0.0.0/8"]
   trusted_role: admin
-`, filepath.Join(dir, "test.db"), mediaDir, downloadsDir, tempDir)
+`, filepath.Join(dir, "test.db"), mediaDir, downloadsDir, tempDir, maxConcurrent)
 	if err := os.WriteFile(configPath, []byte(yamlContent), 0o640); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +88,11 @@ auth:
 	bus := irc.NewEventBus()
 	ircMgr := irc.NewManager(store, bus)
 	p := parser.New(store, bus)
-	eng := queue.NewEngine(store, bus, ircMgr, &cfg.Storage, cfg.Downloads.MaxConcurrent)
+	// ircMgr is nil here (not the server's) so SetRuntime's background
+	// TryDispatchQueued call returns immediately instead of racing the
+	// store.Close() in t.Cleanup above (queue.Engine.TryDispatchQueued
+	// no-ops when its ircMgr is nil) — this test never exercises dispatch.
+	eng := queue.NewEngine(store, bus, nil, &cfg.Storage, cfg.Downloads.MaxConcurrent)
 	maint := maintenance.New(store, cfg.Maintenance)
 
 	srv := New(store, ircMgr, p, eng, nil, nil, nil, nil, "", nil)
@@ -111,7 +118,7 @@ func adminDo(t *testing.T, srv *Server, method, path, body string) *httptest.Res
 }
 
 func TestSettingsGet_Shape(t *testing.T) {
-	srv, cfg, _ := newSettingsTestServer(t)
+	srv, cfg, _ := newSettingsTestServer(t, 3)
 
 	w := adminDo(t, srv, "GET", "/api/settings", "")
 	if w.Code != 200 {
@@ -157,7 +164,7 @@ func TestSettingsGet_Shape(t *testing.T) {
 }
 
 func TestSettingsPut_AppliesLiveAndPersists(t *testing.T) {
-	srv, _, configPath := newSettingsTestServer(t)
+	srv, _, configPath := newSettingsTestServer(t, 3)
 
 	dir := filepath.Dir(filepath.Dir(configPath)) // t.TempDir() root
 	newDownloads := filepath.Join(dir, "downloads")
@@ -202,7 +209,7 @@ func TestSettingsPut_AppliesLiveAndPersists(t *testing.T) {
 }
 
 func TestSettingsPut_ValidationErrors(t *testing.T) {
-	srv, _, configPath := newSettingsTestServer(t)
+	srv, _, configPath := newSettingsTestServer(t, 3)
 
 	before, err := os.ReadFile(configPath)
 	if err != nil {
@@ -241,9 +248,37 @@ func TestSettingsPut_ValidationErrors(t *testing.T) {
 	}
 }
 
+// TestSettingsPut_InvalidCIDR isolates the auth.trusted_networks CIDR check:
+// every other field is valid, only the CIDR is bad, so the ParseAuthPolicy
+// branch of validateSettings must be what's reported.
+func TestSettingsPut_InvalidCIDR(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 3)
+
+	body := settingsBodyWithCurrentDirs(t, srv, `{
+		"storage": {"downloads_dir": %q, "temp_dir": %q, "min_free_space": "1GB"},
+		"downloads": {"max_concurrent": 3},
+		"maintenance": {"search_result_retention_days": 14, "index_max_files": 200000, "interval_hours": 6},
+		"auth": {"trusted_networks": ["nope"], "trusted_role": "admin", "trusted_proxies": []}
+	}`)
+
+	w := adminDo(t, srv, "PUT", "/api/settings", body)
+	if w.Code != 400 {
+		t.Fatalf("PUT with bad CIDR: got %d body %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if !strings.Contains(resp.Error, "trusted_networks") {
+		t.Errorf("error should mention trusted_networks: %s", resp.Error)
+	}
+}
+
 func TestSettingsPut_EnvLocked(t *testing.T) {
 	t.Setenv("XIRC_DOWNLOADS_MAX_CONCURRENT", "3")
-	srv, _, _ := newSettingsTestServer(t)
+	srv, _, _ := newSettingsTestServer(t, 3)
 
 	body := `{
 		"storage": {"downloads_dir": %q, "temp_dir": %q, "min_free_space": "1GB"},
@@ -278,6 +313,37 @@ func TestSettingsPut_EnvLocked(t *testing.T) {
 	}
 }
 
+// TestSettingsPut_EnvLockedFieldNotRewrittenInFile: the file's own
+// downloads.max_concurrent is 5, but XIRC_DOWNLOADS_MAX_CONCURRENT=3
+// overrides it in memory — so the submitted value (which must equal the
+// in-memory 3 to pass the lock check) must NOT overwrite the file's 5.
+func TestSettingsPut_EnvLockedFieldNotRewrittenInFile(t *testing.T) {
+	t.Setenv("XIRC_DOWNLOADS_MAX_CONCURRENT", "3")
+	srv, _, configPath := newSettingsTestServer(t, 5)
+
+	body := settingsBodyWithCurrentDirs(t, srv, `{
+		"storage": {"downloads_dir": %q, "temp_dir": %q, "min_free_space": "1GB"},
+		"downloads": {"max_concurrent": 3},
+		"maintenance": {"search_result_retention_days": 14, "index_max_files": 200000, "interval_hours": 9},
+		"auth": {"trusted_networks": ["10.0.0.0/8"], "trusted_role": "admin", "trusted_proxies": []}
+	}`)
+	w := adminDo(t, srv, "PUT", "/api/settings", body)
+	if w.Code != 200 {
+		t.Fatalf("PUT with locked field unchanged: got %d body %s", w.Code, w.Body.String())
+	}
+
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(raw, []byte("max_concurrent: 5")) {
+		t.Errorf("file's own max_concurrent (5) was overwritten by the env-derived value: %s", raw)
+	}
+	if bytes.Contains(raw, []byte("interval_hours: 9")) == false {
+		t.Errorf("unrelated field (interval_hours) was not persisted: %s", raw)
+	}
+}
+
 // settingsBodyWithCurrentDirs substitutes the two %q verbs in a template body
 // with the server's current downloads_dir and temp_dir, so the test doesn't
 // need to know them.
@@ -297,29 +363,59 @@ func TestSettingsPut_PersistFailureAppliesNothing(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
-	srv, _, configPath := newSettingsTestServer(t)
+	srv, cfg, configPath := newSettingsTestServer(t, 3)
 	configDir := filepath.Dir(configPath)
+	root := filepath.Dir(configDir)
 	origDownloads := srv.downloadsDirNow()
+	origMaxConcurrent := cfg.Downloads.MaxConcurrent
+
+	before, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A different, otherwise-valid (existing, writable) downloads dir — not
+	// the server's current one — so a bug that applies live changes before
+	// checking the persist result would actually move downloadsDirNow().
+	altDownloads := filepath.Join(root, "downloads2")
+	if err := os.MkdirAll(altDownloads, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	altTemp := filepath.Join(altDownloads, ".tmp")
+	if err := os.MkdirAll(altTemp, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := os.Chmod(configDir, 0o555); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(configDir, 0o755) })
 
-	body := settingsBodyWithCurrentDirs(t, srv, `{
+	body := fmt.Sprintf(`{
 		"storage": {"downloads_dir": %q, "temp_dir": %q, "min_free_space": "1GB"},
 		"downloads": {"max_concurrent": 9},
 		"maintenance": {"search_result_retention_days": 14, "index_max_files": 200000, "interval_hours": 6},
 		"auth": {"trusted_networks": ["10.0.0.0/8"], "trusted_role": "admin", "trusted_proxies": []}
-	}`)
+	}`, altDownloads, altTemp)
 
 	w := adminDo(t, srv, "PUT", "/api/settings", body)
-	if w.Code < 400 {
-		t.Fatalf("PUT into read-only config dir: got %d body %s", w.Code, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("PUT into read-only config dir: got %d body %s, want 500", w.Code, w.Body.String())
 	}
 
 	if got := srv.downloadsDirNow(); got != origDownloads {
 		t.Errorf("downloadsDirNow changed despite persist failure: got %q want %q", got, origDownloads)
+	}
+	if cfg.Downloads.MaxConcurrent != origMaxConcurrent {
+		t.Errorf("cfg.Downloads.MaxConcurrent changed despite persist failure: got %d want %d", cfg.Downloads.MaxConcurrent, origMaxConcurrent)
+	}
+
+	after, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("config file changed despite persist failure:\nbefore: %s\nafter:  %s", before, after)
 	}
 
 	wg := adminDo(t, srv, "GET", "/api/settings", "")

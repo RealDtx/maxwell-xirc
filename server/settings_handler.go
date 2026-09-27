@@ -2,8 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"log"
+	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/RealDtx/maxwell-irc/dcc"
 	"github.com/RealDtx/maxwell-irc/fscheck"
 	"github.com/RealDtx/maxwell-irc/maintenance"
+	"gopkg.in/yaml.v3"
 )
 
 // settingsState carries what the /api/settings handler needs to validate,
@@ -129,19 +131,27 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	defer s.settings.mu.Unlock()
 	cfg := s.settings.cfg
 
-	if errs := checkEnvLocks(cfg.Editable(), e); len(errs) > 0 {
+	locked := config.EnvLockedKeys()
+	if errs := checkEnvLocks(cfg.Editable(), e, locked); len(errs) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(errs, "; "))
 		return
 	}
 
-	if err := config.SaveKeys(s.settings.path, e); err != nil {
+	// Env-locked fields are already equal to the current (env-derived) value
+	// by this point — but the FILE's own value for that key may differ (the
+	// env var only overrides it in memory). Omit locked keys from what's
+	// saved so the merge in SaveKeys leaves the file's value untouched.
+	toSave, err := settingsToSave(e, locked)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save settings: "+err.Error())
+		return
+	}
+	if err := config.SaveKeys(s.settings.path, toSave); err != nil {
 		reason := err.Error()
-		status := http.StatusInternalServerError
 		if fscheck.IsPermission(err) {
 			reason = fscheck.Describe(err, filepath.Dir(s.settings.path)).Error()
-			status = http.StatusForbidden
 		}
-		writeError(w, status, "failed to save settings: "+reason)
+		writeError(w, http.StatusInternalServerError, "failed to save settings: "+reason)
 		return
 	}
 
@@ -150,7 +160,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setStorageDirs(e.Storage.DownloadsDir, e.Storage.TempDir)
 	if s.auth != nil {
-		s.auth.Update(e.Auth) // already validated by validateSettings above
+		if err := s.auth.Update(e.Auth); err != nil {
+			// e.Auth was already validated by ParseAuthPolicy in validateSettings,
+			// so Update should never fail here — log rather than silently drop it.
+			log.Printf("settings: auth.Update failed after passing validation: %v", err)
+		}
 	}
 	if s.settings.maint != nil {
 		s.settings.maint.SetConfig(e.Maintenance)
@@ -162,7 +176,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var warnings []string
 	if e.Auth.TrustedRole == "admin" {
 		for _, n := range e.Auth.TrustedNetworks {
-			if n == "0.0.0.0/0" || n == "::/0" {
+			if isOpenNetwork(n) {
 				warnings = append(warnings, "every client that reaches xirc gets admin")
 				break
 			}
@@ -170,6 +184,48 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, s.buildSettingsResponse(cfg, warnings))
+}
+
+// isOpenNetwork reports whether cidr matches every address (a /0 prefix —
+// "0.0.0.0/0", "::/0", "0::/0", …), detected by parsing rather than string
+// matching so any equivalent spelling is caught.
+func isOpenNetwork(cidr string) bool {
+	if !strings.Contains(cidr, "/") {
+		return false // a bare IP is never "everything"
+	}
+	_, n, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return false
+	}
+	ones, _ := n.Mask.Size()
+	return ones == 0
+}
+
+// settingsToSave returns v as-is when nothing is locked; otherwise it
+// round-trips through YAML to a nested map and deletes each locked dotted
+// key, so SaveKeys' merge skips that key and leaves the file's own value.
+func settingsToSave(e config.Editable, locked []string) (any, error) {
+	if len(locked) == 0 {
+		return e, nil
+	}
+	data, err := yaml.Marshal(e)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+	for _, dotted := range locked {
+		parts := strings.SplitN(dotted, ".", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if sec, ok := m[parts[0]].(map[string]any); ok {
+			delete(sec, parts[1])
+		}
+	}
+	return m, nil
 }
 
 func validateSettings(e config.Editable) []string {
@@ -199,32 +255,46 @@ func validateSettings(e config.Editable) []string {
 	return errs
 }
 
-// checkEnvLocks compares current vs submitted for every dotted key
-// config.EnvLockedKeys() reports as locked, mapping the key to its Editable
-// field by yaml tag (mirroring EnvLockedKeys' own reflection). nil and empty
-// slices compare equal, so an unset list field submitted as [] isn't flagged.
-func checkEnvLocks(current, submitted config.Editable) []string {
+// checkEnvLocks compares current vs submitted for every dotted key in
+// locked (as produced by config.EnvLockedKeys() — the single source of
+// truth for which fields have an env override set). nil and empty slices
+// compare equal, so an unset list field submitted as [] isn't flagged.
+func checkEnvLocks(current, submitted config.Editable, locked []string) []string {
 	var errs []string
-	cv, sv := reflect.ValueOf(current), reflect.ValueOf(submitted)
-	t := cv.Type()
-	for i := 0; i < t.NumField(); i++ {
-		sec := t.Field(i)
-		secName := strings.Split(sec.Tag.Get("yaml"), ",")[0]
-		cf, sf := cv.Field(i), sv.Field(i)
-		for j := 0; j < sec.Type.NumField(); j++ {
-			key := strings.Split(sec.Type.Field(j).Tag.Get("yaml"), ",")[0]
-			envKey := "XIRC_" + strings.ToUpper(secName) + "_" + strings.ToUpper(key)
-			if _, ok := os.LookupEnv(envKey); !ok {
-				continue
-			}
-			a, b := cf.Field(j).Interface(), sf.Field(j).Interface()
-			if valuesEqual(a, b) {
-				continue
-			}
-			errs = append(errs, secName+"."+key+" is set by environment variable "+envKey+" and can't be changed here")
+	for _, dotted := range locked {
+		parts := strings.SplitN(dotted, ".", 2)
+		if len(parts) != 2 {
+			continue
 		}
+		cf, ok1 := dottedField(current, parts[0], parts[1])
+		sf, ok2 := dottedField(submitted, parts[0], parts[1])
+		if !ok1 || !ok2 || valuesEqual(cf.Interface(), sf.Interface()) {
+			continue
+		}
+		envKey := "XIRC_" + strings.ToUpper(parts[0]) + "_" + strings.ToUpper(parts[1])
+		errs = append(errs, dotted+" is set by environment variable "+envKey+" and can't be changed here")
 	}
 	return errs
+}
+
+// dottedField returns the Editable field named by a section/key pair, as
+// EnvLockedKeys' dotted keys split into (e.g. "downloads", "max_concurrent").
+func dottedField(e config.Editable, section, key string) (reflect.Value, bool) {
+	v := reflect.ValueOf(e)
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		if strings.Split(t.Field(i).Tag.Get("yaml"), ",")[0] != section {
+			continue
+		}
+		sv := v.Field(i)
+		st := sv.Type()
+		for j := 0; j < st.NumField(); j++ {
+			if strings.Split(st.Field(j).Tag.Get("yaml"), ",")[0] == key {
+				return sv.Field(j), true
+			}
+		}
+	}
+	return reflect.Value{}, false
 }
 
 func valuesEqual(a, b any) bool {
