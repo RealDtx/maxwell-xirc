@@ -67,7 +67,7 @@ func within(root, p string) bool {
 func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("dir")
 	if dir == "" {
-		roots := s.configuredRoots()
+		roots := s.advertisedRoots()
 		sort.Strings(roots)
 		writeJSON(w, http.StatusOK, map[string][]string{"roots": roots})
 		return

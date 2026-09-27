@@ -149,8 +149,10 @@ func TestFilesRoots(t *testing.T) {
 
 	movies := filepath.Join(mediaRoot, "Movies")
 	downloads := filepath.Join(mediaRoot, "Downloads")
-	if err := os.MkdirAll(movies, 0755); err != nil {
-		t.Fatal(err)
+	for _, d := range []string{movies, downloads} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	srv.SetLibrary(library.NewManager(filepath.Join(mediaRoot, "categories.yaml"), library.Config{
@@ -256,5 +258,57 @@ func TestFileManager_MoveBlamesReadOnlySource(t *testing.T) {
 	msg, _ := errs["a.mkv"].(string)
 	if w.Code != http.StatusOK || !strings.Contains(msg, "permission denied: "+srcDir) {
 		t.Errorf("got %d %v", w.Code, resp)
+	}
+}
+
+// TestAdvertisedDirsExist checks that a configured category folder that
+// doesn't exist yet is neither offered as a download target nor listed as a
+// file-manager root (isValidTargetDir would reject it), while an existing
+// one and the media root itself are.
+func TestAdvertisedDirsExist(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+
+	mediaRoot := t.TempDir()
+	movies := filepath.Join(mediaRoot, "Movies")
+	missing := filepath.Join(mediaRoot, "Series")
+	if err := os.MkdirAll(movies, 0755); err != nil {
+		t.Fatal(err)
+	}
+	srv.SetLibrary(library.NewManager(filepath.Join(mediaRoot, "categories.yaml"), library.Config{
+		MediaRoot: mediaRoot,
+		Categories: []library.Category{
+			{ID: "movie", Kind: "movie", Dir: "Movies", Enabled: true},
+			{ID: "series", Kind: "series", Dir: "Series", Enabled: true},
+		},
+	}))
+
+	w := httptest.NewRecorder()
+	srv.handleGetDownloadTargets(w, httptest.NewRequest("GET", "/api/downloads/targets", nil))
+	var targets []string
+	if err := json.NewDecoder(w.Body).Decode(&targets); err != nil {
+		t.Fatalf("decode targets: %v", err)
+	}
+
+	w = httptest.NewRecorder()
+	srv.handleFiles(w, httptest.NewRequest("GET", "/api/files", nil))
+	var files struct {
+		Roots []string `json:"roots"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&files); err != nil {
+		t.Fatalf("decode roots: %v", err)
+	}
+
+	for name, list := range map[string][]string{"targets": targets, "roots": files.Roots} {
+		has := map[string]bool{}
+		for _, d := range list {
+			has[d] = true
+		}
+		if has[missing] {
+			t.Errorf("%s advertises missing category dir %s: %v", name, missing, list)
+		}
+		if !has[movies] || !has[mediaRoot] {
+			t.Errorf("%s lacks existing dirs %s / %s: %v", name, mediaRoot, movies, list)
+		}
 	}
 }

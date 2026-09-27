@@ -344,6 +344,20 @@ func (s *Server) configuredRoots() []string {
 	return dirs
 }
 
+// advertisedRoots is configuredRoots minus the ones isValidTargetDir would
+// reject — typically a configured category folder that doesn't exist yet —
+// so list endpoints never offer a folder that selecting then refuses.
+// Listing never creates folders.
+func (s *Server) advertisedRoots() []string {
+	var dirs []string
+	for _, d := range s.configuredRoots() {
+		if ok, _ := s.isValidTargetDir(d); ok {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
+}
+
 // GET /api/downloads/targets — every configured root, plus their non-hidden
 // subfolders down to the library's search_depth levels, sorted.
 func (s *Server) handleGetDownloadTargets(w http.ResponseWriter, r *http.Request) {
@@ -356,7 +370,7 @@ func (s *Server) handleGetDownloadTargets(w http.ResponseWriter, r *http.Request
 		depth = s.library.Get().SearchDepth
 	}
 	depth = clampSubdirDepth(depth)
-	dirs := s.configuredRoots()
+	dirs := s.advertisedRoots()
 	seen := make(map[string]bool)
 	targets := []string{}
 	for _, dir := range dirs {
