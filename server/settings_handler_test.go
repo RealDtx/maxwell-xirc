@@ -435,3 +435,65 @@ func TestSettingsPut_PersistFailureAppliesNothing(t *testing.T) {
 		t.Errorf("persist.reason: got empty, want a reason")
 	}
 }
+
+// An unchanged downloads dir that is currently unwritable (unmounted disk,
+// env-locked Docker dir) must not block saving unrelated settings.
+func TestSettingsPut_UnchangedBrokenDirDoesNotBlockSave(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	srv, cfg, _ := newSettingsTestServer(t, 3)
+	dl := cfg.Storage.DownloadsDir
+	if err := os.Chmod(dl, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dl, 0o755) })
+
+	w := adminDo(t, srv, "PUT", "/api/settings", `{"maintenance": {"search_result_retention_days": 7, "index_max_files": 1000, "interval_hours": 3}}`)
+	if w.Code != 200 {
+		t.Fatalf("PUT changing only maintenance: got %d body %s", w.Code, w.Body.String())
+	}
+	if cfg.Maintenance.IntervalHours != 3 {
+		t.Errorf("interval_hours: got %d want 3", cfg.Maintenance.IntervalHours)
+	}
+
+	// Changing to another unwritable dir is still rejected.
+	body := fmt.Sprintf(`{"storage": {"downloads_dir": %q, "temp_dir": %q, "min_free_space": "1GB"}}`, filepath.Join(dl, "sub"), cfg.Storage.TempDir)
+	if w := adminDo(t, srv, "PUT", "/api/settings", body); w.Code != 400 {
+		t.Errorf("PUT with new unwritable downloads_dir: got %d want 400", w.Code)
+	}
+}
+
+// Omitted sections/fields keep their current values; a bad body's decode
+// error is reported; a rejected PUT leaves the live slices untouched.
+func TestSettingsPut_PartialBodyKeepsCurrent(t *testing.T) {
+	srv, cfg, configPath := newSettingsTestServer(t, 3)
+
+	w := adminDo(t, srv, "PUT", "/api/settings", `{"downloads": {"max_concurrent": 4}}`)
+	if w.Code != 200 {
+		t.Fatalf("PUT without maintenance: got %d body %s", w.Code, w.Body.String())
+	}
+	loaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := loaded.Maintenance; m.SearchResultRetentionDays != 14 || m.IndexMaxFiles != 200000 || m.IntervalHours != 6 {
+		t.Errorf("maintenance not kept: %+v", m)
+	}
+	if loaded.Downloads.MaxConcurrent != 4 || len(loaded.Auth.TrustedNetworks) != 1 {
+		t.Errorf("persisted: max_concurrent %d, trusted_networks %v", loaded.Downloads.MaxConcurrent, loaded.Auth.TrustedNetworks)
+	}
+
+	w = adminDo(t, srv, "PUT", "/api/settings", `{"downloads": {"max_concurrent": "x"}}`)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "max_concurrent") {
+		t.Errorf("bad body: got %d %s, want 400 naming the field", w.Code, w.Body.String())
+	}
+
+	w = adminDo(t, srv, "PUT", "/api/settings", `{"auth": {"trusted_networks": ["nope"]}}`)
+	if w.Code != 400 {
+		t.Fatalf("invalid CIDR: got %d", w.Code)
+	}
+	if got := cfg.Auth.TrustedNetworks; len(got) != 1 || got[0] != "10.0.0.0/8" {
+		t.Errorf("rejected PUT mutated live trusted_networks: %v", got)
+	}
+}

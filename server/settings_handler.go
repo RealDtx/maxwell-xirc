@@ -116,23 +116,25 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	var e config.Editable
+	s.settings.mu.Lock()
+	defer s.settings.mu.Unlock()
+	cfg := s.settings.cfg
+	cur := cfg.Editable()
+
+	// Decode onto the current values so omitted sections/fields keep them.
+	e := cfg.Editable()
 	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
-	if errs := validateSettings(e); len(errs) > 0 {
+	if errs := validateSettings(cur, e); len(errs) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(errs, "; "))
 		return
 	}
 
-	s.settings.mu.Lock()
-	defer s.settings.mu.Unlock()
-	cfg := s.settings.cfg
-
 	locked := config.EnvLockedKeys()
-	if errs := checkEnvLocks(cfg.Editable(), e, locked); len(errs) > 0 {
+	if errs := checkEnvLocks(cur, e, locked); len(errs) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(errs, "; "))
 		return
 	}
@@ -228,13 +230,19 @@ func settingsToSave(e config.Editable, locked []string) (any, error) {
 	return m, nil
 }
 
-func validateSettings(e config.Editable) []string {
+// validateSettings checks e; writability is only checked for dirs that
+// differ from cur, so a currently-broken dir (unmounted disk, env-locked
+// Docker dir) doesn't block saving unrelated settings.
+func validateSettings(cur, e config.Editable) []string {
 	var errs []string
-	for _, d := range []struct{ key, dir string }{
-		{"storage.downloads_dir", e.Storage.DownloadsDir}, {"storage.temp_dir", e.Storage.TempDir},
+	for _, d := range []struct{ key, dir, old string }{
+		{"storage.downloads_dir", e.Storage.DownloadsDir, cur.Storage.DownloadsDir},
+		{"storage.temp_dir", e.Storage.TempDir, cur.Storage.TempDir},
 	} {
 		if !filepath.IsAbs(d.dir) {
 			errs = append(errs, d.key+" must be an absolute path")
+		} else if d.dir == d.old {
+			continue
 		} else if c := writableOrCreatable(d.dir); !c.OK {
 			errs = append(errs, d.key+": "+c.Reason)
 		}

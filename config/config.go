@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -95,7 +96,9 @@ func (c *Config) Editable() Editable {
 		Storage:     EditableStorage{c.Storage.DownloadsDir, c.Storage.TempDir, c.Storage.MinFreeSpace},
 		Downloads:   c.Downloads,
 		Maintenance: c.Maintenance,
-		Auth:        c.Auth,
+		// Cloned so decoding a request onto the result can't write into the
+		// live config's backing arrays.
+		Auth: AuthConfig{slices.Clone(c.Auth.TrustedNetworks), c.Auth.TrustedRole, slices.Clone(c.Auth.TrustedProxies)},
 	}
 }
 
