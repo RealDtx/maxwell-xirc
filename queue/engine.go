@@ -645,20 +645,11 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 				})
 				// Archive remains untouched. Download stays completed.
 			} else {
-				// The download is already in its resolved category folder —
-				// extracted files are just flattened directly into it.
-				for _, ef := range extracted {
-					flattenExtracted(ef, extractDir)
-				}
-				// Remove subdirectories left by extraction — all files have
-				// been flattened, so these should now be empty.
-				routing.RemoveEmptyDirs(extractDir)
-
-				if matchedCat.DeleteArchive {
-					log.Printf("auto-extract: deleting archive %q after successful extraction", finalPath)
-					if err := os.Remove(finalPath); err != nil {
-						log.Printf("auto-extract: failed to remove archive %q: %v", finalPath, err)
-					}
+				if warning := placeExtracted(finalPath, extractDir, extracted, matchedCat.DeleteArchive); warning != "" {
+					e.bus.Publish(irc.Event{
+						Type: irc.EventNotification,
+						Data: map[string]string{"severity": "warning", "message": warning},
+					})
 				}
 			}
 		}
@@ -720,17 +711,80 @@ func (e *Engine) downloadsDir() string {
 	return e.storageCfg.DownloadsDir
 }
 
+// placeExtracted finishes an extraction: the download is already in its
+// resolved category folder, so the extracted files are flattened directly
+// into extractDir, leftover (now empty) subdirectories removed, and the
+// archive deleted when deleteArchive is set. Flattening never overwrites: a
+// name already taken gets a " (n)" suffix. The archive is kept unless every
+// file moved to its own name — a collision or failed move means the user
+// should look before the original is gone. It returns a user-facing
+// warning, or "" when everything went cleanly.
+func placeExtracted(archivePath, extractDir string, extracted []string, deleteArchive bool) string {
+	var renamed, failed []string
+	for _, ef := range extracted {
+		dst, err := flattenExtracted(ef, extractDir)
+		switch {
+		case err != nil:
+			log.Printf("flattening extracted file %q: %v", ef, err)
+			failed = append(failed, filepath.Base(ef))
+		case filepath.Base(dst) != filepath.Base(ef):
+			renamed = append(renamed, filepath.Base(ef)+" → "+filepath.Base(dst))
+		}
+	}
+	routing.RemoveEmptyDirs(extractDir)
+
+	name := filepath.Base(archivePath)
+	var problems []string
+	if len(renamed) > 0 {
+		problems = append(problems, "already existed, saved as: "+strings.Join(renamed, ", "))
+	}
+	if len(failed) > 0 {
+		problems = append(problems, "could not be moved (left in a hidden .extract_ folder): "+strings.Join(failed, ", "))
+	}
+	if len(problems) > 0 {
+		msg := fmt.Sprintf("Extracted %s with conflicts — %s", name, strings.Join(problems, "; "))
+		if deleteArchive {
+			msg += ". Archive kept."
+		}
+		log.Printf("auto-extract: %s", msg)
+		return msg
+	}
+	if deleteArchive {
+		log.Printf("auto-extract: deleting archive %q after successful extraction", archivePath)
+		if err := os.Remove(archivePath); err != nil {
+			log.Printf("auto-extract: failed to remove archive %q: %v", archivePath, err)
+		}
+	}
+	return ""
+}
+
 // flattenExtracted moves ef (a file pulled out of an archive, possibly still
 // inside a subdirectory the archive created) directly into extractDir, so
-// nothing from inside the archive lingers in a subfolder.
-func flattenExtracted(ef, extractDir string) {
+// nothing from inside the archive lingers in a subfolder. It never replaces
+// an existing entry: "name.ext" becomes "name (1).ext", "name (2).ext", …
+// It returns where the file ended up.
+func flattenExtracted(ef, extractDir string) (string, error) {
 	if filepath.Dir(ef) == extractDir {
-		return
+		return ef, nil
 	}
-	dst := filepath.Join(extractDir, filepath.Base(ef))
+	base := filepath.Base(ef)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	dst := filepath.Join(extractDir, base)
+	for n := 1; ; n++ {
+		// ponytail: Lstat-then-Rename is racy against another writer in the
+		// same folder; renameat2(RENAME_NOREPLACE) if that ever matters.
+		if _, err := os.Lstat(dst); os.IsNotExist(err) {
+			break
+		} else if err != nil {
+			return "", err
+		}
+		dst = filepath.Join(extractDir, fmt.Sprintf("%s (%d)%s", stem, n, ext))
+	}
 	if err := os.Rename(ef, dst); err != nil {
-		log.Printf("flattening extracted file %q: %v", ef, err)
+		return "", err
 	}
+	return dst, nil
 }
 
 // humanSizePtr formats a byte count as a short human-readable size string
