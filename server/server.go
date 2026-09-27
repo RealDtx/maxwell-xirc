@@ -15,21 +15,22 @@ import (
 )
 
 type Server struct {
-	store   db.Store
-	ircMgr  *ircpkg.Manager
-	parser  *parser.Parser
-	engine  *queue.Engine
-	wsHub   *ws.Hub
-	msgBuf  *ircpkg.MessageBuffer
-	errBuf  *ircpkg.ErrorBuffer
-	setup   *SetupState
-	mux     *http.ServeMux
-	prefix  string
-	webFS   fs.FS
-	library *library.Manager
-	auth    *Auth
-	setupMu sync.Mutex // serialises /api/auth/setup and last-admin checks
-	caps    capState
+	store    db.Store
+	ircMgr   *ircpkg.Manager
+	parser   *parser.Parser
+	engine   *queue.Engine
+	wsHub    *ws.Hub
+	msgBuf   *ircpkg.MessageBuffer
+	errBuf   *ircpkg.ErrorBuffer
+	setup    *SetupState
+	mux      *http.ServeMux
+	prefix   string
+	webFS    fs.FS
+	library  *library.Manager
+	auth     *Auth
+	setupMu  sync.Mutex // serialises /api/auth/setup and last-admin checks
+	caps     capState
+	settings settingsState
 }
 
 // SetLibrary wires the library manager in — set once at startup.
@@ -157,6 +158,9 @@ func (s *Server) routes() {
 
 	// Storage stats endpoint
 	s.mux.HandleFunc("/api/storage", s.handleStorageStats)
+
+	// Admin settings endpoint
+	s.mux.HandleFunc("/api/settings", s.handleSettings)
 
 	// Setup wizard endpoints
 	s.mux.HandleFunc("/api/setup/status", s.handleSetupStatus)

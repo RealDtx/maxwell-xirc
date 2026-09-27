@@ -327,6 +327,7 @@ func main() {
 	srv.SetLibrary(libMgr)
 	srv.SetDownloadsDir(cfg.Storage.DownloadsDir)
 	srv.SetAuth(auth)
+	srv.SetSettings(*configPath, cfg, maint)
 
 	srv.SetCapabilityInputs(cfg.Storage.TempDir, logDir, bus)
 	caps := srv.RecheckCapabilities()
