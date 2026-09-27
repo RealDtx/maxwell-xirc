@@ -17,8 +17,16 @@ check nginx_subpath "$(render_nginx_subpath)" "location /xirc/" "proxy_pass http
 check apache_site   "$(render_apache_site)"   "ServerName xirc.example.com" "ProxyPass / http://127.0.0.1:8085/" "ws://127.0.0.1:8085/" "ProxyPreserveHost On" "X-Forwarded-Proto"
 check apache_subpath "$(render_apache_subpath)" "ProxyPass /xirc/ http://127.0.0.1:8085/" "ws://127.0.0.1:8085/ws" "ProxyPreserveHost On"
 if command -v nginx >/dev/null; then
-    tmp=$(mktemp -d); { echo "events {} http {"; render_nginx_site; echo "}"; } >"$tmp/n.conf"
-    nginx -t -c "$tmp/n.conf" -p "$tmp" 2>&1 | tail -1 || fail=1
+    # pid/error log in the temp dir: CI runs nginx -t as a non-root user.
+    tmp=$(mktemp -d)
+    {
+        echo "pid $tmp/nginx.pid; error_log $tmp/error.log; events {} http {"
+        for t in client_body proxy fastcgi uwsgi scgi; do echo "${t}_temp_path $tmp/$t;"; done
+        render_nginx_site
+        echo "}"
+    } >"$tmp/n.conf"
+    out=$(nginx -t -e "$tmp/error.log" -c "$tmp/n.conf" -p "$tmp" 2>&1) || { echo "$out"; fail=1; }
+    rm -rf "$tmp"
 fi
 [[ $fail == 0 ]] && echo "proxy templates ok"
 exit $fail
