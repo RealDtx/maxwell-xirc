@@ -7,7 +7,7 @@ server:
 
 database:
   driver: sqlite
-  path: /opt/maxwell-irc/data/maxwell-irc.db
+  path: /opt/xirc/data/xirc.db
 
 storage:
   media_dir: /srv/dlna/media
@@ -37,3 +37,10 @@ maintenance:
   search_result_retention_days: 14
   index_max_files: 200000
   interval_hours: 6
+
+# Login. Without trusted_networks every client must log in (the first visit
+# creates the admin unless one was created with --create-admin).
+# auth:
+#   trusted_networks: [192.168.0.0/16]   # these clients skip login
+#   trusted_role: admin                  # role they get: admin | user
+#   trusted_proxies: [127.0.0.1/32, ::1/128]  # peers whose X-Forwarded-* is believed

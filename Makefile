@@ -12,7 +12,7 @@ PROFILE_DIR = .$(PROFILE)
 # Fallback values used when no profile exists (or overridden on the command line)
 PI_HOST     ?= maxwell.local
 PI_USER     ?= maxwell
-INSTALL_DIR ?= /opt/maxwell-irc
+INSTALL_DIR ?= /opt/xirc
 
 build:
 	$(GO) build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY) .
@@ -25,11 +25,11 @@ test-verbose:
 
 # Cross-compile for Raspberry Pi 4 (ARM64)
 build-pi:
-	GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w" -o $(BINARY)-arm64 .
+	GOOS=linux GOARCH=arm64 $(GO) build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY)-arm64 .
 
 # Cross-compile for Raspberry Pi 3 (ARM)
 build-pi3:
-	GOOS=linux GOARCH=arm GOARM=7 $(GO) build -ldflags="-s -w" -o $(BINARY)-arm .
+	GOOS=linux GOARCH=arm GOARM=7 $(GO) build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BINARY)-arm .
 
 docker:
 	docker build -f deploy/Dockerfile --build-arg VERSION=$(VERSION) -t xirc .
