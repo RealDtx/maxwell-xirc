@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/RealDtx/maxwell-irc/db"
 )
@@ -47,7 +48,7 @@ func TestQueue_AddDownload(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
-	q := New(store, 2)
+	q := New(store)
 
 	dl, err := q.Add(1, "#channel", "BotNick", 1, "file.txt", 1024, false, false, true)
 	if err != nil {
@@ -80,99 +81,11 @@ func TestQueue_AddDownload(t *testing.T) {
 	}
 }
 
-func TestQueue_NextReturnsOldestQueued(t *testing.T) {
-	store, cleanup := newTestStore(t)
-	defer cleanup()
-
-	q := New(store, 2)
-
-	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotA", 3, "file3.txt", 4096, false, false, true)
-
-	next, err := q.NextAndMarkDownloading()
-	if err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
-	}
-	if next == nil {
-		t.Fatal("expected NextAndMarkDownloading() to return a download")
-	}
-	if next.ID != dl1.ID {
-		t.Errorf("expected oldest download (ID=%d), got ID=%d", dl1.ID, next.ID)
-	}
-}
-
-func TestQueue_RespectsMaxConcurrent(t *testing.T) {
-	store, cleanup := newTestStore(t)
-	defer cleanup()
-
-	q := New(store, 2)
-
-	dl1, _ := q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true)
-	dl3, _ := q.Add(1, "#channel", "BotC", 3, "file3.txt", 4096, false, false, true)
-
-	// Mark first two as downloading
-	_, _ = q.NextAndMarkDownloading()
-	_, _ = q.NextAndMarkDownloading()
-
-	// NextAndMarkDownloading() should return nil since we're at maxConcurrent=2
-	next, err := q.NextAndMarkDownloading()
-	if err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
-	}
-	if next != nil {
-		t.Error("expected NextAndMarkDownloading() to return nil when at maxConcurrent limit")
-	}
-
-	// Mark one as completed
-	q.MarkCompleted(dl1.ID, "/path/to/file", 100, 50)
-
-	// Now NextAndMarkDownloading() should return the third download
-	next, err = q.NextAndMarkDownloading()
-	if err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
-	}
-	if next == nil {
-		t.Fatal("expected NextAndMarkDownloading() to return a download after one completes")
-	}
-	if next.ID != dl3.ID {
-		t.Errorf("expected download ID=%d, got ID=%d", dl3.ID, next.ID)
-	}
-}
-
-func TestQueue_OnePerBot(t *testing.T) {
-	store, cleanup := newTestStore(t)
-	defer cleanup()
-
-	q := New(store, 10) // High concurrency limit
-
-	// Add three downloads from BotA
-	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	_, _ = q.Add(1, "#channel", "BotA", 2, "file2.txt", 2048, false, false, true)
-	dl3, _ := q.Add(1, "#channel", "BotB", 3, "file3.txt", 4096, false, false, true)
-
-	// Mark first BotA download as downloading
-	_, _ = q.NextAndMarkDownloading()
-
-	// NextAndMarkDownloading() should skip dl2 (from same bot) and return dl3 (from BotB)
-	next, err := q.NextAndMarkDownloading()
-	if err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
-	}
-	if next == nil {
-		t.Fatal("expected NextAndMarkDownloading() to return a download")
-	}
-	if next.ID != dl3.ID {
-		t.Errorf("expected download from BotB (ID=%d), got ID=%d", dl3.ID, next.ID)
-	}
-}
-
 func TestQueue_Cancel(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
-	q := New(store, 2)
+	q := New(store)
 
 	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
 
@@ -191,10 +104,10 @@ func TestQueue_Retry(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
-	q := New(store, 2)
+	q := New(store)
 
 	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
-	_, _ = q.NextAndMarkDownloading()
+	startNext(t, store)
 	q.MarkFailed(dl.ID, "connection timeout")
 
 	err := q.Retry(dl.ID)
@@ -224,7 +137,7 @@ func TestQueue_Reorder(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
-	q := New(store, 3)
+	q := New(store)
 
 	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
 	dl2, _ := q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true)
@@ -235,13 +148,13 @@ func TestQueue_Reorder(t *testing.T) {
 		t.Fatalf("MoveToFront failed: %v", err)
 	}
 
-	// NextAndMarkDownloading() should now return dl2 (moved to front)
-	next, err := q.NextAndMarkDownloading()
+	// startNext should now pick dl2 (moved to front)
+	next, err := startNext(t, store)
 	if err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+		t.Fatalf("startNext failed: %v", err)
 	}
 	if next == nil {
-		t.Fatal("expected NextAndMarkDownloading() to return a download")
+		t.Fatal("expected startNext to return a download")
 	}
 	if next.ID != dl2.ID {
 		t.Errorf("expected download ID=%d (moved to front), got ID=%d", dl2.ID, next.ID)
@@ -251,7 +164,7 @@ func TestQueue_Reorder(t *testing.T) {
 func TestQueue_MoveToFront_MultiplePromotions(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
-	q := New(store, 3)
+	q := New(store)
 
 	srv := &db.Server{Name: "srv", Host: "a.com", Port: 6667, Nickname: "bot", Enabled: true}
 	store.CreateServer(srv)
@@ -269,9 +182,9 @@ func TestQueue_MoveToFront_MultiplePromotions(t *testing.T) {
 		t.Fatalf("second MoveToFront failed: %v", err)
 	}
 
-	next, err := q.NextAndMarkDownloading()
+	next, err := startNext(t, store)
 	if err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+		t.Fatalf("startNext failed: %v", err)
 	}
 	if next == nil {
 		t.Fatal("expected a download")
@@ -286,7 +199,7 @@ func TestQueue_MarkNeedsAction(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
-	q := New(store, 2)
+	q := New(store)
 	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
 
 	err := q.MarkNeedsAction(dl.ID, "manual captcha required")
@@ -307,7 +220,7 @@ func TestQueue_UpdateProgress(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
-	q := New(store, 2)
+	q := New(store)
 	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
 
 	err := q.UpdateProgress(dl.ID, 512, 200, 150)
@@ -331,7 +244,7 @@ func TestQueue_UpdateDestinationPath(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
-	q := New(store, 2)
+	q := New(store)
 	dl, _ := q.Add(1, "#channel", "BotA", 1, "file.txt", 1024, false, false, true)
 
 	newPath := "/downloads/final/file.txt"
@@ -350,21 +263,21 @@ func TestQueue_RequeueInterrupted(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 
-	q := New(store, 3)
+	q := New(store)
 	_, _ = q.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
 	_, _ = q.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true)
 
-	first, err := q.NextAndMarkDownloading()
+	first, err := startNext(t, store)
 	if err != nil {
-		t.Fatalf("first NextAndMarkDownloading failed: %v", err)
+		t.Fatalf("first startNext failed: %v", err)
 	}
 	if first == nil {
 		t.Fatal("expected first download to be marked downloading")
 	}
 
-	second, err := q.NextAndMarkDownloading()
+	second, err := startNext(t, store)
 	if err != nil {
-		t.Fatalf("second NextAndMarkDownloading failed: %v", err)
+		t.Fatalf("second startNext failed: %v", err)
 	}
 	if second == nil {
 		t.Fatal("expected second download to be marked downloading")
@@ -399,4 +312,22 @@ func TestQueue_RequeueInterrupted(t *testing.T) {
 	if retrievedThird.CompletedAt == nil {
 		t.Error("expected third CompletedAt to be set")
 	}
+}
+
+// startNext marks the oldest queued download as downloading, picked the way
+// the engine's dispatcher picks it. Returns nil when nothing is queued.
+func startNext(t *testing.T, store db.Store) (*db.Download, error) {
+	t.Helper()
+	queued, err := store.GetDownloads("queued")
+	if err != nil {
+		return nil, err
+	}
+	picked := selectDispatchable(queued, map[string]bool{}, 0, 1)
+	if len(picked) == 0 {
+		return nil, nil
+	}
+	dl := picked[0]
+	now := time.Now()
+	dl.Status, dl.StartedAt = "downloading", &now
+	return dl, store.UpdateDownload(dl)
 }

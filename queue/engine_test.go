@@ -97,58 +97,6 @@ func TestEngine_DetectsPassiveDCC(t *testing.T) {
 	}
 }
 
-func TestEngine_QueueProcessing(t *testing.T) {
-	store, cleanup := newTestStore(t)
-	defer cleanup()
-
-	bus := irc.NewEventBus()
-	ircMgr := irc.NewManager(store, bus)
-	storageCfg := &config.StorageConfig{
-		DownloadsDir: "/tmp/downloads",
-		TempDir:      "/tmp/temp",
-		MinFreeSpace: "1MB",
-	}
-
-	engine := NewEngine(store, bus, ircMgr, storageCfg, 2)
-
-	// Add downloads to queue
-	dl1, err := engine.queue.Add(1, "#channel", "BotA", 1, "file1.txt", 1024, false, false, true)
-	if err != nil {
-		t.Fatalf("Add failed: %v", err)
-	}
-
-	dl2, err := engine.queue.Add(1, "#channel", "BotB", 2, "file2.txt", 2048, false, false, true)
-	if err != nil {
-		t.Fatalf("Add failed: %v", err)
-	}
-
-	// Verify NextAndMarkDownloading() returns the oldest queued download
-	next, err := engine.queue.NextAndMarkDownloading()
-	if err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
-	}
-	if next == nil {
-		t.Fatal("expected NextAndMarkDownloading() to return a download")
-	}
-
-	if next.ID != dl1.ID {
-		t.Errorf("expected oldest download (ID=%d), got ID=%d", dl1.ID, next.ID)
-	}
-
-	// Mark second as downloading and verify NextAndMarkDownloading() returns it
-	next, err = engine.queue.NextAndMarkDownloading()
-	if err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
-	}
-	if next == nil {
-		t.Fatal("expected NextAndMarkDownloading() to return second download")
-	}
-
-	if next.ID != dl2.ID {
-		t.Errorf("expected second download (ID=%d), got ID=%d", dl2.ID, next.ID)
-	}
-}
-
 func TestEngine_StartsAndStops(t *testing.T) {
 	dir, err := ioutil.TempDir("", "engine-test-")
 	if err != nil {
@@ -193,8 +141,8 @@ func TestEngine_Start_RequeuesInterruptedDownloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
-	if _, err := engine.queue.NextAndMarkDownloading(); err != nil {
-		t.Fatalf("NextAndMarkDownloading failed: %v", err)
+	if _, err := startNext(t, store); err != nil {
+		t.Fatalf("startNext failed: %v", err)
 	}
 
 	before, _ := store.GetDownload(dl.ID)

@@ -3,23 +3,17 @@ package queue
 import (
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/RealDtx/maxwell-irc/db"
 )
 
 type Queue struct {
-	mu            sync.Mutex
-	store         db.Store
-	maxConcurrent int
+	store db.Store
 }
 
-func New(store db.Store, maxConcurrent int) *Queue {
-	return &Queue{
-		store:         store,
-		maxConcurrent: maxConcurrent,
-	}
+func New(store db.Store) *Queue {
+	return &Queue{store: store}
 }
 
 func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, filename string, filesize int64, statsOnly bool, autoExtract bool, autoSubdir bool) (*db.Download, error) {
@@ -43,53 +37,9 @@ func (q *Queue) Add(serverID int64, channel, botNick string, packNumber int, fil
 	return dl, nil
 }
 
-// NextAndMarkDownloading returns the next queued download to process and atomically
-// marks it as downloading under the queue lock. This prevents TOCTOU races where
-// two callers could both get the same download from Next() and start it.
-// Returns nil if no download is available (max concurrent reached or queue empty).
-func (q *Queue) NextAndMarkDownloading() (*db.Download, error) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	active, err := q.store.GetDownloads("downloading")
-	if err != nil {
-		return nil, err
-	}
-	if len(active) >= q.maxConcurrent {
-		return nil, nil
-	}
-
-	activeBots := make(map[string]bool)
-	for _, dl := range active {
-		activeBots[dl.BotNick] = true
-	}
-
-	queued, err := q.store.GetDownloads("queued")
-	if err != nil {
-		return nil, err
-	}
-
-	for i := len(queued) - 1; i >= 0; i-- {
-		dl := queued[i]
-		if activeBots[dl.BotNick] {
-			continue
-		}
-		// Atomically mark as downloading
-		now := time.Now()
-		dl.Status = "downloading"
-		dl.StartedAt = &now
-		if err := q.store.UpdateDownload(&dl); err != nil {
-			return nil, err
-		}
-		return &dl, nil
-	}
-
-	return nil, nil
-}
-
 // MarkProcessing marks a download as having finished its DCC transfer and
 // entered post-processing (moving/hooks/extraction). It is not counted as
-// "downloading" by NextAndMarkDownloading, so the freed slot can be reused
+// "downloading" by the dispatcher, so the freed slot can be reused
 // immediately while post-processing continues in the background.
 func (q *Queue) MarkProcessing(id int64, destPath string) error {
 	dl, err := q.store.GetDownload(id)

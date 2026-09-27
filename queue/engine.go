@@ -56,7 +56,7 @@ type Engine struct {
 
 func NewEngine(store db.Store, bus *irc.EventBus, ircMgr *irc.Manager, storageCfg *config.StorageConfig, maxConcurrent int) *Engine {
 	e := &Engine{
-		queue:              New(store, maxConcurrent),
+		queue:              New(store),
 		maxConcurrent:      maxConcurrent,
 		store:              store,
 		bus:                bus,
