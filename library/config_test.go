@@ -3,6 +3,7 @@ package library
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -131,5 +132,41 @@ func TestLoad_CurrentVersionNotReupgraded(t *testing.T) {
 	}
 	if cfg.Categories[0].AutoExtract {
 		t.Error("expected auto_extract left as saved (false)")
+	}
+}
+
+// TestManagerSet_Concurrent checks that concurrent Set calls never trip over
+// a shared temp file and that the last write wins on disk and in memory alike.
+func TestManagerSet_Concurrent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "categories.yaml")
+	m := NewManager(path, Config{MediaRoot: dir})
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 50)
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs <- m.Set(Config{Version: CurrentVersion, MediaRoot: dir, SearchDepth: i})
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("Set: %v", err)
+		}
+	}
+
+	disk, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mem := m.Get(); disk.SearchDepth != mem.SearchDepth {
+		t.Errorf("disk search_depth %d != memory %d", disk.SearchDepth, mem.SearchDepth)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, "*.tmp*")); len(left) > 0 {
+		t.Errorf("temp files left behind: %v", left)
 	}
 }

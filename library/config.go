@@ -7,6 +7,7 @@ package library
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -134,15 +135,31 @@ func Load(path string) (cfg *Config, upgraded bool, err error) {
 	return cfg, upgraded, nil
 }
 
-// Save writes cfg to path atomically: temp file + rename, the same approach
-// as config.WriteStorageDirs.
+// Save writes cfg to path atomically and durably: a uniquely named temp file
+// in the same directory (so concurrent saves never share one), fsynced, then
+// renamed over path.
 func Save(path string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("encoding categories file: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp*")
+	if err != nil {
+		return fmt.Errorf("writing temp categories file: %w", err)
+	}
+	tmp := f.Name()
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Chmod(0644)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
 		return fmt.Errorf("writing temp categories file: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -227,16 +244,17 @@ func (m *Manager) Get() Config {
 	return m.cfg
 }
 
-// Set validates cfg, saves it to disk, and swaps the in-memory copy.
+// Set validates cfg, saves it to disk, and swaps the in-memory copy — all
+// under the lock, so concurrent Sets serialize and disk always matches memory.
 func (m *Manager) Set(cfg Config) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := Validate(&cfg); err != nil {
 		return err
 	}
 	if err := Save(m.path, &cfg); err != nil {
 		return err
 	}
-	m.mu.Lock()
 	m.cfg = cfg
-	m.mu.Unlock()
 	return nil
 }
