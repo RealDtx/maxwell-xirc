@@ -427,3 +427,30 @@ func TestEngine_ExpirePendingRequests(t *testing.T) {
 		t.Fatal("fresh download must not be failed")
 	}
 }
+
+func TestEngineSetRuntime(t *testing.T) {
+	e := NewEngine(nil, nil, nil, &config.StorageConfig{DownloadsDir: "/a", TempDir: "/a/.tmp", MinFreeSpace: "1GB"}, 3)
+	e.SetRuntime("/b", "/b/.tmp", "2GB", 5)
+	st, max := e.runtime()
+	if st.DownloadsDir != "/b" || st.TempDir != "/b/.tmp" || st.MinFreeSpace != "2GB" || max != 5 {
+		t.Fatalf("runtime = %+v, %d", st, max)
+	}
+	if e.downloadsDir() != "/b" {
+		t.Errorf("downloadsDir = %q", e.downloadsDir())
+	}
+}
+
+func TestEngineSetRuntimeRace(t *testing.T) {
+	e := NewEngine(nil, nil, nil, &config.StorageConfig{DownloadsDir: "/a"}, 3)
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 1000; i++ {
+			e.SetRuntime("/b", "/t", "1GB", i%5+1)
+		}
+		close(done)
+	}()
+	for i := 0; i < 1000; i++ {
+		_ = e.downloadsDir()
+	}
+	<-done
+}

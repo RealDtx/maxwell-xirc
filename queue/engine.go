@@ -41,7 +41,7 @@ type Engine struct {
 	store              db.Store
 	bus                *irc.EventBus
 	ircMgr             *irc.Manager
-	storageCfg         *config.StorageConfig
+	storage            config.StorageConfig
 	library            *library.Manager
 	eventCh            <-chan irc.Event
 	stopCh             chan struct{}
@@ -55,19 +55,39 @@ type Engine struct {
 }
 
 func NewEngine(store db.Store, bus *irc.EventBus, ircMgr *irc.Manager, storageCfg *config.StorageConfig, maxConcurrent int) *Engine {
-	return &Engine{
+	e := &Engine{
 		queue:              New(store, maxConcurrent),
 		maxConcurrent:      maxConcurrent,
 		store:              store,
 		bus:                bus,
 		ircMgr:             ircMgr,
-		storageCfg:         storageCfg,
 		stopCh:             make(chan struct{}),
 		pendingByBot:       make(map[string]*PendingRequest),
 		activeTransfers:    make(map[int64]*dcc.Transfer),
 		cancelledTransfers: make(map[int64]bool),
 		activeDestPaths:    make(map[string]bool),
 	}
+	if storageCfg != nil {
+		e.storage = *storageCfg
+	}
+	return e
+}
+
+// runtime returns the live storage settings and concurrency limit.
+func (e *Engine) runtime() (config.StorageConfig, int) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.storage, e.maxConcurrent
+}
+
+// SetRuntime changes storage dirs, the free-space floor and the concurrency
+// limit live. Transfers already running keep the paths they started with.
+func (e *Engine) SetRuntime(downloadsDir, tempDir, minFreeSpace string, maxConcurrent int) {
+	e.mu.Lock()
+	e.storage.DownloadsDir, e.storage.TempDir, e.storage.MinFreeSpace = downloadsDir, tempDir, minFreeSpace
+	e.maxConcurrent = maxConcurrent
+	e.mu.Unlock()
+	go e.TryDispatchQueued() // a raised limit may free slots for waiting downloads
 }
 
 // CancelTransfer interrupts an active TCP transfer for the given download ID, if one
@@ -212,6 +232,8 @@ func (e *Engine) TryDispatchQueued() {
 	e.pumpMu.Lock()
 	defer e.pumpMu.Unlock()
 
+	_, maxConcurrent := e.runtime()
+
 	e.mu.Lock()
 	busy := make(map[string]bool, len(e.pendingByBot))
 	for key := range e.pendingByBot {
@@ -232,7 +254,7 @@ func (e *Engine) TryDispatchQueued() {
 			inFlight++
 		}
 	}
-	if inFlight >= e.maxConcurrent {
+	if inFlight >= maxConcurrent {
 		return
 	}
 
@@ -242,7 +264,7 @@ func (e *Engine) TryDispatchQueued() {
 		return
 	}
 
-	for _, dl := range selectDispatchable(queued, busy, inFlight, e.maxConcurrent) {
+	for _, dl := range selectDispatchable(queued, busy, inFlight, maxConcurrent) {
 		if err := e.Dispatch(dl); err != nil {
 			log.Printf("queue pump: dispatch download %d (%s pack %d): %v",
 				dl.ID, dl.BotNick, dl.PackNumber, err)
@@ -356,13 +378,14 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	}
 
 	// Check disk space
-	destDir := e.storageCfg.DownloadsDir // File router will move it later
-	if err := os.MkdirAll(e.storageCfg.TempDir, 0755); err != nil {
+	st, _ := e.runtime()
+	destDir := st.DownloadsDir // File router will move it later
+	if err := os.MkdirAll(st.TempDir, 0755); err != nil {
 		e.queue.MarkFailed(pending.DownloadID, "failed to create temp dir: "+err.Error())
 		return
 	}
 
-	if err := dcc.CheckDiskSpace(destDir, offer.Size, e.storageCfg.MinFreeSpace); err != nil {
+	if err := dcc.CheckDiskSpace(destDir, offer.Size, st.MinFreeSpace); err != nil {
 		e.queue.MarkFailed(pending.DownloadID, err.Error())
 		e.bus.Publish(irc.Event{
 			Type: irc.EventNotification,
@@ -397,6 +420,7 @@ func (e *Engine) handleMessage(ev irc.Event) {
 // a numeric counter before the extension when the plain name is already in use
 // (active transfer or existing final file on disk). Must be called with transferMu held.
 func (e *Engine) uniqueDestPathLocked(filename string) string {
+	st, _ := e.runtime()
 	ext := filepath.Ext(filename)
 	base := strings.TrimSuffix(filename, ext)
 	for i := 0; ; i++ {
@@ -406,7 +430,7 @@ func (e *Engine) uniqueDestPathLocked(filename string) string {
 		} else {
 			name = fmt.Sprintf("%s.%d%s", base, i, ext)
 		}
-		candidate := filepath.Join(e.storageCfg.TempDir, name)
+		candidate := filepath.Join(st.TempDir, name)
 		if e.activeDestPaths[name] {
 			continue
 		}
@@ -707,10 +731,8 @@ func (e *Engine) finishTransfer(downloadID int64, dl *db.Download, finalPath, st
 }
 
 func (e *Engine) downloadsDir() string {
-	if e.storageCfg == nil {
-		return ""
-	}
-	return e.storageCfg.DownloadsDir
+	st, _ := e.runtime()
+	return st.DownloadsDir
 }
 
 // placeExtracted finishes an extraction: the download is already in its

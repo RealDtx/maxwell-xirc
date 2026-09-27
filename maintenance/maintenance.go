@@ -17,43 +17,67 @@ import (
 
 // Maintenance runs the periodic prune/eviction job.
 type Maintenance struct {
-	store  db.Store
-	cfg    config.MaintenanceConfig
-	once   sync.Once
-	stopCh chan struct{}
+	store   db.Store
+	mu      sync.Mutex
+	cfg     config.MaintenanceConfig
+	unit    time.Duration // one IntervalHours step; tests shorten it
+	onRun   func()        // test hook, called after each pass
+	resetCh chan struct{}
+	once    sync.Once
+	stopCh  chan struct{}
 }
 
 func New(store db.Store, cfg config.MaintenanceConfig) *Maintenance {
-	return &Maintenance{
-		store:  store,
-		cfg:    cfg,
-		stopCh: make(chan struct{}),
+	return &Maintenance{store: store, cfg: cfg, unit: time.Hour,
+		resetCh: make(chan struct{}, 1), stopCh: make(chan struct{})}
+}
+
+func (m *Maintenance) config() config.MaintenanceConfig {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cfg
+}
+
+// SetConfig swaps the settings; the periodic timer restarts with the new
+// interval (<= 0 stops periodic runs). No immediate pass.
+func (m *Maintenance) SetConfig(cfg config.MaintenanceConfig) {
+	m.mu.Lock()
+	m.cfg = cfg
+	m.mu.Unlock()
+	select {
+	case m.resetCh <- struct{}{}:
+	default:
 	}
 }
 
-// Start runs an immediate pass, then repeats at the configured interval in
-// a background goroutine. An interval <= 0 disables the periodic job (an
-// immediate pass still runs once).
+// Start runs an immediate pass, then repeats at the configured interval.
 func (m *Maintenance) Start() {
 	m.runOnce()
+	go m.loop()
+}
 
-	interval := time.Duration(m.cfg.IntervalHours) * time.Hour
-	if interval <= 0 {
-		return
-	}
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				m.runOnce()
-			case <-m.stopCh:
-				return
-			}
+func (m *Maintenance) loop() {
+	for {
+		var tick <-chan time.Time
+		var t *time.Ticker
+		if iv := time.Duration(m.config().IntervalHours) * m.unit; iv > 0 {
+			t = time.NewTicker(iv)
+			tick = t.C
 		}
-	}()
+		select {
+		case <-tick:
+			m.runOnce()
+		case <-m.resetCh:
+		case <-m.stopCh:
+			if t != nil {
+				t.Stop()
+			}
+			return
+		}
+		if t != nil {
+			t.Stop()
+		}
+	}
 }
 
 func (m *Maintenance) Stop() {
@@ -61,22 +85,23 @@ func (m *Maintenance) Stop() {
 }
 
 func (m *Maintenance) runOnce() {
-	if m.cfg.SearchResultRetentionDays > 0 {
-		cutoff := time.Now().Add(-time.Duration(m.cfg.SearchResultRetentionDays) * 24 * time.Hour)
+	cfg := m.config()
+	if cfg.SearchResultRetentionDays > 0 {
+		cutoff := time.Now().Add(-time.Duration(cfg.SearchResultRetentionDays) * 24 * time.Hour)
 		deleted, err := m.store.PruneSearchResults(cutoff)
 		if err != nil {
 			log.Printf("maintenance: prune search_results failed: %v", err)
 		} else if deleted > 0 {
-			log.Printf("maintenance: pruned %d search_results row(s) older than %d day(s)", deleted, m.cfg.SearchResultRetentionDays)
+			log.Printf("maintenance: pruned %d search_results row(s) older than %d day(s)", deleted, cfg.SearchResultRetentionDays)
 		}
 	}
 
-	if m.cfg.IndexMaxFiles > 0 {
-		evicted, err := m.store.EnforceIndexCap(int64(m.cfg.IndexMaxFiles))
+	if cfg.IndexMaxFiles > 0 {
+		evicted, err := m.store.EnforceIndexCap(int64(cfg.IndexMaxFiles))
 		if err != nil {
 			log.Printf("maintenance: enforce index cap failed: %v", err)
 		} else if evicted > 0 {
-			log.Printf("maintenance: evicted %d indexed_files row(s) to stay within cap of %d", evicted, m.cfg.IndexMaxFiles)
+			log.Printf("maintenance: evicted %d indexed_files row(s) to stay within cap of %d", evicted, cfg.IndexMaxFiles)
 		}
 	}
 
@@ -84,5 +109,9 @@ func (m *Maintenance) runOnce() {
 		log.Printf("maintenance: prune sessions failed: %v", err)
 	} else if n > 0 {
 		log.Printf("maintenance: pruned %d expired session(s)", n)
+	}
+
+	if m.onRun != nil {
+		m.onRun()
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -130,5 +131,32 @@ func TestRunOnce_PrunesExpiredSessions(t *testing.T) {
 	New(store, config.MaintenanceConfig{}).runOnce()
 	if s, _ := store.GetSession("old"); s != nil {
 		t.Error("expired session not pruned")
+	}
+}
+
+func TestSetConfigRestartsTicker(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	m := New(store, config.MaintenanceConfig{IntervalHours: 0})
+	m.unit = time.Millisecond // test hook: IntervalHours counts milliseconds
+	var runs int32
+	m.onRun = func() { atomic.AddInt32(&runs, 1) }
+	m.Start()
+	defer m.Stop()
+	time.Sleep(20 * time.Millisecond)
+	if n := atomic.LoadInt32(&runs); n != 1 {
+		t.Fatalf("interval 0: runs = %d, want only the immediate pass", n)
+	}
+	m.SetConfig(config.MaintenanceConfig{IntervalHours: 5})
+	time.Sleep(60 * time.Millisecond)
+	if n := atomic.LoadInt32(&runs); n < 3 {
+		t.Fatalf("after SetConfig(5ms): runs = %d, want periodic runs", n)
+	}
+	m.SetConfig(config.MaintenanceConfig{IntervalHours: 0})
+	time.Sleep(10 * time.Millisecond)
+	before := atomic.LoadInt32(&runs)
+	time.Sleep(30 * time.Millisecond)
+	if atomic.LoadInt32(&runs) != before {
+		t.Fatal("interval 0 again: periodic runs continued")
 	}
 }
