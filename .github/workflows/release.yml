@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+# Pure-Go build (modernc sqlite): static binaries that run on any glibc/musl.
+env:
+  CGO_ENABLED: "0"
+
 jobs:
   release:
     runs-on: ubuntu-latest

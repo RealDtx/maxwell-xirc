@@ -3,6 +3,8 @@
 BINARY=maxwell-irc
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GO ?= $(HOME)/go-install/go/bin/go
+# Static binaries: the SQLite driver is pure Go, so cgo is never needed.
+export CGO_ENABLED = 0
 
 # Deployment profile — matches the directory .<PROFILE>/ created by `make preconfig`
 PROFILE ?= maxwell
