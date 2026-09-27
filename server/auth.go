@@ -22,6 +22,9 @@ const (
 	touchEvery    = time.Hour
 )
 
+// Version is the build version (main.version), set at startup.
+var Version = "dev"
+
 type Principal struct {
 	UserID   int64  `json:"-"`
 	Username string `json:"username"`

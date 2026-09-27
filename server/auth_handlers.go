@@ -145,7 +145,11 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if p := principalFrom(r.Context()); p != nil {
-		writeJSON(w, http.StatusOK, p)
+		// Version only for authenticated callers: don't advertise it to anonymous probes.
+		writeJSON(w, http.StatusOK, struct {
+			*Principal
+			Version string `json:"version"`
+		}{p, Version})
 		return
 	}
 	if n, err := s.store.CountUsers(); err == nil && n == 0 {

@@ -54,9 +54,12 @@ func TestSetupThenLogin(t *testing.T) {
 	if w.Code != http.StatusOK || tok == "" {
 		t.Fatalf("login: %d %s", w.Code, w.Body)
 	}
-	var me Principal
+	var me struct {
+		Principal
+		Version string `json:"version"`
+	}
 	json.NewDecoder(do(srv, "GET", "/api/auth/me", ip, withCookie(tok), "").Body).Decode(&me)
-	if me.Username != "admin" || me.Role != "admin" || me.Via != "session" {
+	if me.Username != "admin" || me.Role != "admin" || me.Via != "session" || me.Version != Version {
 		t.Errorf("me: %+v", me)
 	}
 

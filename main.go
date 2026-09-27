@@ -322,6 +322,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("embedded web FS: %v", err)
 	}
+	server.Version = version
 	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState, cfg.Server.Prefix, webFS)
 	srv.SetLibrary(libMgr)
 	srv.SetDownloadsDir(cfg.Storage.DownloadsDir)
