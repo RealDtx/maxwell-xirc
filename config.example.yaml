@@ -14,22 +14,9 @@ storage:
   downloads_dir: /srv/downloads
   temp_dir: /srv/downloads/.tmp
   min_free_space: 1GB
-  critical_free_space: 500MB
-  auto_extract:
-    enabled: false
-    delete_archive: false
-
-dcc:
-  passive_enabled: false
-  passive_ports: "30000-30010"
-  external_ip: ""
 
 downloads:
   max_concurrent: 3
-
-notifications:
-  quiet_hours_start: ""
-  quiet_hours_end: ""
 
 # Background job that prunes stale search_results rows and caps the
 # self-collected file index so both stay bounded over time.

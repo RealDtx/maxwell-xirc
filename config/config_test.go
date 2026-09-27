@@ -56,8 +56,30 @@ func TestLoadMinimalConfigUsesDefaults(t *testing.T) {
 	if cfg.Storage.MinFreeSpace != "1GB" {
 		t.Errorf("expected default min_free_space 1GB, got %s", cfg.Storage.MinFreeSpace)
 	}
-	if cfg.Storage.CriticalFreeSpace != "500MB" {
-		t.Errorf("expected default critical_free_space 500MB, got %s", cfg.Storage.CriticalFreeSpace)
+}
+
+func TestLoad_IgnoresRemovedKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	old := `storage:
+  downloads_dir: /dl
+  critical_free_space: 500MB
+  auto_extract:
+    enabled: true
+dcc:
+  passive_enabled: true
+  passive_ports: "30000-30010"
+notifications:
+  quiet_hours_start: "22:00"
+`
+	if err := os.WriteFile(path, []byte(old), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Storage.DownloadsDir != "/dl" {
+		t.Errorf("downloads_dir = %q", cfg.Storage.DownloadsDir)
 	}
 }
 

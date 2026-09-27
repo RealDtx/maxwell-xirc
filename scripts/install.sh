@@ -186,7 +186,6 @@ storage:
   downloads_dir: ${DOWNLOADS_DIR}
   temp_dir: ${TEMP_DIR}
   min_free_space: 1GB
-  critical_free_space: 500MB
 
 auth:
   trusted_networks: [${nets}]

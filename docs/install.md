@@ -187,13 +187,9 @@ The script prompts for the following (press Enter to accept the default):
 | Downloads directory | `/srv/downloads` | Where DCC files are saved |
 | DLNA / media directory | `/srv/dlna/media` | Destination for routed media files |
 | Temp directory | `/srv/downloads/.tmp` | In-progress DCC transfers |
-| Auto-extract tar archives | `n` | Unpacks downloaded archives and routes the contents |
-| Delete archive after extraction | `y` | Only asked if auto-extract is enabled |
 | Database driver | `sqlite` | Or `mysql` / `mariadb` |
 | SQLite path | `<install_dir>/data/xirc.db` | SQLite only |
 | MySQL DSN | `mxirc:changeme@tcp(…)/maxwell_irc` | MySQL/MariaDB only |
-| Passive DCC | `n` | Enable if the target is behind NAT |
-| External IP | *(empty)* | Only asked if passive DCC is enabled |
 | Reverse proxy | `nginx` | `nginx` / `apache` / `none` |
 | Mode | `i` (subpath) | `s` = own site (hostname), `i` = subpath snippet for an existing site |
 | Hostname *(own site)* | `xirc.local` | Only asked in site mode |

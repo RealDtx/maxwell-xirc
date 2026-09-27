@@ -24,36 +24,18 @@ type DatabaseConfig struct {
 	DSN    string `yaml:"dsn"`
 }
 
-type AutoExtractConfig struct {
-	Enabled       bool `yaml:"enabled"`
-	DeleteArchive bool `yaml:"delete_archive"`
-}
-
 type StorageConfig struct {
-	MediaDir          string            `yaml:"media_dir"`
-	DownloadsDir      string            `yaml:"downloads_dir"`
-	TempDir           string            `yaml:"temp_dir"`
-	MinFreeSpace      string            `yaml:"min_free_space"`
-	CriticalFreeSpace string            `yaml:"critical_free_space"`
-	AutoExtract       AutoExtractConfig `yaml:"auto_extract"`
+	MediaDir     string `yaml:"media_dir"`
+	DownloadsDir string `yaml:"downloads_dir"`
+	TempDir      string `yaml:"temp_dir"`
+	MinFreeSpace string `yaml:"min_free_space"`
 	// CategoriesFile is the library taxonomy config (library package).
 	// Defaults to categories.yaml next to the --config file when empty.
 	CategoriesFile string `yaml:"categories_file"`
 }
 
-type DCCConfig struct {
-	PassiveEnabled bool   `yaml:"passive_enabled"`
-	PassivePorts   string `yaml:"passive_ports"`
-	ExternalIP     string `yaml:"external_ip"`
-}
-
 type DownloadsConfig struct {
 	MaxConcurrent int `yaml:"max_concurrent"`
-}
-
-type NotificationsConfig struct {
-	QuietHoursStart string `yaml:"quiet_hours_start"`
-	QuietHoursEnd   string `yaml:"quiet_hours_end"`
 }
 
 type PatternConfig struct {
@@ -83,15 +65,13 @@ type AuthConfig struct {
 }
 
 type Config struct {
-	Server        ServerConfig        `yaml:"server"`
-	Database      DatabaseConfig      `yaml:"database"`
-	Storage       StorageConfig       `yaml:"storage"`
-	DCC           DCCConfig           `yaml:"dcc"`
-	Downloads     DownloadsConfig     `yaml:"downloads"`
-	Notifications NotificationsConfig `yaml:"notifications"`
-	Patterns      []PatternConfig     `yaml:"patterns"`
-	Maintenance   MaintenanceConfig   `yaml:"maintenance"`
-	Auth          AuthConfig          `yaml:"auth"`
+	Server      ServerConfig      `yaml:"server"`
+	Database    DatabaseConfig    `yaml:"database"`
+	Storage     StorageConfig     `yaml:"storage"`
+	Downloads   DownloadsConfig   `yaml:"downloads"`
+	Patterns    []PatternConfig   `yaml:"patterns"`
+	Maintenance MaintenanceConfig `yaml:"maintenance"`
+	Auth        AuthConfig        `yaml:"auth"`
 }
 
 func defaults() Config {
@@ -105,14 +85,10 @@ func defaults() Config {
 			Path:   "./data/maxwell-irc.db",
 		},
 		Storage: StorageConfig{
-			MediaDir:          "/srv/dlna/media",
-			DownloadsDir:      "/srv/downloads",
-			TempDir:           "/srv/downloads/.tmp",
-			MinFreeSpace:      "1GB",
-			CriticalFreeSpace: "500MB",
-		},
-		DCC: DCCConfig{
-			PassivePorts: "30000-30010",
+			MediaDir:     "/srv/dlna/media",
+			DownloadsDir: "/srv/downloads",
+			TempDir:      "/srv/downloads/.tmp",
+			MinFreeSpace: "1GB",
 		},
 		Downloads: DownloadsConfig{
 			MaxConcurrent: 3,

@@ -15,7 +15,7 @@ A self-hosted XDCC web client for downloading files via IRC bots, designed to ru
 - Preconfig + deploy workflow — repeatable deployments via rsync and systemd
 - Nginx and Apache integration — an install wizard configures either automatically, or generate vhost/subpath configs yourself
 - Docker support — docker compose for local development and testing
-- Post-download hooks — notifications with quiet hours support
+- Post-download hooks — browser notifications for downloads and events
 - Auto-detect download channel — reads IRC topic on join to find XDCC bot
 
 ## Install

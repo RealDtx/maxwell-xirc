@@ -73,19 +73,6 @@ echo "  -- Storage directories (paths on the target server) --"
 ask "Downloads directory" "/srv/downloads" DOWNLOADS_DIR
 ask "DLNA / media directory" "/srv/dlna/media" MEDIA_DIR
 ask "Temp directory (for in-progress DCC transfers)" "${DOWNLOADS_DIR}/.tmp" TEMP_DIR
-echo
-echo "  -- Auto-extract --"
-echo "  When enabled, downloaded tar archives (.tar.gz, .tar.bz2, .tar.xz, etc.)"
-echo "  are unpacked automatically and each extracted file goes through the"
-echo "  configured routing rules (e.g. .mkv → media dir)."
-ask_yn "Auto-extract tar archives after download" "n" AUTO_EXTRACT
-AUTO_EXTRACT_BOOL="false"
-[[ "$AUTO_EXTRACT" == "y" ]] && AUTO_EXTRACT_BOOL="true"
-AUTO_EXTRACT_DELETE_BOOL="false"
-if [[ "$AUTO_EXTRACT" == "y" ]]; then
-    ask_yn "Delete archive after successful extraction" "y" AUTO_EXTRACT_DELETE
-    [[ "$AUTO_EXTRACT_DELETE" == "y" ]] && AUTO_EXTRACT_DELETE_BOOL="true"
-fi
 
 # ── database ──────────────────────────────────────────────────────────────────
 
@@ -118,19 +105,6 @@ case "${DB_DRIVER,,}" in
         DB_DSN=""
         ;;
 esac
-
-# ── DCC ───────────────────────────────────────────────────────────────────────
-
-echo
-echo "  -- DCC (XDCC transfer settings) --"
-ask_yn "Enable passive DCC (needed if Pi is behind NAT without port forwarding)" "n" DCC_PASSIVE
-DCC_PASSIVE_BOOL="false"
-[[ "$DCC_PASSIVE" == "y" ]] && DCC_PASSIVE_BOOL="true"
-
-DCC_EXTERNAL_IP=""
-if [[ "$DCC_PASSIVE" == "y" ]]; then
-    ask "External IP for passive DCC (public IP of the Pi / router)" "" DCC_EXTERNAL_IP
-fi
 
 # ── reverse proxy + login ────────────────────────────────────────────────────
 
@@ -200,22 +174,9 @@ storage:
   downloads_dir: ${DOWNLOADS_DIR}
   temp_dir: ${TEMP_DIR}
   min_free_space: 1GB
-  critical_free_space: 500MB
-  auto_extract:
-    enabled: ${AUTO_EXTRACT_BOOL}
-    delete_archive: ${AUTO_EXTRACT_DELETE_BOOL}
-
-dcc:
-  passive_enabled: ${DCC_PASSIVE_BOOL}
-  passive_ports: "30000-30010"
-  external_ip: "${DCC_EXTERNAL_IP}"
 
 downloads:
   max_concurrent: 3
-
-notifications:
-  quiet_hours_start: ""
-  quiet_hours_end: ""
 
 auth:
   trusted_networks: [${TRUSTED_NETWORKS}]
