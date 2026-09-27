@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,5 +134,54 @@ func TestSaveKeys_FollowsSymlink(t *testing.T) {
 	}
 	if st, _ := os.Stat(target); st.Mode().Perm() != 0o600 {
 		t.Errorf("target mode: got %v want 0600", st.Mode().Perm())
+	}
+}
+
+func TestWriteInPlace_RestoresOriginalOnFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	orig := []byte("downloads:\n  max_concurrent: 3\n")
+	os.WriteFile(path, orig, 0640)
+	calls := 0
+	defer func(f func(string, []byte) error) { overwriteFile = f }(overwriteFile)
+	real := overwriteFile
+	overwriteFile = func(p string, b []byte) error {
+		calls++
+		if calls == 1 { // the new content: fail after truncating
+			os.WriteFile(p, b[:5], 0640)
+			return errors.New("disk full")
+		}
+		return real(p, b)
+	}
+	err := writeInPlace(path, []byte("downloads:\n  max_concurrent: 5\n"), orig)
+	if err == nil || !strings.Contains(err.Error(), "restored") {
+		t.Fatalf("err = %v, want failure mentioning the restore", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != string(orig) {
+		t.Errorf("file = %q, want original back", got)
+	}
+}
+
+func TestSaveKeys_ExampleConfigUpdatesAuthInPlace(t *testing.T) {
+	src, err := os.ReadFile("../config.example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	os.WriteFile(path, src, 0640)
+	e := Editable{Auth: AuthConfig{TrustedNetworks: []string{"10.0.0.0/8"}, TrustedRole: "user", TrustedProxies: []string{"127.0.0.1/32"}}}
+	if err := SaveKeys(path, map[string]any{"auth": e.Auth}); err != nil {
+		t.Fatal(err)
+	}
+	out, _ := os.ReadFile(path)
+	s := string(out)
+	if strings.Count(s, "auth:") != 1 {
+		t.Fatalf("want exactly one auth key:\n%s", s)
+	}
+	login, auth := strings.Index(s, "# Login."), strings.Index(s, "\nauth:")
+	if login < 0 || auth < login {
+		t.Errorf("login comment must stay above auth:\n%s", s)
+	}
+	if !strings.Contains(s, "10.0.0.0/8") || !strings.Contains(s, "role they get") {
+		t.Errorf("value not updated or line comment lost:\n%s", s)
 	}
 }

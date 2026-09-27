@@ -81,17 +81,32 @@ func SaveKeys(path string, v any) error {
 	if err := os.Rename(tmp.Name(), path); errors.Is(err, syscall.EBUSY) {
 		// A single-file bind mount (Docker) can't be renamed over: write in
 		// place instead — not atomic, hence mounting the directory is advised.
-		return writeInPlace(path, buf.Bytes())
+		return writeInPlace(path, buf.Bytes(), data)
 	} else if err != nil {
 		return fmt.Errorf("replacing config: %w", err)
 	}
 	return nil
 }
 
-func writeInPlace(path string, data []byte) error {
+// writeInPlace overwrites path with data. If that fails part-way, the
+// previous content (orig) is written back so a restart doesn't meet a
+// truncated config.
+func writeInPlace(path string, data, orig []byte) error {
+	err := overwriteFile(path, data)
+	if err == nil {
+		return nil
+	}
+	if rerr := overwriteFile(path, orig); rerr != nil {
+		return fmt.Errorf("replacing config: %w (restoring the previous file also failed: %v)", err, rerr)
+	}
+	return fmt.Errorf("replacing config: %w (previous file restored)", err)
+}
+
+// overwriteFile truncates and rewrites path; a variable so tests can fail it.
+var overwriteFile = func(path string, data []byte) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 	if err != nil {
-		return fmt.Errorf("replacing config: %w", err)
+		return err
 	}
 	_, err = f.Write(data)
 	if err == nil {
@@ -100,10 +115,7 @@ func writeInPlace(path string, data []byte) error {
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
-	if err != nil {
-		return fmt.Errorf("replacing config: %w", err)
-	}
-	return nil
+	return err
 }
 
 // mergeMapping sets every key of src into dst. Mappings on both sides merge

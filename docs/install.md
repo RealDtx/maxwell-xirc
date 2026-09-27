@@ -375,7 +375,7 @@ entirely, useful for a home LAN:
 auth:
   trusted_networks: [192.168.1.0/24]   # empty = login always required
   trusted_role: admin                   # role granted to those clients: admin|user
-  trusted_proxies: [127.0.0.1/32, ::1/128]   # peers whose X-Forwarded-For/-Proto are trusted
+  trusted_proxies: [127.0.0.1/32, "::1/128"]   # peers whose X-Forwarded-For/-Proto are trusted
 ```
 
 `trusted_proxies` matters when xirc sits behind a reverse proxy: only

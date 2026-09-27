@@ -27,7 +27,7 @@ maintenance:
 
 # Login. Without trusted_networks every client must log in (the first visit
 # creates the admin unless one was created with --create-admin).
-# auth:
-#   trusted_networks: [192.168.0.0/16]   # these clients skip login
-#   trusted_role: admin                  # role they get: admin | user
-#   trusted_proxies: [127.0.0.1/32, ::1/128]  # peers whose X-Forwarded-* is believed
+auth:
+  trusted_networks: []           # e.g. [192.168.0.0/16]: these clients skip login
+  trusted_role: admin            # role they get: admin | user
+  trusted_proxies: [127.0.0.1/32, "::1/128"]  # peers whose X-Forwarded-* is believed
