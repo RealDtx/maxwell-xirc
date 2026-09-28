@@ -38,6 +38,9 @@ import (
 //go:embed all:web
 var embeddedWeb embed.FS
 
+//go:embed docs/guide.md
+var guideMD []byte
+
 var version = "dev"
 
 // checkDirectories probes storage.media_dir and storage.downloads_dir.
@@ -326,6 +329,7 @@ func main() {
 	}
 	server.Version = version
 	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState, cfg.Server.Prefix, webFS)
+	srv.SetGuide(guideMD)
 	srv.SetLibrary(libMgr)
 	srv.SetDownloadsDir(cfg.Storage.DownloadsDir)
 	srv.SetAuth(auth)

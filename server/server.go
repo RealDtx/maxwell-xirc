@@ -33,6 +33,7 @@ type Server struct {
 	settings settingsState
 
 	extracting sync.Map // target dir → struct{}; guards concurrent extracts
+	guide      []byte  // embedded docs/guide.md
 }
 
 // SetLibrary wires the library manager in — set once at startup.
@@ -48,6 +49,9 @@ func (s *Server) SetDownloadsDir(dir string) {
 	s.caps.downloadsDir = dir
 	s.caps.mu.Unlock()
 }
+
+// SetGuide wires the embedded docs/guide.md in — set once at startup.
+func (s *Server) SetGuide(md []byte) { s.guide = md }
 
 func New(store db.Store, ircMgr *ircpkg.Manager, p *parser.Parser, eng *queue.Engine, hub *ws.Hub, msgBuf *ircpkg.MessageBuffer, errBuf *ircpkg.ErrorBuffer, setup *SetupState, prefix string, webFS fs.FS) *Server {
 	s := &Server{
@@ -83,6 +87,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/api/health", s.handleHealth)
+	s.mux.HandleFunc("/guide.md", s.handleGuide)
 
 	// Auth & users (handlers require SetAuth; only registered routes reached via the middleware)
 	s.mux.HandleFunc("/api/auth/login", s.handleLogin)
@@ -195,4 +200,15 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// GET /guide.md — the user guide (Markdown) for the Help page and help blocks.
+func (s *Server) handleGuide(w http.ResponseWriter, r *http.Request) {
+	if s.guide == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write(s.guide)
 }
