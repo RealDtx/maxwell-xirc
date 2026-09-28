@@ -25,3 +25,8 @@ vendor/
 
 # Superpowers scratch workspaces
 .superpowers/
+
+# Design specs and implementation plans (local only)
+docs/superpowers/
+docs/*-design.md
+docs/*-plan.md
