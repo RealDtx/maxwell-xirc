@@ -683,12 +683,17 @@ tr:hover { background: rgba(255,255,255,0.02); }
     padding: 0 4px;
 }
 
-.fm-viewer { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
-    width: min(1200px, 95vw); max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; }
-.fm-viewer-head { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
-.fm-viewer video, .fm-viewer img { max-width: 100%; max-height: calc(92vh - 50px); margin: auto; display: block; background: #000; }
+.fm-viewer { position: fixed; z-index: 100; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6); width: min(960px, 90vw); height: min(640px, 85vh);
+    min-width: 280px; min-height: 160px; resize: both; display: flex; flex-direction: column; overflow: hidden; }
+/* !important: beats the width/height the browser sets inline when the user resizes. */
+.fm-viewer.fm-viewer-max { left: 0 !important; top: 0 !important; width: 100vw !important; height: 100vh !important; border-radius: 0; resize: none; }
+.fm-viewer-head { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 13px; cursor: move; user-select: none; touch-action: none; flex-shrink: 0; }
+.fm-viewer-max .fm-viewer-head { cursor: default; }
+.fm-viewer video, .fm-viewer img { flex: 1; min-height: 0; width: 100%; object-fit: contain; display: block; background: #000; }
 .fm-viewer audio { width: 100%; padding: 16px; box-sizing: border-box; }
-.fm-viewer iframe { width: 100%; height: calc(92vh - 50px); border: 0; background: #fff; }
+.fm-viewer iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
 .fm-viewer-error { padding: 24px; color: var(--warning); }
 
 .help { border: 1px solid var(--border); border-radius: 6px; margin: 0 0 12px; background: var(--bg-secondary); font-size: 13px; }

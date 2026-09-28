@@ -223,7 +223,8 @@ document.addEventListener('alpine:init', () => {
         fileManagerParent: '',
         fileManagerError: '',
         fileManagerErrors: {},
-        fmViewer: null,        // { name, url, kind, error }
+        fmViewer: null,        // { name, url, download, kind, error, x, y, max }
+        _fmDrag: null,         // { dx, dy } while the viewer title bar is dragged
         fmExtractDialog: null, // { name, deleteArchive }
         fileManagerFilter: '',
         fileManagerSort: { col: 'name', dir: 'asc' },
@@ -1999,10 +2000,27 @@ document.addEventListener('alpine:init', () => {
                 window.location.href = this.fmRawUrl(entry, true);
                 return;
             }
-            this.fmViewer = { name: entry.name, url: this.fmRawUrl(entry, false), download: this.fmRawUrl(entry, true), kind: kind, error: false };
+            // Initial size comes from CSS (min(960px, 90vw) × min(640px, 85vh)); centre it.
+            var w = Math.min(960, window.innerWidth * 0.9), h = Math.min(640, window.innerHeight * 0.85);
+            this.fmViewer = { name: entry.name, url: this.fmRawUrl(entry, false), download: this.fmRawUrl(entry, true), kind: kind, error: false,
+                x: Math.round((window.innerWidth - w) / 2), y: Math.round((window.innerHeight - h) / 2), max: false };
         },
 
-        fmCloseViewer() { this.fmViewer = null; },
+        fmCloseViewer() { this.fmViewer = null; this._fmDrag = null; },
+
+        // Title-bar dragging; the bar is kept on screen so the window can't be lost.
+        fmDragStart(e) {
+            if (!this.fmViewer || this.fmViewer.max || e.button !== 0 || e.target.closest('button, a')) return;
+            this._fmDrag = { dx: e.clientX - this.fmViewer.x, dy: e.clientY - this.fmViewer.y };
+            e.currentTarget.setPointerCapture(e.pointerId);
+        },
+        fmDragMove(e) {
+            var d = this._fmDrag;
+            if (!d || !this.fmViewer) return;
+            this.fmViewer.x = Math.min(Math.max(e.clientX - d.dx, 80 - e.currentTarget.offsetWidth), window.innerWidth - 80);
+            this.fmViewer.y = Math.min(Math.max(e.clientY - d.dy, 0), window.innerHeight - 40);
+        },
+        fmDragEnd() { this._fmDrag = null; },
 
         async fmStartExtract() {
             var d = this.fmExtractDialog;

@@ -2299,15 +2299,19 @@
     </div>
 </div>
 
-<!-- File viewer modal -->
-<div x-show="fmViewer" x-cloak @keydown.escape.window="fmCloseViewer()" @click.self="fmCloseViewer()"
-     style="position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center;">
-    <template x-if="fmViewer">
-        <div class="fm-viewer">
-            <div class="fm-viewer-head">
+<!-- File viewer: floating window (drag the title bar, resize from the corner) -->
+<template x-if="fmViewer">
+        <div class="fm-viewer" :class="{ 'fm-viewer-max': fmViewer.max }"
+             :style="{ left: fmViewer.x + 'px', top: fmViewer.y + 'px' }"
+             @keydown.escape.window="fmCloseViewer()">
+            <div class="fm-viewer-head" title="Drag to move · double-click to maximize"
+                 @pointerdown="fmDragStart($event)" @pointermove="fmDragMove($event)"
+                 @pointerup="fmDragEnd()" @pointercancel="fmDragEnd()"
+                 @dblclick="!$event.target.closest('button, a') && (fmViewer.max = !fmViewer.max)">
                 <span x-text="fmViewer.name" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
                 <a class="btn btn-sm" :href="fmViewer.download">⬇ Download</a>
-                <button class="btn btn-sm" @click="fmCloseViewer()">×</button>
+                <button class="btn btn-sm" @click="fmViewer.max = !fmViewer.max" :title="fmViewer.max ? 'Restore' : 'Maximize'" x-text="fmViewer.max ? '❐' : '⤢'"></button>
+                <button class="btn btn-sm" @click="fmCloseViewer()" title="Close">×</button>
             </div>
             <div x-show="fmViewer.error" class="fm-viewer-error">
                 Your browser can't play this format. Download it and use a desktop player (e.g. VLC).
@@ -2325,8 +2329,7 @@
                 <img :src="fmViewer.url" :alt="fmViewer.name">
             </template>
         </div>
-    </template>
-</div>
+</template>
 
 <!-- Extract dialog -->
 <div x-show="fmExtractDialog" x-cloak @keydown.escape.window="fmExtractDialog = null"
