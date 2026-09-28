@@ -82,6 +82,19 @@ it — useful if you manage nginx/Apache yourself and just want the snippet.
 
 ## Option B — Docker
 
+**Guided:** `sudo scripts/install.sh` → choose `docker` walks through the
+same setup as below — install directory, downloads/media paths, listen
+address, login networks — and prompts for the database: `sqlite` (default),
+`bundled` (starts the `mariadb` profile with generated passwords), or
+`existing` (your own MariaDB/MySQL, reachable on this host, remotely, or in
+another container; see the sub-list under MariaDB below). It writes `.env`
+and `docker-compose.yaml`, starts the stack, and offers to create the admin
+account. Re-run it on the same install directory and it offers to reuse the
+existing `.env` — just pulls, updates `docker-compose.yaml`, and restarts —
+instead of asking everything again.
+
+Manual:
+
 ```bash
 cd deploy
 cp .env.example .env   # edit DOWNLOADS_DIR, MEDIA_DIR, PUID/PGID
@@ -90,6 +103,10 @@ docker compose up -d
 docker exec -it xirc xirc --create-admin <name>   # before exposing the port
 ```
 
+Either way, this needs Docker Compose ≥ 2.20 (`docker compose version`) —
+`depends_on`'s `required: false`, used to make the `mariadb` service
+optional, needs it.
+
 The container runs as `PUID:PGID` (compose `user:`), so `./data`,
 `DOWNLOADS_DIR` and `MEDIA_DIR` must all be writable by that uid/gid. Create
 `./data` yourself as above — if it's missing, Docker creates it owned by
@@ -97,8 +114,8 @@ root and xirc can't open its database (it exits and restarts in a loop).
 
 The port is published on `127.0.0.1:8085` only. Create the admin first (last
 line above); then either put a reverse proxy on the host in front of it, or
-change the `ports:` line in `docker-compose.yaml` to `"8085:8085"` to reach
-xirc directly from other machines. Until an admin exists, whoever opens xirc
+set `BIND=0.0.0.0` in `.env` and `docker compose up -d` again to reach xirc
+directly from other machines. Until an admin exists, whoever opens xirc
 first can create one.
 
 `.env` (see `deploy/.env.example`):
@@ -108,8 +125,12 @@ first can create one.
 | `DOWNLOADS_DIR`, `MEDIA_DIR` | Host directories mounted into the container; must already exist and be writable by `PUID:PGID` |
 | `PUID`, `PGID` | uid/gid the container runs as (default `1000`) — set to `id -u` / `id -g` of the owner of `./data` and the host directories |
 | `TZ` | Container timezone (default `UTC`) |
+| `BIND` | Address the port is published on — `127.0.0.1` (default, behind a reverse proxy on this host) or `0.0.0.0` (reachable from the LAN) |
 | `TRUSTED_NETWORKS`, `TRUSTED_ROLE` | See [Users & login](#users--login) |
+| `DB_DRIVER`, `DB_DSN` | `sqlite` (default) or `mysql`; `DB_DSN` is only needed for `mysql` — see MariaDB below |
+| `COMPOSE_PROFILES` | Set to `mariadb` to start the bundled `xirc-db` container |
 | `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD` | Only used with the `mariadb` profile below |
+| `XIRC_SERVER_PREFIX` | Only with a subpath reverse proxy, e.g. `/xirc` |
 
 Volumes: `./data:/data` (SQLite DB, `config.yaml` override, channel logs,
 `categories.yaml`), `${DOWNLOADS_DIR}:/downloads`, `${MEDIA_DIR}:/media`. Keep
@@ -126,15 +147,54 @@ anything else. Mount the `/data` directory (as above), not a single
 which a single-file bind mount doesn't allow (xirc then falls back to a
 non-atomic in-place write).
 
-**MariaDB** (optional, instead of the default SQLite):
+**MariaDB** (optional, instead of the default SQLite) — set in `.env`:
 
 ```bash
-docker compose --profile mariadb up -d
+COMPOSE_PROFILES=mariadb
+DB_DRIVER=mysql
+DB_DSN=xirc:<MYSQL_PASSWORD>@tcp(db:3306)/xirc
+MYSQL_ROOT_PASSWORD=<random>
+MYSQL_PASSWORD=<random>   # same value as in DB_DSN above
 ```
 
-Starts a `mariadb:11` container (`xirc-db`) alongside `xirc`. Set
-`database.driver: mysql` / `database.dsn` in `config.yaml` (or via
-`XIRC_DATABASE_DRIVER` / `XIRC_DATABASE_DSN`) pointing at it.
+then `docker compose up -d` — Compose reads `COMPOSE_PROFILES` from `.env`
+and starts a `mariadb:11` container (`xirc-db`) alongside `xirc`. Both
+`MYSQL_ROOT_PASSWORD` and `MYSQL_PASSWORD` must be set: if either is empty,
+`xirc-db` refuses to initialise and restarts in a loop — check `docker logs
+xirc-db` if the database doesn't come up.
+
+For an existing MariaDB/MySQL instead of the bundled one, leave
+`COMPOSE_PROFILES` empty and set `DB_DRIVER=mysql` / `DB_DSN`:
+
+- **Running natively on this host:** `DB_DSN=xirc:<password>@tcp(host.docker.internal:3306)/xirc`.
+  The server must listen on the Docker bridge, not only `127.0.0.1`
+  (`bind-address`), and the user needs a grant for the bridge subnet, e.g.
+  `'xirc'@'172.%'`.
+- **Running in another container:** join its Docker network with a
+  `docker-compose.override.yaml` next to `docker-compose.yaml`:
+  ```yaml
+  # Written by scripts/install.sh: joins the network of an existing DB container.
+  services:
+    xirc:
+      networks:
+        - xirc
+        - dbnet
+  networks:
+    dbnet:
+      external: true
+      name: <network>
+  ```
+  then set `DB_DSN` to that container's name as host, e.g.
+  `xirc:<password>@tcp(<db-container>:3306)/xirc`.
+
+Either way, xirc never creates the database or user — run on the DB server
+first:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `xirc` CHARACTER SET utf8mb4;
+CREATE USER IF NOT EXISTS 'xirc'@'%' IDENTIFIED BY '<password>';
+GRANT ALL ON `xirc`.* TO 'xirc'@'%';
+```
 
 **Client IPs behind Docker's bridge network:** connections reach the
 container from the bridge gateway (e.g. `172.18.0.1`), not from the real
