@@ -661,11 +661,7 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 			var extracted []string
 			var staging string
 			var extractErr error
-			if library.IsArchive(offer.Filename) {
-				extracted, staging, extractErr = library.Extract(finalPath, extractDir)
-			} else {
-				extracted, staging, extractErr = routing.Extract(finalPath, extractDir)
-			}
+			extracted, staging, extractErr = library.ExtractAny(finalPath, extractDir)
 			if extractErr != nil {
 				log.Printf("auto-extract failed for download %d (%s): %v", downloadID, offer.Filename, extractErr)
 				e.bus.Publish(irc.Event{

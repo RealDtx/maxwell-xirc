@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/RealDtx/maxwell-irc/routing"
@@ -127,4 +129,83 @@ func extractWithTool(archivePath, destDir string) ([]string, string, error) {
 func toolAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+// ArchiveSet describes a (possibly multi-volume) archive: whether the given
+// name is the volume to extract from, the name without archive/volume
+// suffixes, and every volume of the set present in the directory.
+type ArchiveSet struct {
+	First   bool
+	Stem    string
+	Volumes []string
+}
+
+var (
+	rePartRar = regexp.MustCompile(`(?i)^(.+)\.part(\d+)\.rar$`)
+	reOldRar  = regexp.MustCompile(`(?i)^(.+)\.(rar|r\d{2,})$`)
+	reZip     = regexp.MustCompile(`(?i)^(.+)\.(zip|z\d{2,})$`)
+	re7zSplit = regexp.MustCompile(`(?i)^(.+)\.7z\.(\d{3})$`)
+)
+
+// ArchiveVolumes classifies name (a file in dir) as an archive volume.
+// ok is false when name isn't an archive at all.
+func ArchiveVolumes(dir, name string) (ArchiveSet, bool) {
+	lower := strings.ToLower(name)
+	var stem string
+	var first bool
+	var member *regexp.Regexp // matches the set's volumes; group 1 = stem
+	switch {
+	case rePartRar.MatchString(name):
+		m := rePartRar.FindStringSubmatch(name)
+		stem, member = m[1], rePartRar
+		n := strings.TrimLeft(m[2], "0")
+		first = n == "1"
+	case re7zSplit.MatchString(name):
+		m := re7zSplit.FindStringSubmatch(name)
+		stem, member, first = m[1], re7zSplit, m[2] == "001"
+	case reOldRar.MatchString(name):
+		m := reOldRar.FindStringSubmatch(name)
+		stem, member, first = m[1], reOldRar, strings.EqualFold(m[2], "rar")
+	case reZip.MatchString(name):
+		m := reZip.FindStringSubmatch(name)
+		stem, member, first = m[1], reZip, strings.EqualFold(m[2], "zip")
+	case strings.HasSuffix(lower, ".7z"):
+		return ArchiveSet{First: true, Stem: name[:len(name)-3], Volumes: []string{name}}, true
+	case routing.IsArchive(name): // tar family
+		for _, ext := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".tbz2", ".txz", ".tar"} {
+			if strings.HasSuffix(lower, ext) {
+				return ArchiveSet{First: true, Stem: name[:len(name)-len(ext)], Volumes: []string{name}}, true
+			}
+		}
+		return ArchiveSet{}, false
+	default:
+		return ArchiveSet{}, false
+	}
+	set := ArchiveSet{First: first, Stem: stem}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if m := member.FindStringSubmatch(e.Name()); m != nil && m[1] == stem && !e.IsDir() {
+			// A part-rar name also matches reOldRar ("X.part01" + ".rar");
+			// keep old-style sets free of part-rar files.
+			if member == reOldRar && rePartRar.MatchString(e.Name()) {
+				continue
+			}
+			set.Volumes = append(set.Volumes, e.Name())
+		}
+	}
+	sort.Strings(set.Volumes)
+	return set, true
+}
+
+// ExtractAny unpacks any supported archive (zip/rar/7z incl. split 7z via
+// Extract/7z, tar family via routing.Extract) into a staging dir inside
+// destDir. Shared by the download engine and the file manager.
+func ExtractAny(archivePath, destDir string) ([]string, string, error) {
+	if re7zSplit.MatchString(filepath.Base(archivePath)) {
+		return extractWithTool(archivePath, destDir)
+	}
+	if IsArchive(archivePath) {
+		return Extract(archivePath, destDir)
+	}
+	return routing.Extract(archivePath, destDir)
 }

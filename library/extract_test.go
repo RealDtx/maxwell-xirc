@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -126,5 +127,54 @@ func TestUnrarRoundTrip(t *testing.T) {
 	}
 	if len(files) != 1 || filepath.Base(files[0]) != "payload.txt" {
 		t.Fatalf("expected [payload.txt], got %v", files)
+	}
+}
+
+func TestArchiveVolumes(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{
+		"Show.part01.rar", "Show.part02.rar", "Show.part10.rar",
+		"Old.rar", "Old.r00", "Old.r01",
+		"Pack.zip", "Pack.z01",
+		"Big.7z.001", "Big.7z.002",
+		"Solo.7z", "Src.tar.gz", "movie.mkv",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		name  string
+		ok    bool
+		first bool
+		stem  string
+		vols  []string
+	}{
+		{"Show.part01.rar", true, true, "Show", []string{"Show.part01.rar", "Show.part02.rar", "Show.part10.rar"}},
+		{"Show.part02.rar", true, false, "Show", []string{"Show.part01.rar", "Show.part02.rar", "Show.part10.rar"}},
+		{"Old.rar", true, true, "Old", []string{"Old.r00", "Old.r01", "Old.rar"}},
+		{"Old.r00", true, false, "Old", []string{"Old.r00", "Old.r01", "Old.rar"}},
+		{"Pack.zip", true, true, "Pack", []string{"Pack.z01", "Pack.zip"}},
+		{"Big.7z.001", true, true, "Big", []string{"Big.7z.001", "Big.7z.002"}},
+		{"Big.7z.002", true, false, "Big", []string{"Big.7z.001", "Big.7z.002"}},
+		{"Solo.7z", true, true, "Solo", []string{"Solo.7z"}},
+		{"Src.tar.gz", true, true, "Src", []string{"Src.tar.gz"}},
+		{"movie.mkv", false, false, "", nil},
+	}
+	for _, c := range cases {
+		got, ok := ArchiveVolumes(dir, c.name)
+		if ok != c.ok || got.First != c.first || got.Stem != c.stem || strings.Join(got.Volumes, ",") != strings.Join(c.vols, ",") {
+			t.Errorf("ArchiveVolumes(%q) = %+v,%v; want first=%v stem=%q vols=%v ok=%v", c.name, got, ok, c.first, c.stem, c.vols, c.ok)
+		}
+	}
+}
+
+func TestExtractAny_Zip(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "a.zip")
+	writeZip(t, archive, map[string]string{"x.txt": "hi"})
+	files, staging, err := ExtractAny(archive, dir)
+	if err != nil || len(files) != 1 || filepath.Dir(staging) != dir {
+		t.Fatalf("ExtractAny = %v %q %v", files, staging, err)
 	}
 }
