@@ -123,4 +123,4 @@ Run `sudo scripts/install.sh` on the target machine and choose **native** (insta
 
 For the database, native mode offers **sqlite** or an **existing MariaDB/MySQL** server you already run. Docker mode offers the same two plus a third: **bundled** — a MariaDB container the wizard sets up and manages alongside xirc, with generated passwords.
 
-Full walkthrough, including remote deploy and reverse-proxy options: [install.md](install.md).
+Full walkthrough, including remote deploy and reverse-proxy options: [install.md](https://github.com/RealDtx/maxwell-xirc/blob/master/docs/install.md).
