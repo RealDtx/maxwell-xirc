@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -315,6 +317,74 @@ func moveItem(roots []string, srcDir, name, destDir string) error {
 		return fscheck.Describe(err, srcDir)
 	}
 	return fscheck.Describe(err, destDir)
+}
+
+// Types the OS mime database often lacks; checked before mime.TypeByExtension.
+var rawMimeFallback = map[string]string{
+	".mkv": "video/x-matroska", ".webm": "video/webm", ".mp4": "video/mp4", ".m4v": "video/mp4",
+	".mov": "video/quicktime", ".flac": "audio/flac", ".m4a": "audio/mp4", ".opus": "audio/ogg",
+	".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".pdf": "application/pdf",
+}
+
+// GET /api/files/raw?path=ABS[&download=1] — stream one file below a
+// configured root (Range/HEAD/If-Modified-Since via http.ServeContent).
+func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	p := filepath.Clean(r.URL.Query().Get("path"))
+	if !filepath.IsAbs(p) {
+		writeError(w, http.StatusBadRequest, "path must be absolute")
+		return
+	}
+	if ok, err := s.isValidTargetDir(filepath.Dir(p)); err != nil || !ok {
+		writeError(w, http.StatusForbidden, "not below a configured destination directory")
+		return
+	}
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+	inRoot := false
+	for _, root := range s.fileRoots() {
+		if within(root, real) {
+			inRoot = true
+			break
+		}
+	}
+	if !inRoot {
+		writeError(w, http.StatusForbidden, "not below a configured destination directory")
+		return
+	}
+	f, err := os.Open(real)
+	if err != nil {
+		writeError(w, statusFor(fscheck.Describe(err, filepath.Dir(p))), "cannot open file")
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		writeError(w, http.StatusBadRequest, "not a regular file")
+		return
+	}
+	name := filepath.Base(p)
+	ext := strings.ToLower(filepath.Ext(name))
+	ct := rawMimeFallback[ext]
+	if ct == "" {
+		ct = mime.TypeByExtension(ext)
+	}
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ct)
+	disp := "inline"
+	if r.URL.Query().Get("download") == "1" {
+		disp = "attachment"
+	}
+	w.Header().Set("Content-Disposition", disp+"; filename*=UTF-8''"+url.PathEscape(name))
+	http.ServeContent(w, r, name, info.ModTime(), f)
 }
 
 func statusFor(err error) int {

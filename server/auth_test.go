@@ -145,6 +145,7 @@ func TestAdminOnlyTable(t *testing.T) {
 		{"GET", "/api/servers"}, {"GET", "/api/realms"}, {"GET", "/api/library"}, {"POST", "/api/search/start"},
 		{"GET", "/api/index/search"}, {"POST", "/api/downloads/request"}, {"POST", "/api/downloads/cancel"},
 		{"POST", "/api/downloads/retry"}, {"POST", "/api/downloads/set-auto-extract"}, {"GET", "/api/files"},
+		{"GET", "/api/files/raw"},
 		{"POST", "/api/irc/message"}, {"GET", "/api/irc/status"}, {"GET", "/api/stats/downloads"},
 		{"GET", "/api/storage"}, {"GET", "/api/capabilities"}, {"POST", "/api/search/saved"}, {"GET", "/ws"},
 		{"POST", "/api/library/preview"}, // read-only: downloads table "Auto → …" label

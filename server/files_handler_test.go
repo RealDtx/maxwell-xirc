@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -258,6 +259,58 @@ func TestFileManager_MoveBlamesReadOnlySource(t *testing.T) {
 	msg, _ := errs["a.mkv"].(string)
 	if w.Code != http.StatusOK || !strings.Contains(msg, "permission denied: "+srcDir) {
 		t.Errorf("got %d %v", w.Code, resp)
+	}
+}
+
+func TestFilesRaw(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	root := t.TempDir()
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(root, "a b#?%ü.mp4"), []byte("0123456789abcdef"), 0644)
+	os.WriteFile(filepath.Join(outside, "secret"), []byte("s"), 0644)
+	os.Symlink(filepath.Join(outside, "secret"), filepath.Join(root, "link"))
+	os.Mkdir(filepath.Join(root, "sub"), 0755)
+	srv.SetLibrary(library.NewManager(filepath.Join(root, "categories.yaml"), library.Config{MediaRoot: root}))
+
+	get := func(p string, hdr map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "/api/files/raw?"+p, nil)
+		for k, v := range hdr {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		srv.handleFilesRaw(w, r)
+		return w
+	}
+	q := func(path string) string { return "path=" + url.QueryEscape(path) }
+
+	w := get(q(filepath.Join(root, "a b#?%ü.mp4")), nil)
+	if w.Code != 200 || w.Body.String() != "0123456789abcdef" || w.Header().Get("Content-Type") != "video/mp4" ||
+		!strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline;") {
+		t.Errorf("full get: %d %q %v", w.Code, w.Body.String(), w.Header())
+	}
+	w = get(q(filepath.Join(root, "a b#?%ü.mp4")), map[string]string{"Range": "bytes=0-9"})
+	if w.Code != http.StatusPartialContent || w.Body.String() != "0123456789" {
+		t.Errorf("range: %d %q", w.Code, w.Body.String())
+	}
+	w = get(q(filepath.Join(root, "a b#?%ü.mp4"))+"&download=1", nil)
+	if cd := w.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") || !strings.Contains(cd, "filename*=UTF-8''a%20b%23%3F%25%C3%BC.mp4") {
+		t.Errorf("download disposition: %q", cd)
+	}
+	for name, p := range map[string]string{
+		"symlink escape": filepath.Join(root, "link"),
+		"dotdot":         root + "/../" + filepath.Base(outside) + "/secret",
+		"outside":        filepath.Join(outside, "secret"),
+	} {
+		if w := get(q(p), nil); w.Code != http.StatusForbidden {
+			t.Errorf("%s: got %d, want 403", name, w.Code)
+		}
+	}
+	if w := get(q(filepath.Join(root, "sub")), nil); w.Code != http.StatusBadRequest {
+		t.Errorf("dir: %d", w.Code)
+	}
+	if w := get(q(filepath.Join(root, "missing.mp4")), nil); w.Code != http.StatusNotFound {
+		t.Errorf("missing: %d", w.Code)
 	}
 }
 
