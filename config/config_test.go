@@ -214,3 +214,16 @@ func TestLoad_BadYAMLStillErrors(t *testing.T) {
 		t.Fatal("expected parse error")
 	}
 }
+
+func TestDefaultHelpDefault(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yaml")
+	os.WriteFile(p, []byte("server:\n  port: 8085\n"), 0644)
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UI.HelpDefault != "first_time" || cfg.Editable().UI.HelpDefault != "first_time" {
+		t.Errorf("HelpDefault = %q", cfg.UI.HelpDefault)
+	}
+}

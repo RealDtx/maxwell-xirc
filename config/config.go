@@ -65,6 +65,13 @@ type AuthConfig struct {
 	TrustedProxies []string `yaml:"trusted_proxies" json:"trusted_proxies"`
 }
 
+// UIConfig holds web UI behaviour defaults.
+type UIConfig struct {
+	// HelpDefault controls whether in-app help blocks start open:
+	// first_time (until closed once per browser) | always | never.
+	HelpDefault string `yaml:"help_default" json:"help_default"`
+}
+
 type Config struct {
 	Server      ServerConfig      `yaml:"server"`
 	Database    DatabaseConfig    `yaml:"database"`
@@ -73,6 +80,7 @@ type Config struct {
 	Patterns    []PatternConfig   `yaml:"patterns"`
 	Maintenance MaintenanceConfig `yaml:"maintenance"`
 	Auth        AuthConfig        `yaml:"auth"`
+	UI          UIConfig          `yaml:"ui"`
 }
 
 // EditableStorage is the part of storage the admin UI may change at runtime.
@@ -89,6 +97,7 @@ type Editable struct {
 	Downloads   DownloadsConfig   `yaml:"downloads" json:"downloads"`
 	Maintenance MaintenanceConfig `yaml:"maintenance" json:"maintenance"`
 	Auth        AuthConfig        `yaml:"auth" json:"auth"`
+	UI          UIConfig          `yaml:"ui" json:"ui"`
 }
 
 func (c *Config) Editable() Editable {
@@ -99,12 +108,14 @@ func (c *Config) Editable() Editable {
 		// Cloned so decoding a request onto the result can't write into the
 		// live config's backing arrays.
 		Auth: AuthConfig{slices.Clone(c.Auth.TrustedNetworks), c.Auth.TrustedRole, slices.Clone(c.Auth.TrustedProxies)},
+		UI:   c.UI,
 	}
 }
 
 func (c *Config) ApplyEditable(e Editable) {
 	c.Storage.DownloadsDir, c.Storage.TempDir, c.Storage.MinFreeSpace = e.Storage.DownloadsDir, e.Storage.TempDir, e.Storage.MinFreeSpace
 	c.Downloads, c.Maintenance, c.Auth = e.Downloads, e.Maintenance, e.Auth
+	c.UI = e.UI
 }
 
 // EnvLockedKeys lists the dotted yaml keys of Editable whose XIRC_* override
@@ -154,6 +165,7 @@ func defaults() Config {
 			TrustedRole:    "admin",
 			TrustedProxies: []string{"127.0.0.1/32", "::1/128"},
 		},
+		UI: UIConfig{HelpDefault: "first_time"},
 	}
 }
 

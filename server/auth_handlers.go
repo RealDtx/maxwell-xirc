@@ -148,8 +148,9 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		// Version only for authenticated callers: don't advertise it to anonymous probes.
 		writeJSON(w, http.StatusOK, struct {
 			*Principal
-			Version string `json:"version"`
-		}{p, Version})
+			Version     string `json:"version"`
+			HelpDefault string `json:"help_default"`
+		}{p, Version, s.helpDefault()})
 		return
 	}
 	if n, err := s.store.CountUsers(); err == nil && n == 0 {
@@ -157,6 +158,16 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusUnauthorized, "login required")
+}
+
+// helpDefault is ui.help_default, live (settings PUTs change it).
+func (s *Server) helpDefault() string {
+	if s.settings.cfg == nil {
+		return "first_time"
+	}
+	s.settings.mu.Lock()
+	defer s.settings.mu.Unlock()
+	return s.settings.cfg.UI.HelpDefault
 }
 
 // handleAuthSetup creates the first admin. Open to anyone, but only while no

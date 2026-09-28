@@ -31,3 +31,8 @@ auth:
   trusted_networks: []           # e.g. [192.168.0.0/16]: these clients skip login
   trusted_role: admin            # role they get: admin | user
   trusted_proxies: [127.0.0.1/32, "::1/128"]  # peers whose X-Forwarded-* is believed
+
+ui:
+  # In-app help blocks: first_time (open until closed once, per browser),
+  # always (always start open) or never (closed; open via the ⓘ icon).
+  help_default: first_time

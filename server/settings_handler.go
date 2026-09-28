@@ -260,6 +260,11 @@ func validateSettings(cur, e config.Editable) []string {
 	if err := ParseAuthPolicy(e.Auth); err != nil {
 		errs = append(errs, err.Error())
 	}
+	switch e.UI.HelpDefault {
+	case "first_time", "always", "never":
+	default:
+		errs = append(errs, "ui.help_default must be first_time, always or never")
+	}
 	return errs
 }
 

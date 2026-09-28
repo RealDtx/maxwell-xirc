@@ -497,3 +497,29 @@ func TestSettingsPut_PartialBodyKeepsCurrent(t *testing.T) {
 		t.Errorf("rejected PUT mutated live trusted_networks: %v", got)
 	}
 }
+
+func TestSettingsPut_HelpDefault(t *testing.T) {
+	srv, cfg, _ := newSettingsTestServer(t, 3)
+	if w := adminDo(t, srv, "PUT", "/api/settings", `{"ui":{"help_default":"sometimes"}}`); w.Code != 400 || !strings.Contains(w.Body.String(), "ui.help_default") {
+		t.Errorf("bad value: %d %s", w.Code, w.Body.String())
+	}
+	if w := adminDo(t, srv, "PUT", "/api/settings", `{"ui":{"help_default":"never"}}`); w.Code != 200 {
+		t.Fatalf("good value: %d %s", w.Code, w.Body.String())
+	}
+	if cfg.UI.HelpDefault != "never" {
+		t.Errorf("not applied live: %q", cfg.UI.HelpDefault)
+	}
+	w := adminDo(t, srv, "GET", "/api/auth/me", "")
+	if !strings.Contains(w.Body.String(), `"help_default":"never"`) {
+		t.Errorf("/me = %s", w.Body.String())
+	}
+}
+
+func TestSettingsPut_HelpDefaultEnvLocked(t *testing.T) {
+	t.Setenv("XIRC_UI_HELP_DEFAULT", "always")
+	srv, _, _ := newSettingsTestServer(t, 3)
+	w := adminDo(t, srv, "GET", "/api/settings", "")
+	if !strings.Contains(w.Body.String(), `"ui.help_default"`) {
+		t.Errorf("ui.help_default should be listed as locked: %s", w.Body.String())
+	}
+}
