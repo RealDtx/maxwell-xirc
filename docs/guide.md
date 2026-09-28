@@ -50,7 +50,7 @@ Good to know: once a pack is requested, xirc waits up to one hour for the bot to
 ## Routing, library and auto-extract {#routing}
 After a download finishes, maXwell IRC can sort it automatically instead of leaving it flat in the downloads folder. This is the **library**: a set of categories (series, show, movie, music, magazine, ebook, game, software), each matching by file extension and filename pattern, in priority order. A matched file is moved under the category's folder, with the destination path built from a template like `{title}/{season_dir}`. A file that matches nothing stays where it landed.
 
-Archives (tar/zip/rar/7z) inside a matched category can be auto-extracted: the archive is unpacked and its contents flattened into the resolved folder, and — if the category and the individual download both allow it — the archive is deleted afterward, only once extraction succeeded. Series and movie categories extract by default; others don't.
+Archives (tar/zip/rar/7z) inside a matched category can be auto-extracted: the archive is unpacked and its contents flattened into the resolved folder, and — if the category and the individual download both allow it — the archive is deleted afterward, only once extraction succeeded. Series, movie and music categories extract (and delete the archive) by default; others don't.
 
 Configure categories, the media root and auto-organize under [Settings → Library](#settings-library); the same mechanics drive the manual **Extract…** action in [Files](#files).
 
