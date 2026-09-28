@@ -1779,8 +1779,8 @@
                                                 <td class="py-1" x-html="fileIcon(entry)"></td>
                                                 <td class="py-1 dl-filename-cell">
                                                     <template x-if="fileManagerRename.name !== entry.name">
-                                                        <span :style="entry.is_dir ? 'cursor:pointer;' : ''"
-                                                              @click="entry.is_dir && fmOpenFolder(entry)"
+                                                        <span style="cursor:pointer;"
+                                                              @click="fmOpenFile(entry)"
                                                               @dblclick="entry.is_dir && fmOpenFolder(entry)"
                                                               x-text="entry.name"></span>
                                                     </template>
@@ -1794,7 +1794,14 @@
                                                 <td class="py-1 text-muted text-xs" x-text="fmSizeLabel(entry)"></td>
                                                 <td class="py-1 text-muted text-xs" x-text="formatDate(entry.modified)"></td>
                                                 <td class="py-1">
-                                                    <span x-show="isAdmin" style="display:flex;gap:4px;align-items:center;">
+                                                    <span style="display:inline-flex;gap:4px;align-items:center;">
+                                                        <a x-show="!entry.is_dir" class="btn btn-sm" :href="fmRawUrl(entry, true)" title="Download">⬇</a>
+                                                        <button x-show="!entry.is_dir && isAdmin && fmIsFirstArchiveVolume(entry.name)" class="btn btn-sm"
+                                                                :disabled="!rootWritable(fileManagerDir)"
+                                                                @click.stop="fmExtractDialog = { name: entry.name, deleteArchive: false }"
+                                                                title="Extract into a folder next to the archive">Extract…</button>
+                                                    </span>
+                                                    <span x-show="isAdmin" style="display:inline-flex;gap:4px;align-items:center;">
                                                         <button class="btn btn-sm" @click.stop="fmStartRename(entry)"
                                                                 :disabled="!rootWritable(fileManagerDir)"
                                                                 :title="!rootWritable(fileManagerDir) ? 'Read-only: ' + fileManagerDir : 'Rename'">✎</button>
@@ -2212,6 +2219,54 @@
         Setup complete — restart maXwell IRC for changes to take effect.
         <button @click="setupBanner=false" style="margin-left:12px; background:transparent; border:none; color:#fff; cursor:pointer; font-size:16px;">×</button>
     </div>
+</div>
+
+<!-- File viewer modal -->
+<div x-show="fmViewer" x-cloak @keydown.escape.window="fmCloseViewer()" @click.self="fmCloseViewer()"
+     style="position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center;">
+    <template x-if="fmViewer">
+        <div class="fm-viewer">
+            <div class="fm-viewer-head">
+                <span x-text="fmViewer.name" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+                <a class="btn btn-sm" :href="fmViewer.download">⬇ Download</a>
+                <button class="btn btn-sm" @click="fmCloseViewer()">×</button>
+            </div>
+            <div x-show="fmViewer.error" class="fm-viewer-error">
+                Your browser can't play this format. Download it and use a desktop player (e.g. VLC).
+            </div>
+            <template x-if="fmViewer.kind === 'video'">
+                <video x-show="!fmViewer.error" :src="fmViewer.url" controls autoplay preload="metadata" @error="fmViewer.error = true"></video>
+            </template>
+            <template x-if="fmViewer.kind === 'audio'">
+                <audio x-show="!fmViewer.error" :src="fmViewer.url" controls autoplay @error="fmViewer.error = true"></audio>
+            </template>
+            <template x-if="fmViewer.kind === 'pdf'">
+                <iframe :src="fmViewer.url"></iframe>
+            </template>
+            <template x-if="fmViewer.kind === 'image'">
+                <img :src="fmViewer.url" :alt="fmViewer.name">
+            </template>
+        </div>
+    </template>
+</div>
+
+<!-- Extract dialog -->
+<div x-show="fmExtractDialog" x-cloak @keydown.escape.window="fmExtractDialog = null"
+     style="position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center;">
+    <template x-if="fmExtractDialog">
+        <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; width:420px; max-width:90vw; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <div style="font-weight:600;">Extract archive</div>
+            <div class="text-sm" style="word-break:break-all;" x-text="fmExtractDialog.name"></div>
+            <label class="text-sm" style="display:flex; gap:6px; align-items:center;">
+                <input type="checkbox" x-model="fmExtractDialog.deleteArchive">
+                Delete archive afterwards (all volumes; only if extraction succeeds)
+            </label>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn btn-sm" @click="fmExtractDialog = null">Cancel</button>
+                <button class="btn btn-sm btn-primary" @click="fmStartExtract()">Extract</button>
+            </div>
+        </div>
+    </template>
 </div>
 
 <!-- Pattern Trainer Modal -->

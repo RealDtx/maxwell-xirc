@@ -140,6 +140,9 @@ const api = {
         return data;
     },
     fileAction(body) { return this.post('/files', body); },
+    rawFileUrl(path, download) {
+        return _apiBase + '/files/raw?path=' + encodeURIComponent(path) + (download ? '&download=1' : '');
+    },
 
     // Stats
     getDownloadStats()                { return this.get('/stats/downloads'); },

@@ -11,7 +11,7 @@ const FM_ICON_CATEGORIES = {
     book: ['pdf', 'epub', 'mobi', 'azw3', 'cbz', 'cbr'],
     archive: ['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst'],
     disc: ['iso', 'img'],
-    image: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+    image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'],
     app: ['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'appimage'],
 };
 
@@ -40,6 +40,31 @@ function fmCategory(entry) {
         if (FM_ICON_CATEGORIES[cat].indexOf(ext) !== -1) return cat;
     }
     return 'generic';
+}
+
+const FM_VIEWABLE = {
+    video: ['mp4', 'm4v', 'webm', 'mkv', 'mov'],
+    audio: ['mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wav'],
+    pdf: ['pdf'],
+    image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'],
+};
+
+// fmViewKind returns 'video'|'audio'|'pdf'|'image' or '' (download instead).
+function fmViewKind(name) {
+    var ext = fmExt(name);
+    for (var k in FM_VIEWABLE) {
+        if (FM_VIEWABLE[k].indexOf(ext) !== -1) return k;
+    }
+    return '';
+}
+
+// Mirrors library.ArchiveVolumes' "first volume" rule for showing Extract.
+function fmIsFirstArchiveVolume(name) {
+    var n = (name || '').toLowerCase();
+    var m = n.match(/\.part(\d+)\.rar$/);
+    if (m) return parseInt(m[1], 10) === 1;
+    if (/\.7z\.\d{3}$/.test(n)) return /\.7z\.001$/.test(n);
+    return /\.(zip|rar|7z|tar|tar\.gz|tgz|tar\.bz2|tbz2|tar\.xz|txz|tar\.zst)$/.test(n);
 }
 
 function fileIcon(entry) {
@@ -198,6 +223,8 @@ document.addEventListener('alpine:init', () => {
         fileManagerParent: '',
         fileManagerError: '',
         fileManagerErrors: {},
+        fmViewer: null,        // { name, url, kind, error }
+        fmExtractDialog: null, // { name, deleteArchive }
         fileManagerFilter: '',
         fileManagerSort: { col: 'name', dir: 'asc' },
         fileManagerSelected: {},
@@ -1825,6 +1852,17 @@ document.addEventListener('alpine:init', () => {
                         this.loadSettingsRealms(this.settingsServerId);
                     }
                 }
+            } else if (type === 'file_extract') {
+                const d = data.data || {};
+                const errs = Object.assign({}, this.fileManagerErrors);
+                delete errs[d.name];
+                if (!d.ok) errs[d.name] = 'Extract failed: ' + d.error;
+                if (this.fileManagerDir === d.dir) {
+                    this.loadFileManager(d.dir).then(() => {
+                        this.fileManagerErrors = errs;
+                        if (d.ok) this._fmHighlightEntry(d.target.split('/').pop());
+                    });
+                }
             } else if (type === 'capabilities') {
                 this.caps = data.data;
             }
@@ -1941,6 +1979,35 @@ document.addEventListener('alpine:init', () => {
         fmOpenFolder(entry) {
             if (!entry.is_dir) return;
             this.loadFileManager(this.fmJoin(this.fileManagerDir, entry.name));
+        },
+
+        fmRawUrl(entry, download) {
+            return api.rawFileUrl(this.fmJoin(this.fileManagerDir, entry.name), download);
+        },
+
+        fmOpenFile(entry) {
+            if (entry.is_dir) return this.fmOpenFolder(entry);
+            var kind = fmViewKind(entry.name);
+            if (!kind) {
+                window.location.href = this.fmRawUrl(entry, true);
+                return;
+            }
+            this.fmViewer = { name: entry.name, url: this.fmRawUrl(entry, false), download: this.fmRawUrl(entry, true), kind: kind, error: false };
+        },
+
+        fmCloseViewer() { this.fmViewer = null; },
+
+        async fmStartExtract() {
+            var d = this.fmExtractDialog;
+            if (!d) return;
+            this.fmExtractDialog = null;
+            this.fileManagerError = '';
+            try {
+                await api.fileAction({ action: 'extract', dir: this.fileManagerDir, name: d.name, delete_archive: !!d.deleteArchive });
+                this.fileManagerErrors = Object.assign({}, this.fileManagerErrors, { [d.name]: 'Extracting…' });
+            } catch (e) {
+                this.fileManagerError = e.message || String(e);
+            }
         },
 
         fmSortBy(col) { this._sortToggle(this.fileManagerSort, col); },

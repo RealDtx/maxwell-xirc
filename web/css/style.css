@@ -682,3 +682,11 @@ tr:hover { background: rgba(255,255,255,0.02); }
     font-size: 14px;
     padding: 0 4px;
 }
+
+.fm-viewer { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
+    width: min(1200px, 95vw); max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; }
+.fm-viewer-head { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.fm-viewer video, .fm-viewer img { max-width: 100%; max-height: calc(92vh - 50px); margin: auto; display: block; background: #000; }
+.fm-viewer audio { width: 100%; padding: 16px; box-sizing: border-box; }
+.fm-viewer iframe { width: 100%; height: calc(92vh - 50px); border: 0; background: #fff; }
+.fm-viewer-error { padding: 24px; color: var(--warning); }
