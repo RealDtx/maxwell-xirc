@@ -12,8 +12,8 @@ services:
       # Localhost only until an admin exists:
       #   docker exec -it xirc xirc --create-admin <name>
       # then, to reach xirc from other machines without a reverse proxy on
-      # this host, change this to "8085:8085".
-      - "127.0.0.1:8085:8085"
+      # this host, set BIND=0.0.0.0 in .env.
+      - "${BIND:-127.0.0.1}:8085:8085"
     volumes:
       - ./data:/data
       # Keep downloads and media on the same filesystem so finished files are
@@ -27,6 +27,18 @@ services:
       # proxy listed in XIRC_AUTH_TRUSTED_PROXIES.
       - XIRC_AUTH_TRUSTED_NETWORKS=${TRUSTED_NETWORKS:-}
       - XIRC_AUTH_TRUSTED_ROLE=${TRUSTED_ROLE:-admin}
+      # sqlite (default) or mysql; DSN e.g. xirc:pw@tcp(db:3306)/xirc
+      - XIRC_DATABASE_DRIVER=${DB_DRIVER:-sqlite}
+      - XIRC_DATABASE_DSN=${DB_DSN:-}
+      # Only with a subpath reverse proxy, e.g. /xirc
+      - XIRC_SERVER_PREFIX=${XIRC_SERVER_PREFIX:-}
+    extra_hosts:
+      # Reach a DB running natively on the Docker host as host.docker.internal.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false   # the db service only exists with --profile mariadb
     networks:
       - xirc
 
@@ -37,10 +49,15 @@ services:
     profiles:
       - mariadb
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set in .env}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-}
       - MYSQL_DATABASE=xirc
       - MYSQL_USER=xirc
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?set in .env}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     volumes:
       - db_data:/var/lib/mysql
     networks:
