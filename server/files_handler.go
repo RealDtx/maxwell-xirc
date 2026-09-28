@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/RealDtx/maxwell-irc/fscheck"
+	"github.com/RealDtx/maxwell-irc/irc"
+	"github.com/RealDtx/maxwell-irc/library"
 )
 
 type fileEntry struct {
@@ -147,6 +150,8 @@ type fileActionRequest struct {
 	Name    string   `json:"name"`
 	NewName string   `json:"new_name"`
 	Names   []string `json:"names"`
+
+	DeleteArchive bool `json:"delete_archive"`
 }
 
 // errNotAllowed marks client errors that map to 4xx per-item messages.
@@ -242,8 +247,68 @@ func (s *Server) handleFileAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"path": p})
+	case "extract":
+		dir, ok := checkDir(req.Dir)
+		if !ok {
+			return
+		}
+		if _, err := existingItem(roots, dir, req.Name); err != nil {
+			writeError(w, statusFor(err), err.Error())
+			return
+		}
+		set, isArchive := library.ArchiveVolumes(dir, req.Name)
+		if !isArchive {
+			writeError(w, http.StatusBadRequest, "not an archive")
+			return
+		}
+		if !set.First {
+			writeError(w, http.StatusBadRequest, "not the first volume of the archive set")
+			return
+		}
+		target := filepath.Join(dir, set.Stem)
+		if _, busy := s.extracting.LoadOrStore(target, struct{}{}); busy {
+			writeError(w, http.StatusConflict, "extraction already running")
+			return
+		}
+		if err := noClobber(target); err != nil {
+			s.extracting.Delete(target)
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		go s.runExtract(dir, req.Name, target, set.Volumes, req.DeleteArchive)
+		writeJSON(w, http.StatusAccepted, map[string]string{"target": target})
 	default:
 		writeError(w, http.StatusBadRequest, "unknown action")
+	}
+}
+
+// runExtract unpacks dir/name into target (via a staging dir in dir, then a
+// rename) and deletes the archive's volumes only if that fully succeeded.
+func (s *Server) runExtract(dir, name, target string, volumes []string, deleteArchive bool) {
+	defer s.extracting.Delete(target)
+	_, staging, err := library.ExtractAny(filepath.Join(dir, name), dir)
+	if err == nil {
+		if err = noClobber(target); err == nil {
+			err = os.Rename(staging, target)
+		}
+		if err != nil {
+			os.RemoveAll(staging)
+		}
+	}
+	if err == nil && deleteArchive {
+		for _, v := range volumes {
+			if rmErr := os.Remove(filepath.Join(dir, v)); rmErr != nil {
+				log.Printf("extract: removing %s: %v", v, rmErr)
+			}
+		}
+	}
+	data := map[string]interface{}{"dir": dir, "name": name, "target": target, "ok": err == nil, "error": ""}
+	if err != nil {
+		log.Printf("extract %s failed: %v", filepath.Join(dir, name), err)
+		data["error"] = fscheck.Describe(err, dir).Error()
+	}
+	if s.ircMgr != nil {
+		s.ircMgr.EventBus().Publish(irc.Event{Type: irc.EventFileExtract, Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Data: data})
 	}
 }
 

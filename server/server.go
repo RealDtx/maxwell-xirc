@@ -31,6 +31,8 @@ type Server struct {
 	setupMu  sync.Mutex // serialises /api/auth/setup and last-admin checks
 	caps     capState
 	settings settingsState
+
+	extracting sync.Map // target dir → struct{}; guards concurrent extracts
 }
 
 // SetLibrary wires the library manager in — set once at startup.

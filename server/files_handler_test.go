@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -11,7 +12,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/RealDtx/maxwell-irc/irc"
 	"github.com/RealDtx/maxwell-irc/library"
 )
 
@@ -363,5 +366,66 @@ func TestAdvertisedDirsExist(t *testing.T) {
 		if !has[movies] || !has[mediaRoot] {
 			t.Errorf("%s lacks existing dirs %s / %s: %v", name, mediaRoot, movies, list)
 		}
+	}
+}
+
+func TestFilesExtract(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	root := t.TempDir()
+	srv.SetLibrary(library.NewManager(filepath.Join(root, "categories.yaml"), library.Config{MediaRoot: root}))
+	events := srv.ircMgr.EventBus().Subscribe()
+
+	zp := filepath.Join(root, "Pack.zip")
+	zf, _ := os.Create(zp)
+	zw := zip.NewWriter(zf)
+	fw, _ := zw.Create("inner.txt")
+	fw.Write([]byte("hi"))
+	zw.Close()
+	zf.Close()
+	os.WriteFile(filepath.Join(root, "Show.part02.rar"), []byte("x"), 0644)
+	os.WriteFile(filepath.Join(root, "nope.txt"), []byte("x"), 0644)
+
+	post := func(body map[string]interface{}) int {
+		b, _ := json.Marshal(body)
+		w := httptest.NewRecorder()
+		srv.handleFiles(w, httptest.NewRequest("POST", "/api/files", strings.NewReader(string(b))))
+		return w.Code
+	}
+	if c := post(map[string]interface{}{"action": "extract", "dir": root, "name": "Show.part02.rar"}); c != http.StatusBadRequest {
+		t.Errorf("non-first volume: %d", c)
+	}
+	if c := post(map[string]interface{}{"action": "extract", "dir": root, "name": "nope.txt"}); c != http.StatusBadRequest {
+		t.Errorf("not an archive: %d", c)
+	}
+	if c := post(map[string]interface{}{"action": "extract", "dir": root, "name": "Pack.zip", "delete_archive": true}); c != http.StatusAccepted {
+		t.Fatalf("extract: %d", c)
+	}
+	// Second request while the first may still run, or after it created the target: 409 either way.
+	if c := post(map[string]interface{}{"action": "extract", "dir": root, "name": "Pack.zip"}); c != http.StatusConflict {
+		t.Errorf("double extract: %d", c)
+	}
+	deadline := time.After(5 * time.Second)
+	found := false
+	for !found {
+		select {
+		case ev := <-events:
+			if ev.Type != irc.EventFileExtract {
+				continue
+			}
+			found = true
+			d := ev.Data.(map[string]interface{})
+			if d["ok"] != true {
+				t.Fatalf("event = %+v", ev)
+			}
+		case <-deadline:
+			t.Fatal("no file_extract event")
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "Pack", "inner.txt")); err != nil || string(b) != "hi" {
+		t.Errorf("extracted content: %q %v", b, err)
+	}
+	if _, err := os.Stat(zp); !os.IsNotExist(err) {
+		t.Errorf("archive should be deleted: %v", err)
 	}
 }
