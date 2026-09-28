@@ -269,6 +269,8 @@ document.addEventListener('alpine:init', () => {
         // Auth
         me: null,
         authMode: '',
+        guide: { order: [], sections: {}, full: '' },
+        helpOpen: {},      // anchor → bool for this view visit
         authForm: { username: '', password: '', password2: '', error: '' },
         users: [],
         newUser: { username: '', password: '', role: 'user' },
@@ -353,6 +355,7 @@ document.addEventListener('alpine:init', () => {
         // --- Navigation ---
 
         setView(view) {
+            this.helpOpen = {};
             this.activeView = view;
             if (view === 'settings') {
                 this.showServerForm = false;
@@ -2420,6 +2423,7 @@ document.addEventListener('alpine:init', () => {
                     trusted_role: s.auth.trusted_role,
                     trusted_proxies: (s.auth.trusted_proxies || []).join(', '),
                 },
+                ui: { ...(s.ui || { help_default: 'first_time' }) },
             };
         },
         _systemSplit(text) {
@@ -2472,10 +2476,12 @@ document.addEventListener('alpine:init', () => {
                     trusted_role: this.systemForm.auth.trusted_role,
                     trusted_proxies: proxies,
                 },
+                ui: { ...this.systemForm.ui },
             };
             try {
                 this.systemSettings = await api.saveSettings(payload);
                 this.systemForm = this._systemToForm(this.systemSettings.settings);
+                if (this.me) this.me.help_default = this.systemSettings.settings.ui.help_default;
                 this.systemNotice = 'Saved — applied';
                 setTimeout(() => { this.systemNotice = ''; }, 3000);
             } catch (e) {
@@ -2904,6 +2910,44 @@ document.addEventListener('alpine:init', () => {
 
         // --- Auth ---
 
+        async loadGuide() {
+            try {
+                const res = await fetch((window.XIRC_PREFIX || '') + '/guide.md');
+                if (res.ok) this.guide = parseGuide(await res.text());
+            } catch (e) { console.error('loadGuide', e); }
+        },
+
+        _helpMode() { return (this.me && this.me.help_default) || 'first_time'; },
+
+        helpIsOpen(id) {
+            if (id in this.helpOpen) return this.helpOpen[id];
+            const mode = this._helpMode();
+            if (mode === 'never') return false;
+            if (mode === 'always') return true;
+            return lsGet('help-closed:' + id) !== '1';
+        },
+
+        helpToggled(id, open) {
+            if (this.helpIsOpen(id) === open) return; // programmatic sync, not a user action
+            this.helpOpen = Object.assign({}, this.helpOpen, { [id]: open });
+            if (!open && this._helpMode() === 'first_time') lsSet('help-closed:' + id, '1');
+        },
+
+        helpShow(id) { this.helpOpen = Object.assign({}, this.helpOpen, { [id]: true }); },
+
+        // In-guide links (#anchor) open the Help page at that section.
+        helpLinkClick(ev) {
+            const a = ev.target.closest('a[href^="#"]');
+            if (!a) return;
+            ev.preventDefault();
+            this.setView('help');
+            const id = a.getAttribute('href').slice(1);
+            this.$nextTick(() => {
+                const el = document.getElementById('help-' + id);
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+            });
+        },
+
         async loadMe() {
             const res = await fetch(_apiBase + '/auth/me');
             const data = await res.json().catch(() => ({}));
@@ -2969,6 +3013,7 @@ document.addEventListener('alpine:init', () => {
                 window.addEventListener('xirc:unauthorized', () => { this.me = null; this.authMode = 'login'; });
             }
             if (!(await this.loadMe())) return; // overlay shown; submitAuth() re-runs init()
+            this.loadGuide();
             await this.loadCaps();
             if (this.isAdmin) await this.checkSetup();
 

@@ -33,7 +33,7 @@ type Server struct {
 	settings settingsState
 
 	extracting sync.Map // target dir → struct{}; guards concurrent extracts
-	guide      []byte  // embedded docs/guide.md
+	guide      []byte   // embedded docs/guide.md
 }
 
 // SetLibrary wires the library manager in — set once at startup.

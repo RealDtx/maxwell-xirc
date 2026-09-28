@@ -8,12 +8,13 @@
     <style>
         [x-cloak] { display: none !important; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/marked@18.0.14/lib/marked.umd.js"></script>
     <script src="/js/utils.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/irc-colors.js"></script>
     <script src="/js/search-results.js"></script>
     <script src="/js/app.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js"></script>
 </head>
 <body x-data="appStore">
 <div class="app">
@@ -138,6 +139,7 @@
                 :class="{ active: activeView === 'settings' }"
                 @click="setView('settings'); sidebarOpen = false"
             >Settings</a>
+            <a :class="{ active: activeView === 'help' }" @click="setView('help'); sidebarOpen = false">Help</a>
             <a x-show="me && me.via === 'session'" @click="logout()" :title="'Signed in as ' + (me && me.username)">Log out</a>
             <a x-show="me && me.via === 'network'" @click="authMode = 'login'">Log in</a>
         </nav>
@@ -184,9 +186,15 @@
         <template x-if="activeView === 'channel'">
             <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
 
+                <details class="help" data-help="search" :open="helpIsOpen('search')" @toggle="helpToggled('search', $event.target.open)">
+                    <summary>Help</summary>
+                    <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['search'] || ''"></div>
+                </details>
+
                 <!-- Header row -->
                 <div class="content-header">
                     <span x-text="activeChannel || 'Search'"></span>
+                    <button class="help-icon" type="button" title="Help" @click="helpShow('search')">ⓘ</button>
 
                     <!-- Tab row: single-pane mode only, only when channel selected -->
                     <template x-if="activeChannel && channelLayout(channelKey(activeServer, activeChannel)) === 'single'">
@@ -827,8 +835,13 @@
         <!-- Downloads view -->
         <template x-if="activeView === 'downloads'">
             <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <details class="help" data-help="downloads" :open="helpIsOpen('downloads')" @toggle="helpToggled('downloads', $event.target.open)">
+                    <summary>Help</summary>
+                    <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['downloads'] || ''"></div>
+                </details>
                 <div class="content-header">
                     <span>Downloads</span>
+                    <button class="help-icon" type="button" title="Help" @click="helpShow('downloads')">ⓘ</button>
                     <button class="btn btn-sm" style="margin-left:auto" @click="loadDownloads()">Refresh</button>
                 </div>
                 <div class="content-body" style="display:flex; flex-direction:column; gap:0; overflow:hidden;">
@@ -990,6 +1003,10 @@
                     <!-- Servers tab -->
                     <template x-if="settingsTab === 'servers'">
                         <div style="padding-top:16px;">
+                            <details class="help" data-help="settings-servers" :open="helpIsOpen('settings-servers')" @toggle="helpToggled('settings-servers', $event.target.open)">
+                                <summary>Help</summary>
+                                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-servers'] || ''"></div>
+                            </details>
                             <button class="btn btn-primary btn-sm" @click="openServerForm(null)">Add Server</button>
 
                             <template x-if="settingsServers.length > 0">
@@ -1071,6 +1088,10 @@
                     <!-- Realms tab -->
                     <template x-if="settingsTab === 'realms'">
                         <div style="padding-top:16px;">
+                            <details class="help" data-help="settings-realms" :open="helpIsOpen('settings-realms')" @toggle="helpToggled('settings-realms', $event.target.open)">
+                                <summary>Help</summary>
+                                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-realms'] || ''"></div>
+                            </details>
                             <div class="form-group" style="max-width:320px;">
                                 <label>Server</label>
                                 <select @change="loadSettingsRealms(parseInt($event.target.value))" style="padding:6px 8px; background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:13px; width:100%;">
@@ -1197,6 +1218,10 @@
                     <!-- Library tab -->
                     <template x-if="settingsTab === 'library' && library">
                         <div style="padding-top:16px;">
+                            <details class="help" data-help="settings-library" :open="helpIsOpen('settings-library')" @toggle="helpToggled('settings-library', $event.target.open)">
+                                <summary>Help</summary>
+                                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-library'] || ''"></div>
+                            </details>
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                                 <h3 style="margin:0; font-size:14px;">Library</h3>
                                 <div style="display:flex; gap:8px;">
@@ -1343,6 +1368,10 @@
                     <!-- General tab -->
                     <template x-if="settingsTab === 'general'">
                         <div style="padding-top:16px;">
+                            <details class="help" data-help="settings-general" :open="helpIsOpen('settings-general')" @toggle="helpToggled('settings-general', $event.target.open)">
+                                <summary>Help</summary>
+                                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-general'] || ''"></div>
+                            </details>
                             <div class="settings-card" style="max-width:480px;">
                                 <h3 style="margin-bottom:12px;">Date Format</h3>
                                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
@@ -1369,6 +1398,10 @@
                     <!-- Users tab -->
                     <template x-if="settingsTab === 'users'">
                         <div style="padding-top:16px;">
+                            <details class="help" data-help="settings-users" :open="helpIsOpen('settings-users')" @toggle="helpToggled('settings-users', $event.target.open)">
+                                <summary>Help</summary>
+                                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-users'] || ''"></div>
+                            </details>
                             <table style="margin-top:0;">
                                 <thead>
                                     <tr>
@@ -1419,6 +1452,10 @@
                     <!-- System tab -->
                     <template x-if="settingsTab === 'system' && isAdmin">
                         <div style="padding-top:16px;">
+                            <details class="help" data-help="settings-system" :open="helpIsOpen('settings-system')" @toggle="helpToggled('settings-system', $event.target.open)">
+                                <summary>Help</summary>
+                                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-system'] || ''"></div>
+                            </details>
                             <template x-if="!systemForm">
                                 <p style="color:var(--text-muted); font-size:13px;">Loading…</p>
                             </template>
@@ -1504,6 +1541,20 @@
                                     </div>
 
                                     <div class="settings-card" style="margin-bottom:16px;">
+                                        <h3 style="margin-bottom:12px;">Interface</h3>
+                                        <div class="form-group">
+                                            <label>Help blocks start</label>
+                                            <select x-model="systemForm.ui.help_default"
+                                                    :disabled="systemLocked('ui.help_default')"
+                                                    :title="systemLocked('ui.help_default') ? 'Set by environment variable ' + systemEnvVar('ui.help_default') : ''">
+                                                <option value="first_time">Open until closed once (per browser)</option>
+                                                <option value="always">Always open</option>
+                                                <option value="never">Closed (open via ⓘ)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="settings-card" style="margin-bottom:16px;">
                                         <h3 style="margin-bottom:12px;">Server (read-only)</h3>
                                         <p style="font-size:12px; color:var(--text-secondary); margin:4px 0;">
                                             Host: <span x-text="systemSettings.readonly.server.host"></span>:<span x-text="systemSettings.readonly.server.port"></span><span x-text="systemSettings.readonly.server.prefix"></span>
@@ -1540,6 +1591,10 @@
                     <!-- Patterns tab -->
                     <template x-if="settingsTab === 'patterns'">
                         <div style="padding-top:16px;">
+                            <details class="help" data-help="settings-patterns" :open="helpIsOpen('settings-patterns')" @toggle="helpToggled('settings-patterns', $event.target.open)">
+                                <summary>Help</summary>
+                                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-patterns'] || ''"></div>
+                            </details>
 
                             <!-- Toolbar: import / export -->
                             <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
@@ -1669,7 +1724,11 @@
 
         <!-- File Manager view -->
         <div x-show="activeView === 'files'" class="p-4 h-full flex flex-col">
-            <h2>File Manager</h2>
+            <details class="help" data-help="files" :open="helpIsOpen('files')" @toggle="helpToggled('files', $event.target.open)">
+                <summary>Help</summary>
+                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['files'] || ''"></div>
+            </details>
+            <h2>File Manager <button class="help-icon" type="button" title="Help" @click="helpShow('files')">ⓘ</button></h2>
             <div style="display:flex;gap:1rem;flex:1;overflow:hidden;">
                 <!-- Dir list (left) -->
                 <div style="width:12rem;flex-shrink:0;">
@@ -1833,7 +1892,11 @@
 
         <!-- Stats view -->
         <div x-show="activeView === 'stats'" class="p-4 overflow-auto">
-            <h2>Download Statistics</h2>
+            <h2>Download Statistics <button class="help-icon" type="button" title="Help" @click="helpShow('stats')">ⓘ</button></h2>
+            <details class="help" data-help="stats" :open="helpIsOpen('stats')" @toggle="helpToggled('stats', $event.target.open)">
+                <summary>Help</summary>
+                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['stats'] || ''"></div>
+            </details>
 
             <!-- Summary cards (4 cards) -->
             <div x-show="statsSummary" class="stats-cards mb-4">
@@ -1977,11 +2040,26 @@
             </template>
         </div>
 
+        <!-- Help view -->
+        <div x-show="activeView === 'help'" class="p-4 overflow-auto help-page">
+            <nav class="help-toc">
+                <template x-for="s in guide.order" :key="s.id">
+                    <a href="#" @click.prevent="document.getElementById('help-' + s.id).scrollIntoView({behavior:'smooth'})" x-text="s.title"></a>
+                </template>
+            </nav>
+            <div class="help-body" @click="helpLinkClick($event)" x-html="guide.full"></div>
+        </div>
+
         <!-- Home / Dashboard view -->
         <template x-if="activeView === 'home'">
             <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
+                <details class="help" data-help="overview" :open="helpIsOpen('overview')" @toggle="helpToggled('overview', $event.target.open)">
+                    <summary>Help</summary>
+                    <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['overview'] || ''"></div>
+                </details>
                 <div class="content-header">
                     <span>Overview</span>
+                    <button class="help-icon" type="button" title="Help" @click="helpShow('overview')">ⓘ</button>
                 </div>
                 <div class="content-body" style="overflow-y:auto; flex:1;">
 

@@ -122,3 +122,31 @@ function formatRawLine(line) {
         default:      return trailing || line;
     }
 }
+
+// --- User guide (docs/guide.md, served at /guide.md) ---
+// Sections are "## Title {#anchor}"; returns { order: [{id,title}], sections: {id: html}, full: html }.
+function parseGuide(md) {
+    const out = { order: [], sections: {}, full: '' };
+    const re = /^## (.+?)\s*\{#([a-z0-9-]+)\}\s*$/;
+    let cur = null, buf = [];
+    const flush = () => { if (cur) out.sections[cur] = marked.parse(buf.join('\n')); buf = []; };
+    const fullLines = [];
+    for (const line of md.split('\n')) {
+        const m = line.match(re);
+        if (m) {
+            flush();
+            cur = m[2];
+            out.order.push({ id: m[2], title: m[1] });
+            fullLines.push('<h2 id="help-' + m[2] + '">' + escHtml(m[1]) + '</h2>');
+            continue;
+        }
+        if (cur) buf.push(line);
+        fullLines.push(line);
+    }
+    flush();
+    out.full = marked.parse(fullLines.join('\n'));
+    return out;
+}
+
+function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }

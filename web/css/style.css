@@ -690,3 +690,12 @@ tr:hover { background: rgba(255,255,255,0.02); }
 .fm-viewer audio { width: 100%; padding: 16px; box-sizing: border-box; }
 .fm-viewer iframe { width: 100%; height: calc(92vh - 50px); border: 0; background: #fff; }
 .fm-viewer-error { padding: 24px; color: var(--warning); }
+
+.help { border: 1px solid var(--border); border-radius: 6px; margin: 0 0 12px; background: var(--bg-secondary); font-size: 13px; }
+.help > summary { cursor: pointer; padding: 6px 10px; color: var(--text-secondary); }
+.help-body { padding: 0 12px 10px; line-height: 1.5; }
+.help-body code { font-size: 12px; }
+.help-icon { background: none; border: 0; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
+.help-icon:hover { color: var(--accent); }
+.help-page { max-width: 860px; }
+.help-toc { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 16px; font-size: 13px; }
