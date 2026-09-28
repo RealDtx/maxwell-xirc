@@ -39,3 +39,31 @@ networks:
     name: $1
 EOF
 }
+
+# ask_mysql default_host — prompts for an existing MariaDB/MySQL; sets
+# DB_HOST DB_PORT DB_NAME DB_USER DB_PASS DB_DSN.
+ask_mysql() {
+    ask "MariaDB/MySQL host" "$1" DB_HOST
+    while true; do
+        ask "Port" "3306" DB_PORT
+        [[ "$DB_PORT" =~ ^[0-9]+$ ]] && (( DB_PORT >= 1 && DB_PORT <= 65535 )) && break
+        echo "  Enter a port number between 1 and 65535." >&2
+    done
+    ask "Database name" "xirc" DB_NAME
+    ask "User" "xirc" DB_USER
+    while true; do
+        read -rsp "  Password for ${DB_USER}: " DB_PASS; echo >&2
+        [[ -n "$DB_PASS" ]] && env_quote "$DB_PASS" >/dev/null && break
+        say "! Password must be non-empty and must not contain a single quote."
+    done
+    DB_DSN="$(build_dsn "$DB_USER" "$DB_PASS" "$DB_HOST" "$DB_PORT" "$DB_NAME")"
+    echo
+    say "xirc does not create the database. If it doesn't exist yet, run on the DB server:"
+    say "  CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4;"
+    say "  CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '<password>';"
+    say "  GRANT ALL ON \`${DB_NAME}\`.* TO '${DB_USER}'@'%';"
+    echo
+}
+
+# docker_install — temporary stub; Task 3 replaces this with the real Docker flow.
+docker_install() { say "Docker mode: not implemented yet"; exit 1; }

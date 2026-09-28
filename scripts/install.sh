@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/proxy-templates.sh"
+source "$SCRIPT_DIR/install-lib.sh"
 GITHUB_REPO="RealDtx/maxwell-xirc"
 
 ask() { local p="$1" d="$2" v="$3" i; printf '%s [%s]: ' "$p" "$d" >&2; read -r i; printf -v "$v" '%s' "${i:-$d}"; }
@@ -47,6 +48,110 @@ fi
 
 echo; say "xirc installer"; hr; say "Press Enter to accept the default in [brackets]."; echo
 
+ask "Install mode (native = systemd service / docker = Docker Compose)" "native" INSTALL_MODE
+case "${INSTALL_MODE,,}" in d*) INSTALL_MODE=docker;; *) INSTALL_MODE=native;; esac
+
+choose_proxy() {
+    HAS_NGINX=n; HAS_APACHE=n
+    command -v nginx >/dev/null && HAS_NGINX=y
+    { command -v apache2ctl >/dev/null || command -v apachectl >/dev/null || command -v httpd >/dev/null; } && HAS_APACHE=y
+    echo
+    say "Detected: nginx=$HAS_NGINX apache=$HAS_APACHE"
+    default_proxy=none; [[ $HAS_APACHE == y ]] && default_proxy=apache; [[ $HAS_NGINX == y ]] && default_proxy=nginx
+    ask "Reverse proxy to configure (nginx / apache / both / none)" "$default_proxy" PROXY
+    PROXY="${PROXY,,}"; PREFIX=""; SERVER_NAME=""; MODE=site
+    if [[ "$PROXY" != none ]]; then
+        ask "Own site with a hostname (s) or a subpath of an existing site (p)" "s" m
+        if [[ "${m,,}" == p* ]]; then MODE=subpath; ask "URL prefix" "/xirc" PREFIX; PREFIX="${PREFIX%/}"
+        else ask "Hostname (e.g. xirc.example.com)" "$(hostname -f 2>/dev/null || hostname)" SERVER_NAME; fi
+    fi
+}
+
+install_proxy() { # $1 nginx|apache
+    local kind="$1" conf a
+    conf="$(PORT="$PORT" PREFIX="$PREFIX" SERVER_NAME="$SERVER_NAME" "render_${kind}_${MODE}")"
+    ask_yn "Install the ${kind} config automatically?" y a
+    if [[ $a == y ]]; then
+        local target test reload
+        case "$kind:$MODE" in
+            nginx:site)     target=/etc/nginx/sites-available/xirc; test="nginx -t"; reload="systemctl reload nginx";;
+            nginx:subpath)  target=/etc/nginx/snippets/xirc.conf; test="nginx -t"; reload="systemctl reload nginx";;
+            apache:site)    target=/etc/apache2/sites-available/xirc.conf; test="apachectl configtest"; reload="systemctl reload apache2";;
+            apache:subpath) target=/etc/apache2/conf-available/xirc.conf; test="apachectl configtest"; reload="systemctl reload apache2";;
+        esac
+        if [[ -d "$(dirname "$target")" ]]; then
+            local backup="" skip=n
+            if [[ -f "$target" ]]; then
+                if diff -q <(printf '%s\n' "$conf") "$target" >/dev/null 2>&1; then
+                    say "✓ ${kind} already configured (unchanged)"
+                    return
+                fi
+                ask_yn "$target already exists and differs. Overwrite it (a backup is kept)?" n a
+                if [[ $a != y ]]; then
+                    say "Left $target unchanged."
+                    skip=y
+                else
+                    backup="${target}.bak.$(date +%Y%m%d%H%M%S)"
+                    cp -p "$target" "$backup"
+                    say "Backed up existing $target to $backup"
+                fi
+            fi
+            if [[ $skip != y ]]; then
+                printf '%s\n' "$conf" > "$target"
+                local enabled_this_run=n
+                if [[ $kind == apache ]]; then
+                    a2enmod -q proxy proxy_http proxy_wstunnel rewrite headers
+                    if [[ $MODE == site && ! -e /etc/apache2/sites-enabled/xirc.conf ]]; then
+                        a2ensite -q xirc; enabled_this_run=y
+                    fi
+                elif [[ "$kind:$MODE" == nginx:site && ! -e /etc/nginx/sites-enabled/xirc ]]; then
+                    ln -sf "$target" /etc/nginx/sites-enabled/xirc; enabled_this_run=y
+                fi
+                local test_log; test_log="$(mktemp)"
+                if $test >"$test_log" 2>&1; then
+                    rm -f "$test_log"
+                    $reload; say "✓ ${kind} configured"
+                    [[ $MODE == subpath ]] && say "  Now include it in your site: $(proxy_enable_hint "$kind" subpath | sed 's/.*add //; s/, then.*//')"
+                    return
+                fi
+                say "! ${kind} config test failed — reverting this run's changes:"; sed 's/^/    /' "$test_log"
+                rm -f "$test_log"
+                if [[ -n "$backup" ]]; then mv "$backup" "$target"; say "  restored previous $target"
+                else rm -f "$target"; fi
+                if [[ $enabled_this_run == y ]]; then
+                    case "$kind:$MODE" in
+                        nginx:site) rm -f /etc/nginx/sites-enabled/xirc;;
+                        apache:site) a2dissite -q xirc 2>/dev/null || true;;
+                    esac
+                fi
+            fi
+        else
+            say "! $(dirname "$target") not found (non-Debian layout?)"
+        fi
+    fi
+    echo; say "Manual setup — save this as xirc.conf:"; hr
+    printf '%s\n' "$conf"; hr
+    say "Then: $(proxy_enable_hint "$kind" "$MODE")"
+}
+
+print_summary() {
+    echo; hr
+    if [[ "$PROXY" == none ]]; then URL="http://127.0.0.1:${PORT}/ (localhost only — add a reverse proxy for other devices)"
+    elif [[ $MODE == site ]]; then URL="http://${SERVER_NAME}/"
+    else URL="http://<your-site>${PREFIX}/"; fi
+    say "Open: $URL"
+    if [[ $ADMIN_CREATED == y ]]; then say "Log in as '${ADMIN_NAME,,}'."
+    else say "If no admin exists yet, the first visit creates one — open it before exposing xirc to others."; fi
+    [[ "$PROXY" != none ]] && say "HTTPS: sudo certbot --${PROXY/both/nginx}   (the login cookie is marked Secure over HTTPS)"
+    say "Re-run this script any time; it asks before changing existing files."
+    hr
+}
+
+if [[ $INSTALL_MODE == docker ]]; then
+    docker_install
+    exit 0
+fi
+
 # ── paths ─────────────────────────────────────────────────────────────────────
 ask "Install directory" "/opt/xirc" INSTALL_DIR
 ask "Downloads directory (files arrive here)" "/srv/downloads" DOWNLOADS_DIR
@@ -55,7 +160,7 @@ ask "Media library (finished downloads are sorted here)" "/srv/media" MEDIA_DIR
 ask "Database (sqlite / mysql)" "sqlite" DB_DRIVER
 if [[ "${DB_DRIVER,,}" == mysql* || "${DB_DRIVER,,}" == maria* ]]; then
     DB_DRIVER=mysql; DB_PATH=""
-    ask "MySQL DSN (user:pass@tcp(host:3306)/db)" "xirc:change-me@tcp(127.0.0.1:3306)/xirc" DB_DSN
+    ask_mysql 127.0.0.1
 else
     DB_DRIVER=sqlite; DB_DSN=""
     ask "SQLite database file" "${INSTALL_DIR}/data/xirc.db" DB_PATH
@@ -154,19 +259,7 @@ TRUSTED_ROLE=admin
 [[ -n "$TRUSTED_NETWORKS" ]] && ask "Role for those networks (admin / user)" "admin" TRUSTED_ROLE
 
 # ── proxy choice (before config: subpath sets server.prefix) ──────────────────
-HAS_NGINX=n; HAS_APACHE=n
-command -v nginx >/dev/null && HAS_NGINX=y
-{ command -v apache2ctl >/dev/null || command -v apachectl >/dev/null || command -v httpd >/dev/null; } && HAS_APACHE=y
-echo
-say "Detected: nginx=$HAS_NGINX apache=$HAS_APACHE"
-default_proxy=none; [[ $HAS_APACHE == y ]] && default_proxy=apache; [[ $HAS_NGINX == y ]] && default_proxy=nginx
-ask "Reverse proxy to configure (nginx / apache / both / none)" "$default_proxy" PROXY
-PROXY="${PROXY,,}"; PREFIX=""; SERVER_NAME=""; MODE=site
-if [[ "$PROXY" != none ]]; then
-    ask "Own site with a hostname (s) or a subpath of an existing site (p)" "s" m
-    if [[ "${m,,}" == p* ]]; then MODE=subpath; ask "URL prefix" "/xirc" PREFIX; PREFIX="${PREFIX%/}"
-    else ask "Hostname (e.g. xirc.example.com)" "$(hostname -f 2>/dev/null || hostname)" SERVER_NAME; fi
-fi
+choose_proxy
 
 # ── config + service ──────────────────────────────────────────────────────────
 CONFIG="$INSTALL_DIR/config.yaml"
@@ -260,85 +353,10 @@ systemctl restart xirc
 say "Service xirc started (logs: journalctl -u xirc -f)"
 
 # ── proxy install ─────────────────────────────────────────────────────────────
-install_proxy() { # $1 nginx|apache
-    local kind="$1" conf a
-    conf="$(PORT="$PORT" PREFIX="$PREFIX" SERVER_NAME="$SERVER_NAME" "render_${kind}_${MODE}")"
-    ask_yn "Install the ${kind} config automatically?" y a
-    if [[ $a == y ]]; then
-        local target test reload
-        case "$kind:$MODE" in
-            nginx:site)     target=/etc/nginx/sites-available/xirc; test="nginx -t"; reload="systemctl reload nginx";;
-            nginx:subpath)  target=/etc/nginx/snippets/xirc.conf; test="nginx -t"; reload="systemctl reload nginx";;
-            apache:site)    target=/etc/apache2/sites-available/xirc.conf; test="apachectl configtest"; reload="systemctl reload apache2";;
-            apache:subpath) target=/etc/apache2/conf-available/xirc.conf; test="apachectl configtest"; reload="systemctl reload apache2";;
-        esac
-        if [[ -d "$(dirname "$target")" ]]; then
-            local backup="" skip=n
-            if [[ -f "$target" ]]; then
-                if diff -q <(printf '%s\n' "$conf") "$target" >/dev/null 2>&1; then
-                    say "✓ ${kind} already configured (unchanged)"
-                    return
-                fi
-                ask_yn "$target already exists and differs. Overwrite it (a backup is kept)?" n a
-                if [[ $a != y ]]; then
-                    say "Left $target unchanged."
-                    skip=y
-                else
-                    backup="${target}.bak.$(date +%Y%m%d%H%M%S)"
-                    cp -p "$target" "$backup"
-                    say "Backed up existing $target to $backup"
-                fi
-            fi
-            if [[ $skip != y ]]; then
-                printf '%s\n' "$conf" > "$target"
-                local enabled_this_run=n
-                if [[ $kind == apache ]]; then
-                    a2enmod -q proxy proxy_http proxy_wstunnel rewrite headers
-                    if [[ $MODE == site && ! -e /etc/apache2/sites-enabled/xirc.conf ]]; then
-                        a2ensite -q xirc; enabled_this_run=y
-                    fi
-                elif [[ "$kind:$MODE" == nginx:site && ! -e /etc/nginx/sites-enabled/xirc ]]; then
-                    ln -sf "$target" /etc/nginx/sites-enabled/xirc; enabled_this_run=y
-                fi
-                local test_log; test_log="$(mktemp)"
-                if $test >"$test_log" 2>&1; then
-                    rm -f "$test_log"
-                    $reload; say "✓ ${kind} configured"
-                    [[ $MODE == subpath ]] && say "  Now include it in your site: $(proxy_enable_hint "$kind" subpath | sed 's/.*add //; s/, then.*//')"
-                    return
-                fi
-                say "! ${kind} config test failed — reverting this run's changes:"; sed 's/^/    /' "$test_log"
-                rm -f "$test_log"
-                if [[ -n "$backup" ]]; then mv "$backup" "$target"; say "  restored previous $target"
-                else rm -f "$target"; fi
-                if [[ $enabled_this_run == y ]]; then
-                    case "$kind:$MODE" in
-                        nginx:site) rm -f /etc/nginx/sites-enabled/xirc;;
-                        apache:site) a2dissite -q xirc 2>/dev/null || true;;
-                    esac
-                fi
-            fi
-        else
-            say "! $(dirname "$target") not found (non-Debian layout?)"
-        fi
-    fi
-    echo; say "Manual setup — save this as xirc.conf:"; hr
-    printf '%s\n' "$conf"; hr
-    say "Then: $(proxy_enable_hint "$kind" "$MODE")"
-}
 case "$PROXY" in
     nginx|apache) install_proxy "$PROXY";;
     both) install_proxy nginx; install_proxy apache;;
 esac
 
 # ── summary ───────────────────────────────────────────────────────────────────
-echo; hr
-if [[ "$PROXY" == none ]]; then URL="http://127.0.0.1:${PORT}/ (localhost only — add a reverse proxy for other devices)"
-elif [[ $MODE == site ]]; then URL="http://${SERVER_NAME}/"
-else URL="http://<your-site>${PREFIX}/"; fi
-say "Open: $URL"
-if [[ $ADMIN_CREATED == y ]]; then say "Log in as '${ADMIN_NAME,,}'."
-else say "If no admin exists yet, the first visit creates one — open it before exposing xirc to others."; fi
-[[ "$PROXY" != none ]] && say "HTTPS: sudo certbot --${PROXY/both/nginx}   (the login cookie is marked Secure over HTTPS)"
-say "Re-run this script any time; it asks before changing existing files."
-hr
+print_summary
