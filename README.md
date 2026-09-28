@@ -2,6 +2,8 @@
 
 A self-hosted XDCC web client for downloading files via IRC bots, designed to run on Raspberry Pi or any Linux server.
 
+**User guide:** [docs/guide.md](docs/guide.md) — also available in the app under *Help*.
+
 ## Features
 
 - Web-based UI — no client installation required
