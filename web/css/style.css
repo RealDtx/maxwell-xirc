@@ -699,3 +699,5 @@ tr:hover { background: rgba(255,255,255,0.02); }
 .help-icon:hover { color: var(--accent); }
 .help-page { max-width: 860px; }
 .help-toc { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 16px; font-size: 13px; }
+.help-body a, .help-toc a { color: var(--accent); text-decoration: none; }
+.help-body a:hover, .help-toc a:hover { color: var(--accent-hover); text-decoration: underline; }
