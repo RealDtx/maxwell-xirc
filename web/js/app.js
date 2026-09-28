@@ -1862,6 +1862,10 @@ document.addEventListener('alpine:init', () => {
                         this.fileManagerErrors = errs;
                         if (d.ok) this._fmHighlightEntry(d.target.split('/').pop());
                     });
+                } else if (!d.ok) {
+                    this.errors.unshift({ error_type: 'extract_failed', message: 'Extract failed: ' + d.name + ': ' + d.error, timestamp: data.timestamp });
+                    if (this.errors.length > 200) this.errors.pop();
+                    this.unreadErrors++;
                 }
             } else if (type === 'capabilities') {
                 this.caps = data.data;

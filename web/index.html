@@ -1781,7 +1781,6 @@
                                                     <template x-if="fileManagerRename.name !== entry.name">
                                                         <span style="cursor:pointer;"
                                                               @click="fmOpenFile(entry)"
-                                                              @dblclick="entry.is_dir && fmOpenFolder(entry)"
                                                               x-text="entry.name"></span>
                                                     </template>
                                                     <template x-if="fileManagerRename.name === entry.name">

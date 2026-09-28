@@ -271,6 +271,8 @@ func TestFilesRaw(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
 	os.WriteFile(filepath.Join(root, "a b#?%ü.mp4"), []byte("0123456789abcdef"), 0644)
+	os.WriteFile(filepath.Join(root, "x.html"), []byte("<script>alert(1)</script>"), 0644)
+	os.WriteFile(filepath.Join(root, ".hidden.mp4"), []byte("x"), 0644)
 	os.WriteFile(filepath.Join(outside, "secret"), []byte("s"), 0644)
 	os.Symlink(filepath.Join(outside, "secret"), filepath.Join(root, "link"))
 	os.Mkdir(filepath.Join(root, "sub"), 0755)
@@ -289,8 +291,17 @@ func TestFilesRaw(t *testing.T) {
 
 	w := get(q(filepath.Join(root, "a b#?%ü.mp4")), nil)
 	if w.Code != 200 || w.Body.String() != "0123456789abcdef" || w.Header().Get("Content-Type") != "video/mp4" ||
-		!strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline;") {
+		!strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline;") ||
+		w.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Errorf("full get: %d %q %v", w.Code, w.Body.String(), w.Header())
+	}
+
+	// Non-viewer types (e.g. .html) must never be served inline, regardless of
+	// the download param, and must carry a sandboxed CSP — stored XSS guard.
+	w = get(q(filepath.Join(root, "x.html")), nil)
+	if cd := w.Header().Get("Content-Disposition"); w.Code != 200 || !strings.HasPrefix(cd, "attachment;") ||
+		w.Header().Get("X-Content-Type-Options") != "nosniff" || w.Header().Get("Content-Security-Policy") != "sandbox" {
+		t.Errorf("html get: %d %q %v", w.Code, cd, w.Header())
 	}
 	w = get(q(filepath.Join(root, "a b#?%ü.mp4")), map[string]string{"Range": "bytes=0-9"})
 	if w.Code != http.StatusPartialContent || w.Body.String() != "0123456789" {
@@ -314,6 +325,9 @@ func TestFilesRaw(t *testing.T) {
 	}
 	if w := get(q(filepath.Join(root, "missing.mp4")), nil); w.Code != http.StatusNotFound {
 		t.Errorf("missing: %d", w.Code)
+	}
+	if w := get(q(filepath.Join(root, ".hidden.mp4")), nil); w.Code != http.StatusForbidden {
+		t.Errorf("hidden file: %d", w.Code)
 	}
 }
 

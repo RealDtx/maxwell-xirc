@@ -391,6 +391,23 @@ var rawMimeFallback = map[string]string{
 	".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".pdf": "application/pdf",
 }
 
+// rawInlineExt is the only set of extensions handleFilesRaw will ever serve
+// with Content-Disposition: inline. It must match FM_VIEWABLE in
+// web/js/app.js. Files come from untrusted XDCC bots/archives; serving
+// anything else (.html, .svg, .xml, ...) inline same-origin would let a
+// crafted file run script with the viewer's session. Everything not in this
+// set is forced to attachment regardless of the download param.
+var rawInlineExt = map[string]bool{
+	// video
+	".mp4": true, ".m4v": true, ".webm": true, ".mkv": true, ".mov": true,
+	// audio
+	".mp3": true, ".m4a": true, ".aac": true, ".flac": true, ".ogg": true, ".opus": true, ".wav": true,
+	// pdf
+	".pdf": true,
+	// images
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".avif": true,
+}
+
 // GET /api/files/raw?path=ABS[&download=1] — stream one file below a
 // configured root (Range/HEAD/If-Modified-Since via http.ServeContent).
 func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
@@ -401,6 +418,10 @@ func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
 	p := filepath.Clean(r.URL.Query().Get("path"))
 	if !filepath.IsAbs(p) {
 		writeError(w, http.StatusBadRequest, "path must be absolute")
+		return
+	}
+	if strings.HasPrefix(filepath.Base(p), ".") {
+		writeError(w, http.StatusForbidden, "hidden files are not served")
 		return
 	}
 	if ok, err := s.isValidTargetDir(filepath.Dir(p)); err != nil || !ok {
@@ -444,9 +465,16 @@ func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
-	disp := "inline"
-	if r.URL.Query().Get("download") == "1" {
-		disp = "attachment"
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	viewable := rawInlineExt[ext]
+	disp := "attachment"
+	if viewable && r.URL.Query().Get("download") != "1" {
+		disp = "inline"
+	}
+	if !viewable {
+		// Belt-and-braces: even forced-attachment non-viewer types get a
+		// sandboxed CSP in case a browser ever renders them inline anyway.
+		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 	w.Header().Set("Content-Disposition", disp+"; filename*=UTF-8''"+url.PathEscape(name))
 	http.ServeContent(w, r, name, info.ModTime(), f)

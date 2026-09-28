@@ -201,8 +201,16 @@ func ArchiveVolumes(dir, name string) (ArchiveSet, bool) {
 // Extract/7z, tar family via routing.Extract) into a staging dir inside
 // destDir. Shared by the download engine and the file manager.
 func ExtractAny(archivePath, destDir string) ([]string, string, error) {
-	if re7zSplit.MatchString(filepath.Base(archivePath)) {
+	dir, base := filepath.Dir(archivePath), filepath.Base(archivePath)
+	if re7zSplit.MatchString(base) {
 		return extractWithTool(archivePath, destDir)
+	}
+	// archive/zip can't read a split zip (Pack.zip + Pack.zNN); route those
+	// to the external tool instead.
+	if strings.EqualFold(filepath.Ext(base), ".zip") {
+		if set, ok := ArchiveVolumes(dir, base); ok && len(set.Volumes) > 1 {
+			return extractWithTool(archivePath, destDir)
+		}
 	}
 	if IsArchive(archivePath) {
 		return Extract(archivePath, destDir)

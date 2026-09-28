@@ -178,3 +178,29 @@ func TestExtractAny_Zip(t *testing.T) {
 		t.Fatalf("ExtractAny = %v %q %v", files, staging, err)
 	}
 }
+
+// TestExtractAny_SplitZipRoutesToTool checks that a split zip set
+// (Pack.zip + Pack.z01) is routed to extractWithTool rather than
+// archive/zip, which can't read split zips. With no 7z/unrar on PATH the
+// tool path fails with its own "no archive tool available" error, proving
+// the route taken; a lone (non-split) zip must still use archive/zip.
+func TestExtractAny_SplitZipRoutesToTool(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "Pack.zip")
+	writeZip(t, archive, map[string]string{"x.txt": "hi"})
+	if err := os.WriteFile(filepath.Join(dir, "Pack.z01"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", "")
+	if _, _, err := ExtractAny(archive, dir); err == nil || !strings.Contains(err.Error(), "no archive tool available") {
+		t.Fatalf("split zip should route to extractWithTool, got err=%v", err)
+	}
+
+	lone := filepath.Join(dir, "solo.zip")
+	writeZip(t, lone, map[string]string{"y.txt": "hi"})
+	files, _, err := ExtractAny(lone, dir)
+	if err != nil || len(files) != 1 {
+		t.Fatalf("lone zip should still extract via archive/zip: %v %v", files, err)
+	}
+}
