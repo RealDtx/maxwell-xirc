@@ -9,7 +9,8 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o /xirc 
 FROM alpine:3.24
 ARG PUID=1000
 ARG PGID=1000
-RUN apk add --no-cache ca-certificates tzdata \
+# 7zip: rar/7z extraction (auto-extract and the file manager's Extract).
+RUN apk add --no-cache ca-certificates tzdata 7zip \
  && addgroup -g ${PGID} xirc \
  && adduser -D -H -u ${PUID} -G xirc xirc \
  && mkdir -p /data /downloads /media \
