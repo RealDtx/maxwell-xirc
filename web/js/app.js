@@ -189,6 +189,8 @@ document.addEventListener('alpine:init', () => {
         // Settings - Realms (replaces settingsChannels)
         realms: [],
         settingsRealms: [],
+        backup: { srv: {}, realm: {}, settings: true, file: null, fileName: '', items: null,
+                  def: 'skip', decisions: {}, results: null, open: {}, error: '', busy: false },
         realmForm: { id: null, server_id: null, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
         showRealmForm: false,
 
@@ -2454,6 +2456,60 @@ document.addEventListener('alpine:init', () => {
             return 'XIRC_' + key.toUpperCase().replace('.', '_');
         },
 
+        // Servers, IRC status (channels) and realm configs — used at startup
+        // and after a config import.
+        async loadServersAndRealms() {
+            // Load servers
+            try {
+                const res = await api.getServers();
+                this.servers = Array.isArray(res) ? res : [];
+                for (const srv of this.servers) {
+                    this.expandedServers[srv.id] = true;
+                }
+            } catch (e) {
+                console.error('loadServers error', e);
+            }
+
+            // Load IRC status and merge channels into server objects
+            try {
+                const res = await api.getIRCStatus();
+                const statuses = Array.isArray(res) ? res : [];
+                const statusMap = {};
+                for (const s of statuses) {
+                    statusMap[s.server_id] = {
+                        status: s.status,
+                        channels: s.channels,
+                        name: s.server_name,
+                        connected_at: s.connected_at,
+                        reconnect_count: s.reconnect_count,
+                        lag_ms: s.lag_ms,
+                    };
+                }
+                this.ircStatus = statusMap;
+                // Merge channels from IRC status into servers array
+                this.servers = this.servers.map(srv => {
+                    const st = statusMap[srv.id];
+                    return Object.assign({}, srv, {
+                        channels: (st && st.channels) ? st.channels : (srv.channels || []),
+                    });
+                });
+            } catch (e) {
+                console.error('loadIRCStatus error', e);
+            }
+
+            // Load realm configs (for download_channel and display name mapping)
+            this.realms = [];
+            for (const srv of this.servers) {
+                const realms = await api.getRealms(srv.id).catch(() => []);
+                for (const r of (realms || [])) {
+                    this.realms.push(Object.assign({}, r, { server_id: srv.id }));
+                    const key = this.channelKey(srv.id, r.name);
+                    this._channelConfigs[key] = r.download_channel || r.name;
+                    this._realmConfigs[key] = Object.assign({}, r, { server_id: srv.id });
+                }
+            }
+        },
+
         async loadSystemSettings() {
             this.systemError = '';
             try {
@@ -2504,6 +2560,91 @@ document.addEventListener('alpine:init', () => {
                 setTimeout(() => { this.systemNotice = ''; }, 3000);
             } catch (e) {
                 this.systemError = e.message || 'Save failed';
+            }
+        },
+
+        backupRealms(srvId) { return this.realms.filter(r => r.server_id === srvId); },
+
+        // 'all' | 'some' | 'none' for the server checkbox (indeterminate when 'some').
+        backupServerState(srv) {
+            const rs = this.backupRealms(srv.id);
+            const n = rs.filter(r => this.backup.realm[r.id]).length;
+            if (this.backup.srv[srv.id] && n === rs.length) return 'all';
+            return n > 0 ? 'some' : 'none';
+        },
+        backupToggleServer(srv, on) {
+            this.backup.srv[srv.id] = on;
+            for (const r of this.backupRealms(srv.id)) this.backup.realm[r.id] = on;
+        },
+        backupToggleRealm(r, on) {
+            this.backup.realm[r.id] = on;
+            this.backup.srv[r.server_id] = this.backupRealms(r.server_id).every(x => this.backup.realm[x.id]);
+        },
+        backupAllSelected() {
+            return this.servers.length > 0 && this.servers.every(s => this.backupServerState(s) === 'all');
+        },
+        backupToggleAll(on) { for (const s of this.servers) this.backupToggleServer(s, on); },
+
+        // Fully selected servers go in `servers=`; realms of partly selected servers in `realms=`.
+        backupExportHref() {
+            const servers = [], realms = [];
+            for (const s of this.servers) {
+                const st = this.backupServerState(s);
+                if (st === 'all') servers.push(s.id);
+                else if (st === 'some') realms.push(...this.backupRealms(s.id).filter(r => this.backup.realm[r.id]).map(r => r.id));
+            }
+            if (!servers.length && !realms.length && !this.backup.settings) return '';
+            const p = new URLSearchParams();
+            if (servers.length) p.set('servers', servers.join(','));
+            if (realms.length) p.set('realms', realms.join(','));
+            if (this.backup.settings) p.set('settings', '1');
+            return api.configExportUrl(p.toString());
+        },
+
+        async backupPickFile(ev) {
+            const file = ev.target.files[0];
+            ev.target.value = '';
+            Object.assign(this.backup, { file: null, fileName: '', items: null, results: null, decisions: {}, open: {}, error: '' });
+            if (!file) return;
+            if (file.size > 1 << 20) { this.backup.error = 'File too large (max 1 MB)'; return; }
+            try {
+                this.backup.file = JSON.parse(await file.text());
+            } catch (e) {
+                this.backup.error = 'Not a valid JSON file';
+                return;
+            }
+            this.backup.fileName = file.name;
+            this.backup.busy = true;
+            try {
+                this.backup.items = (await this.backupPreviewReq()).items;
+            } catch (e) {
+                this.backup.error = e.message;
+            } finally {
+                this.backup.busy = false;
+            }
+        },
+        backupPreviewReq() { return api.configImportPreview(this.backup.file); },
+
+        // Selected value of a row's select; error rows are always 'exclude'.
+        backupDecision(it) { return it.status === 'error' ? 'exclude' : (this.backup.decisions[it.key] || ''); },
+        backupSetDecision(it, v) {
+            if (v) this.backup.decisions[it.key] = v; else delete this.backup.decisions[it.key];
+        },
+
+        async backupApply() {
+            this.backup.busy = true;
+            this.backup.error = '';
+            try {
+                this.backup.results = {};
+                const res = await api.configImportApply(this.backup.file, this.backup.def, this.backup.decisions);
+                for (const r of res.items) this.backup.results[r.key] = r;
+                await this.loadServersAndRealms();
+                if (this.backup.results.settings && this.backup.results.settings.result === 'updated') await this.loadSystemSettings();
+            } catch (e) {
+                this.backup.results = null;
+                this.backup.error = e.message;
+            } finally {
+                this.backup.busy = false;
             }
         },
 
@@ -3052,55 +3193,7 @@ document.addEventListener('alpine:init', () => {
             }
             this.statsOnlyDefault = localStorage.getItem('mxirc_stats_only') === 'true';
 
-            // Load servers
-            try {
-                const res = await api.getServers();
-                this.servers = Array.isArray(res) ? res : [];
-                for (const srv of this.servers) {
-                    this.expandedServers[srv.id] = true;
-                }
-            } catch (e) {
-                console.error('loadServers error', e);
-            }
-
-            // Load IRC status and merge channels into server objects
-            try {
-                const res = await api.getIRCStatus();
-                const statuses = Array.isArray(res) ? res : [];
-                const statusMap = {};
-                for (const s of statuses) {
-                    statusMap[s.server_id] = {
-                        status: s.status,
-                        channels: s.channels,
-                        name: s.server_name,
-                        connected_at: s.connected_at,
-                        reconnect_count: s.reconnect_count,
-                        lag_ms: s.lag_ms,
-                    };
-                }
-                this.ircStatus = statusMap;
-                // Merge channels from IRC status into servers array
-                this.servers = this.servers.map(srv => {
-                    const st = statusMap[srv.id];
-                    return Object.assign({}, srv, {
-                        channels: (st && st.channels) ? st.channels : (srv.channels || []),
-                    });
-                });
-            } catch (e) {
-                console.error('loadIRCStatus error', e);
-            }
-
-            // Load realm configs (for download_channel and display name mapping)
-            this.realms = [];
-            for (const srv of this.servers) {
-                const realms = await api.getRealms(srv.id).catch(() => []);
-                for (const r of (realms || [])) {
-                    this.realms.push(Object.assign({}, r, { server_id: srv.id }));
-                    const key = this.channelKey(srv.id, r.name);
-                    this._channelConfigs[key] = r.download_channel || r.name;
-                    this._realmConfigs[key] = Object.assign({}, r, { server_id: srv.id });
-                }
-            }
+            await this.loadServersAndRealms();
 
             // Load downloads
             await this.loadDownloads();

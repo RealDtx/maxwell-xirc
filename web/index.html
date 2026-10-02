@@ -998,6 +998,7 @@
                         <div class="tab" :class="{ active: settingsTab === 'general' }" @click="settingsTab = 'general'">General</div>
                         <div class="tab" :class="{ active: settingsTab === 'users' }" @click="settingsTab = 'users'; loadUsers()">Users</div>
                         <div class="tab" x-show="isAdmin" :class="{ active: settingsTab === 'system' }" @click="settingsTab = 'system'; loadSystemSettings()">System</div>
+                        <div class="tab" x-show="isAdmin" :class="{ active: settingsTab === 'backup' }" @click="settingsTab = 'backup'">Backup</div>
                         <button class="help-icon" type="button" title="Help" style="margin-left:auto" @click="helpShow('settings-' + settingsTab)">ⓘ</button>
                     </div>
 
@@ -1586,6 +1587,99 @@
                                     <button class="btn btn-primary btn-sm" @click="saveSystemSettings()" :disabled="!systemSettings.persist.ok">Save</button>
                                 </div>
                             </template>
+                        </div>
+                    </template>
+                    <template x-if="settingsTab === 'backup' && isAdmin">
+                        <div style="padding-top:16px; display:flex; flex-direction:column; gap:16px;">
+                            <details class="help" data-help="settings-backup" :open="helpIsOpen('settings-backup')" @toggle="helpToggled('settings-backup', $event.target.open)">
+                                <summary>Help</summary>
+                                <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-backup'] || ''"></div>
+                            </details>
+
+                            <div class="settings-card">
+                                <h3>Export</h3>
+                                <label><input type="checkbox" :checked="backupAllSelected()" @change="backupToggleAll($event.target.checked)"> All servers &amp; realms</label>
+                                <div style="margin:8px 0 8px 12px;">
+                                    <template x-for="s in servers" :key="s.id">
+                                        <div>
+                                            <label>
+                                                <input type="checkbox" :checked="backupServerState(s) === 'all'"
+                                                       x-effect="$el.indeterminate = backupServerState(s) === 'some'"
+                                                       @change="backupToggleServer(s, $event.target.checked)">
+                                                <span x-text="s.name"></span>
+                                            </label>
+                                            <template x-for="r in backupRealms(s.id)" :key="r.id">
+                                                <div style="margin-left:24px;">
+                                                    <label>
+                                                        <input type="checkbox" :checked="!!backup.realm[r.id]" @change="backupToggleRealm(r, $event.target.checked)">
+                                                        <span x-text="r.display_name || r.name"></span>
+                                                        <span class="text-muted text-xs" x-text="r.name + (r.download_channel ? ' · ' + r.download_channel : '')"></span>
+                                                    </label>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                                <label><input type="checkbox" x-model="backup.settings"> System settings (without login/access settings)</label>
+                                <div class="text-muted text-sm" style="margin:8px 0;">Passwords and channel keys are never exported.</div>
+                                <a class="btn btn-primary" :href="backupExportHref() || null" :class="{ disabled: !backupExportHref() }"
+                                   :aria-disabled="!backupExportHref()" download>Export</a>
+                            </div>
+
+                            <div class="settings-card">
+                                <h3>Import</h3>
+                                <input type="file" accept=".json,application/json" @change="backupPickFile($event)" :disabled="backup.busy" aria-label="Config file to import">
+                                <div x-show="backup.error" class="text-sm" style="color:var(--danger); margin-top:8px;" x-text="backup.error"></div>
+                                <template x-if="backup.items">
+                                    <div style="margin-top:12px;">
+                                        <div style="display:flex; gap:16px; align-items:center; margin-bottom:8px;">
+                                            <span class="text-sm" x-text="backup.fileName"></span>
+                                            <span class="text-sm">If it already exists:</span>
+                                            <label class="text-sm"><input type="radio" value="skip" x-model="backup.def"> skip</label>
+                                            <label class="text-sm"><input type="radio" value="overwrite" x-model="backup.def"> overwrite</label>
+                                        </div>
+                                        <table class="w-full text-sm">
+                                            <thead><tr><th>Kind</th><th>Item</th><th>Status</th><th>Changes</th><th>Action</th><th x-show="backup.results">Result</th></tr></thead>
+                                            <tbody>
+                                                <template x-for="it in backup.items" :key="it.kind + ':' + it.key">
+                                                    <tr>
+                                                        <td x-text="it.kind"></td>
+                                                        <td x-text="it.key"></td>
+                                                        <td>
+                                                            <span class="badge" :class="{ 'badge-completed': it.status === 'new', 'badge-queued': it.status === 'exists', 'badge-failed': it.status === 'error' }" x-text="it.status"></span>
+                                                            <div x-show="it.error" class="text-xs" style="color:var(--danger);" x-text="it.error"></div>
+                                                        </td>
+                                                        <td>
+                                                            <template x-if="it.changes.length">
+                                                                <span>
+                                                                    <button class="btn btn-sm" @click="backup.open[it.key] = !backup.open[it.key]"
+                                                                            x-text="it.changes.length + ' change' + (it.changes.length > 1 ? 's' : '')"></button>
+                                                                    <ul x-show="backup.open[it.key]" class="text-xs" style="margin:4px 0 0 16px;">
+                                                                        <template x-for="c in it.changes" :key="c"><li x-text="c"></li></template>
+                                                                    </ul>
+                                                                </span>
+                                                            </template>
+                                                        </td>
+                                                        <td>
+                                                            <select :value="backupDecision(it)" @change="backupSetDecision(it, $event.target.value)" :disabled="it.status === 'error' || backup.busy">
+                                                                <option value="" x-text="it.status === 'new' ? 'create' : 'default (' + backup.def + ')'"></option>
+                                                                <option value="skip" x-show="it.status === 'exists'">skip</option>
+                                                                <option value="overwrite" x-show="it.status === 'exists'">overwrite</option>
+                                                                <option value="exclude">exclude</option>
+                                                            </select>
+                                                        </td>
+                                                        <td x-show="backup.results">
+                                                            <span x-text="backup.results && backup.results[it.key] ? backup.results[it.key].result : ''"></span>
+                                                            <div class="text-xs" style="color:var(--danger);" x-text="backup.results && backup.results[it.key] ? backup.results[it.key].error : ''"></div>
+                                                        </td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                        <button class="btn btn-primary" style="margin-top:12px;" @click="backupApply()" :disabled="backup.busy || !!backup.results">Apply</button>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
                     </template>
 

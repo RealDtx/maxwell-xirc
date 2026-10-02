@@ -146,6 +146,7 @@ body {
 .btn-primary { background: var(--accent); }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-danger { background: var(--danger); }
+.btn.disabled { opacity: .5; pointer-events: none; }
 .btn-sm { padding: 4px 8px; font-size: 12px; }
 
 /* Tables */

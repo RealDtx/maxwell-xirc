@@ -44,6 +44,10 @@ const api = {
     createRealm(r)         { return this.post('/realms', r); },
     updateRealm(id, r)     { return this.put('/realms/' + id, r); },
     deleteRealm(id)        { return this.del('/realms/' + id); },
+    // Config export/import
+    configExportUrl(params) { return _apiBase + '/config/export' + (params ? '?' + params : ''); },
+    configImportPreview(file)                 { return this.post('/config/import/preview', file); },
+    configImportApply(file, def, decisions)   { return this.post('/config/import/apply', { file, default: def, decisions }); },
 
     // IRC
     getIRCStatus()                    { return this.get('/irc/status'); },

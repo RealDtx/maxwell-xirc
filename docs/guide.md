@@ -111,6 +111,13 @@ Server-wide configuration (admin-only), applied live when you Save.
 
 Good to know: any field can be locked by an environment variable on the server — locked fields show disabled with a tooltip naming the variable. If the config file itself can't be written, Save is disabled and a warning explains why.
 
+## Settings: Backup {#settings-backup}
+Export servers and realms (with all their channels) and system settings to a JSON file, and import such a file here or on another xirc (admin-only).
+
+**How to use it:** under Export, tick whole servers, single realms (their server comes along, holding only those realms) or "All", optionally System settings, then Export. Under Import, pick a file: a preview lists every item as *new*, *exists* (with the fields that would change) or *error*. Choose whether existing items are skipped or overwritten, override that per row (or exclude a row), then Apply — the result column shows what happened to each item.
+
+Good to know: passwords and channel keys are never exported, and an import never changes the ones already set — re-enter them after importing onto a new machine. Login/access settings (trusted networks, role, proxies) are never exported or imported. Import only adds or updates; nothing missing from the file is deleted. Settings fixed by an environment variable keep their current value.
+
 ## Access: login, roles, trusted networks {#access}
 Every account has a role: **admin** (Settings, all file-management actions, pattern edits, user management) or **user** (search, request downloads, browse and view files, read-only elsewhere). Anonymous visitors, before logging in, can still reach the login page and the app's static assets — every API action requires a session or a trusted network.
 
