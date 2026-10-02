@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -106,5 +107,138 @@ func TestConfigExport_Selection(t *testing.T) {
 
 	if w := adminDo(t, srv, "GET", "/api/config/export?servers=abc", ""); w.Code != 400 {
 		t.Errorf("bad id: %d", w.Code)
+	}
+}
+
+func postJSON(t *testing.T, srv *Server, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return adminDo(t, srv, "POST", path, body)
+}
+
+// previewItems posts body to the preview endpoint and indexes items by key.
+func previewItems(t *testing.T, srv *Server, body string) map[string]importItem {
+	t.Helper()
+	w := postJSON(t, srv, "/api/config/import/preview", body)
+	if w.Code != 200 {
+		t.Fatalf("preview: %d %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Items []importItem `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	m := map[string]importItem{}
+	for _, it := range resp.Items {
+		m[it.Key] = it
+	}
+	return m
+}
+
+const transferFile = `{"format":"xirc-config","version":1,"exported_at":"2026-10-03T00:00:00Z","servers":[
+	{"name":"srvA","host":"irc.a.example","port":7000,"ssl":true,"nickname":"nickA","alt_nicknames":["nickA_"],
+	 "auth_method":"sasl","auto_connect":true,"enabled":true,"realms":[
+		{"name":"#a1","display_name":"A one","search_command":"!s","download_channel":"#a1-dl","search_bot":"BotA","search_timeout":10,"auto_join":true,"enabled":true},
+		{"name":"#a3","display_name":"","search_command":"!s","download_channel":"","search_bot":"","search_timeout":10,"auto_join":true,"enabled":true}]},
+	{"name":"srvC","host":"irc.c.example","port":6667,"ssl":false,"nickname":"nickC","alt_nicknames":[],
+	 "auth_method":"none","auto_connect":false,"enabled":true,"realms":[
+		{"name":"#c1","display_name":"","search_command":"!s","download_channel":"","search_bot":"","search_timeout":10,"auto_join":true,"enabled":true}]}
+]}`
+
+func TestConfigImportPreview_Statuses(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	seedTransfer(t, srv.store)
+
+	items := previewItems(t, srv, transferFile)
+	want := map[string]string{"srvA": "exists", "srvA/#a1": "exists", "srvA/#a3": "new", "srvC": "new", "srvC/#c1": "new"}
+	for k, st := range want {
+		if items[k].Status != st {
+			t.Errorf("%s: status %q want %q (%+v)", k, items[k].Status, st, items[k])
+		}
+	}
+	if len(items) != len(want) {
+		t.Errorf("got %d items, want %d: %+v", len(items), len(want), items)
+	}
+	if c := items["srvA"].Changes; len(c) != 1 || c[0] != "port: 6697→7000" {
+		t.Errorf("srvA changes: %q", c)
+	}
+	if c := items["srvA/#a1"].Changes; len(c) != 0 {
+		t.Errorf("#a1 should be unchanged: %q", c)
+	}
+	if items["srvA"].Kind != "server" || items["srvA/#a1"].Kind != "realm" {
+		t.Errorf("kinds: %+v", items)
+	}
+}
+
+func TestConfigImportPreview_ItemErrors(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	body := `{"format":"xirc-config","version":1,"servers":[
+		{"name":"srvX","host":"h","port":6667,"nickname":"","realms":[{"name":"#x1"}]},
+		{"name":"srvY","host":"h","port":6667,"nickname":"n","realms":[{"name":"#y1"},{"name":"#y1"},{"name":""}]},
+		{"name":"srvY","host":"h","port":6667,"nickname":"n","realms":[]},
+		{"name":"srvZ","host":"h","port":70000,"nickname":"n","realms":[]}
+	]}`
+	w := postJSON(t, srv, "/api/config/import/preview", body)
+	var resp struct {
+		Items []importItem `json:"items"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	got := []string{}
+	for _, it := range resp.Items {
+		got = append(got, it.Key+"="+it.Status+":"+it.Error)
+	}
+	want := []string{
+		"srvX=error:nickname is required",
+		"srvX/#x1=error:parent server has errors",
+		"srvY=new:",
+		"srvY/#y1=new:",
+		"srvY/#y1=error:duplicate realm srvY/#y1 in file",
+		"srvY/=error:realm name is required",
+		"srvY=error:duplicate server srvY in file",
+		"srvZ=error:port must be 1–65535",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("items:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestConfigImportPreview_Settings(t *testing.T) {
+	srv, cfg, _ := newSettingsTestServer(t, 2)
+	st := cfg.Editable().Storage
+	mk := func(maxConc int) string {
+		return fmt.Sprintf(`{"format":"xirc-config","version":1,"servers":[],"settings":{
+			"storage":{"downloads_dir":%q,"temp_dir":%q,"min_free_space":"1GB"},
+			"downloads":{"max_concurrent":%d},
+			"maintenance":{"search_result_retention_days":14,"index_max_files":200000,"interval_hours":6},
+			"ui":{"help_default":"first_time"}}}`, st.DownloadsDir, st.TempDir, maxConc)
+	}
+	it := previewItems(t, srv, mk(5))["settings"]
+	if it.Kind != "settings" || it.Status != "exists" || it.Error != "" {
+		t.Fatalf("settings item: %+v", it)
+	}
+	found := false
+	for _, c := range it.Changes {
+		found = found || c == "downloads.max_concurrent: 2→5"
+	}
+	if !found {
+		t.Errorf("changes: %q", it.Changes)
+	}
+	if it := previewItems(t, srv, mk(99))["settings"]; it.Status != "error" || !strings.Contains(it.Error, "max_concurrent") {
+		t.Errorf("invalid settings: %+v", it)
+	}
+}
+
+func TestConfigImportPreview_BadFiles(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	for name, body := range map[string]string{
+		"not json":       `nope`,
+		"foreign json":   `{}`,
+		"wrong format":   `{"format":"other","version":1}`,
+		"future version": `{"format":"xirc-config","version":2}`,
+		"too large":      `{"format":"xirc-config","version":1,"pad":"` + strings.Repeat("x", 1<<20) + `"}`,
+	} {
+		if w := postJSON(t, srv, "/api/config/import/preview", body); w.Code != 400 {
+			t.Errorf("%s: got %d %s", name, w.Code, w.Body.String())
+		}
 	}
 }

@@ -1,8 +1,13 @@
 package server
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -161,4 +166,226 @@ func (s *Server) handleConfigExport(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="xirc-config-`+time.Now().Format("2006-01-02")+`.json"`)
 	writeJSON(w, http.StatusOK, f)
+}
+
+// decodeConfigFile rejects anything that isn't a config export this build
+// understands. Unknown top-level keys are ignored (forward compatibility).
+func decodeConfigFile(raw []byte) (*configFile, error) {
+	var f configFile
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return nil, fmt.Errorf("not a valid JSON file: %v", err)
+	}
+	if f.Format != configFormat {
+		return nil, fmt.Errorf("not an xirc config export")
+	}
+	if f.Version != configVersion {
+		return nil, fmt.Errorf("unsupported config version %d (this build reads %d)", f.Version, configVersion)
+	}
+	return &f, nil
+}
+
+// readLimited reads at most max bytes of the request body.
+func readLimited(w http.ResponseWriter, r *http.Request, max int64) ([]byte, error) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, max))
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		return nil, fmt.Errorf("file too large (max %d MB)", max>>20)
+	}
+	return raw, err
+}
+
+type importItem struct {
+	Kind    string   `json:"kind"`   // server | realm | settings
+	Key     string   `json:"key"`    // "srv", "srv/#chan", "settings"
+	Status  string   `json:"status"` // new | exists | error
+	Changes []string `json:"changes"`
+	Error   string   `json:"error"`
+}
+
+type plannedItem struct {
+	importItem
+	srv      *exportServer // kind server
+	realm    *exportRealm  // kind realm
+	parent   string        // kind realm: parent server name
+	existing *db.Server    // kind server: matched row
+	exRealm  *db.Realm     // kind realm: matched row
+}
+
+func validateExportServer(e exportServer) string {
+	switch {
+	case strings.TrimSpace(e.Host) == "":
+		return "host is required"
+	case e.Port < 1 || e.Port > 65535:
+		return "port must be 1–65535"
+	case strings.TrimSpace(e.Nickname) == "":
+		return "nickname is required"
+	}
+	return ""
+}
+
+// settingsCandidate is cur with the file's sections swapped in; auth and
+// env-locked keys keep their current values.
+func settingsCandidate(cur config.Editable, fs *exportSettings) config.Editable {
+	e := cur
+	e.Storage, e.Downloads, e.Maintenance, e.UI = fs.Storage, fs.Downloads, fs.Maintenance, fs.UI
+	keepLocked(cur, &e, config.EnvLockedKeys())
+	return e
+}
+
+// planImport matches every item in f against the store and validates it.
+// It never writes. Items come back in file order (each server followed by
+// its realms), settings last.
+func (s *Server) planImport(f *configFile) ([]plannedItem, error) {
+	servers, err := s.store.GetServers()
+	if err != nil {
+		return nil, err
+	}
+	byName := map[string]*db.Server{}
+	for i := range servers {
+		byName[servers[i].Name] = &servers[i]
+	}
+
+	var items []plannedItem
+	seen := map[string]bool{}
+	for i := range f.Servers {
+		es := &f.Servers[i]
+		it := plannedItem{importItem: importItem{Kind: "server", Key: es.Name, Changes: []string{}}, srv: es}
+		switch {
+		case strings.TrimSpace(es.Name) == "":
+			it.Error = "server name is required"
+		case seen[es.Name]:
+			it.Error = "duplicate server " + es.Name + " in file"
+		default:
+			it.Error = validateExportServer(*es)
+		}
+		seen[es.Name] = true
+
+		var exRealms []db.Realm
+		if ex := byName[es.Name]; ex != nil && it.Error == "" {
+			it.existing = ex
+			if exRealms, err = s.store.GetRealms(ex.ID); err != nil {
+				return nil, err
+			}
+			a, b := toExportServer(*ex), *es
+			a.Realms, b.Realms = nil, nil
+			it.Changes = diffFields(a, b)
+		}
+		it.Status = itemStatus(it.Error, it.existing != nil)
+		items = append(items, it)
+
+		for j := range es.Realms {
+			er := &es.Realms[j]
+			ri := plannedItem{importItem: importItem{Kind: "realm", Key: es.Name + "/" + er.Name, Changes: []string{}},
+				realm: er, parent: es.Name}
+			switch {
+			case it.Error != "":
+				ri.Error = "parent server has errors"
+			case strings.TrimSpace(er.Name) == "":
+				ri.Error = "realm name is required"
+			case seen[ri.Key]:
+				ri.Error = "duplicate realm " + ri.Key + " in file"
+			}
+			seen[ri.Key] = true
+			if ri.Error == "" {
+				for k := range exRealms {
+					if exRealms[k].Name == er.Name {
+						ri.exRealm = &exRealms[k]
+						ri.Changes = diffFields(toExportRealm(exRealms[k]), *er)
+						break
+					}
+				}
+			}
+			ri.Status = itemStatus(ri.Error, ri.exRealm != nil)
+			items = append(items, ri)
+		}
+	}
+
+	if f.Settings != nil {
+		it := plannedItem{importItem: importItem{Kind: "settings", Key: "settings", Changes: []string{}}}
+		if s.settings.cfg == nil {
+			it.Error = "settings are not available on this server"
+		} else {
+			s.settings.mu.Lock()
+			cur := s.settings.cfg.Editable()
+			s.settings.mu.Unlock()
+			e := settingsCandidate(cur, f.Settings)
+			if errs := validateSettings(cur, e); len(errs) > 0 {
+				it.Error = strings.Join(errs, "; ")
+			}
+			it.Changes = diffFields(settingsFromEditable(cur), settingsFromEditable(e))
+		}
+		it.Status = itemStatus(it.Error, true)
+		items = append(items, it)
+	}
+	return items, nil
+}
+
+func itemStatus(errMsg string, exists bool) string {
+	switch {
+	case errMsg != "":
+		return "error"
+	case exists:
+		return "exists"
+	}
+	return "new"
+}
+
+// diffFields lists `field: old→new` for every JSON field that differs
+// between a and b (values of the same type); nested objects flatten to
+// "section.field". Sorted for stable output.
+func diffFields(a, b any) []string {
+	var am, bm map[string]any
+	ja, _ := json.Marshal(a)
+	jb, _ := json.Marshal(b)
+	json.Unmarshal(ja, &am)
+	json.Unmarshal(jb, &bm)
+	out := []string{}
+	diffMaps("", am, bm, &out)
+	sort.Strings(out)
+	return out
+}
+
+func diffMaps(prefix string, a, b map[string]any, out *[]string) {
+	for k, bv := range b {
+		av := a[k]
+		am, aok := av.(map[string]any)
+		bmm, bok := bv.(map[string]any)
+		if aok && bok {
+			diffMaps(prefix+k+".", am, bmm, out)
+			continue
+		}
+		if !reflect.DeepEqual(av, bv) {
+			ja, _ := json.Marshal(av)
+			jb, _ := json.Marshal(bv)
+			*out = append(*out, prefix+k+": "+string(ja)+"→"+string(jb))
+		}
+	}
+}
+
+// POST /api/config/import/preview — body is the export file.
+func (s *Server) handleConfigImportPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	raw, err := readLimited(w, r, configMaxBytes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	f, err := decodeConfigFile(raw)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	items, err := s.planImport(f)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]importItem, len(items))
+	for i := range items {
+		out[i] = items[i].importItem
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
