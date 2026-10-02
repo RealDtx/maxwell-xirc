@@ -998,7 +998,7 @@
                         <div class="tab" :class="{ active: settingsTab === 'general' }" @click="settingsTab = 'general'">General</div>
                         <div class="tab" :class="{ active: settingsTab === 'users' }" @click="settingsTab = 'users'; loadUsers()">Users</div>
                         <div class="tab" x-show="isAdmin" :class="{ active: settingsTab === 'system' }" @click="settingsTab = 'system'; loadSystemSettings()">System</div>
-                        <div class="tab" x-show="isAdmin" :class="{ active: settingsTab === 'backup' }" @click="settingsTab = 'backup'">Backup</div>
+                        <div class="tab" x-show="isAdmin" :class="{ active: settingsTab === 'backup' }" @click="settingsTab = 'backup'; loadServersAndRealms()">Backup</div>
                         <button class="help-icon" type="button" title="Help" style="margin-left:auto" @click="helpShow('settings-' + settingsTab)">ⓘ</button>
                     </div>
 
