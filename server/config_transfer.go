@@ -389,3 +389,207 @@ func (s *Server) handleConfigImportPreview(w http.ResponseWriter, r *http.Reques
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
+
+type importResult struct {
+	Kind   string `json:"kind"`
+	Key    string `json:"key"`
+	Result string `json:"result"` // created | updated | skipped | excluded | error
+	Error  string `json:"error"`
+}
+
+type importApplyRequest struct {
+	File      json.RawMessage   `json:"file"`
+	Default   string            `json:"default"`   // skip | overwrite
+	Decisions map[string]string `json:"decisions"` // key → skip | overwrite | exclude
+}
+
+// POST /api/config/import/apply — stateless: the file is sent again and
+// re-planned, since the DB may have changed since the preview.
+func (s *Server) handleConfigImportApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	raw, err := readLimited(w, r, 2*configMaxBytes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var req importApplyRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Default != "skip" && req.Default != "overwrite" {
+		writeError(w, http.StatusBadRequest, "default must be skip or overwrite")
+		return
+	}
+	for k, d := range req.Decisions {
+		if d != "skip" && d != "overwrite" && d != "exclude" {
+			writeError(w, http.StatusBadRequest, "decision for "+k+" must be skip, overwrite or exclude")
+			return
+		}
+	}
+	if len(req.File) > configMaxBytes {
+		writeError(w, http.StatusBadRequest, "file too large (max 1 MB)")
+		return
+	}
+	f, err := decodeConfigFile(req.File)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	results, err := s.applyImport(f, req.Default, req.Decisions)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": results})
+}
+
+// applyImport writes servers, then realms, then settings — best effort per
+// item (the store has no cross-driver transaction); results keep file order.
+func (s *Server) applyImport(f *configFile, def string, decisions map[string]string) ([]importResult, error) {
+	items, err := s.planImport(f)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]importResult, len(items))
+	for i := range items {
+		results[i] = importResult{Kind: items[i].Kind, Key: items[i].Key}
+	}
+	// action maps an item to error | excluded | skipped | create | update.
+	action := func(it *plannedItem) string {
+		if it.Status == "error" {
+			return "error"
+		}
+		d := decisions[it.Key]
+		switch {
+		case d == "exclude":
+			return "excluded"
+		case it.Status == "new":
+			return "create"
+		case d == "":
+			d = def
+		}
+		if d == "skip" {
+			return "skipped"
+		}
+		return "update"
+	}
+	fail := func(res *importResult, msg string) { res.Result, res.Error = "error", msg }
+
+	// Pass 1: servers. serverIDs maps a server name to the row its realms go into.
+	serverIDs := map[string]int64{}
+	for i := range items {
+		it, res := &items[i], &results[i]
+		if it.Kind != "server" {
+			continue
+		}
+		if it.existing != nil {
+			serverIDs[it.Key] = it.existing.ID
+		}
+		switch a := action(it); a {
+		case "error":
+			fail(res, it.Error)
+		case "excluded", "skipped":
+			res.Result = a
+		case "create":
+			var srv db.Server
+			it.srv.applyTo(&srv)
+			if err := s.store.CreateServer(&srv); err != nil {
+				fail(res, err.Error())
+				continue
+			}
+			serverIDs[it.Key] = srv.ID
+			res.Result = "created"
+			if s.ircMgr != nil {
+				s.ircMgr.ReloadServer(srv.ID)
+			}
+		case "update":
+			srv := *it.existing // keeps ID and AuthPassword
+			it.srv.applyTo(&srv)
+			if err := s.store.UpdateServer(&srv); err != nil {
+				fail(res, err.Error())
+				continue
+			}
+			res.Result = "updated"
+			if len(it.Changes) > 0 && s.ircMgr != nil {
+				s.ircMgr.ReloadServer(srv.ID)
+			}
+		}
+	}
+
+	// Pass 2: realms.
+	touched := map[int64]bool{}
+	for i := range items {
+		it, res := &items[i], &results[i]
+		if it.Kind != "realm" {
+			continue
+		}
+		a := action(it)
+		switch a {
+		case "error":
+			fail(res, it.Error)
+			continue
+		case "excluded", "skipped":
+			res.Result = a
+			continue
+		}
+		sid, ok := serverIDs[it.parent]
+		if !ok {
+			fail(res, "parent server not imported")
+			continue
+		}
+		var rl db.Realm
+		if a == "update" {
+			rl = *it.exRealm // keeps ID and Key
+		}
+		it.realm.applyTo(&rl)
+		rl.ServerID = sid
+		if a == "create" {
+			err = s.store.CreateRealm(&rl)
+			res.Result = "created"
+		} else {
+			err = s.store.UpdateRealm(&rl)
+			res.Result = "updated"
+		}
+		if err != nil {
+			fail(res, err.Error())
+			continue
+		}
+		touched[sid] = true
+	}
+	if s.ircMgr != nil {
+		for sid := range touched {
+			s.ircMgr.ReloadRealms(sid)
+		}
+	}
+
+	// Pass 3: settings, through the same path as PUT /api/settings.
+	for i := range items {
+		it, res := &items[i], &results[i]
+		if it.Kind != "settings" {
+			continue
+		}
+		switch a := action(it); a {
+		case "error":
+			fail(res, it.Error)
+		case "excluded", "skipped":
+			res.Result = a
+		default:
+			s.settings.mu.Lock()
+			_, errs, err := s.applySettings(settingsCandidate(s.settings.cfg.Editable(), f.Settings))
+			s.settings.mu.Unlock()
+			switch {
+			case len(errs) > 0:
+				fail(res, strings.Join(errs, "; "))
+			case err != nil:
+				fail(res, "failed to save settings: "+err.Error())
+			default:
+				res.Result = "updated"
+			}
+		}
+	}
+	return results, nil
+}

@@ -173,6 +173,7 @@ func (s *Server) routes() {
 	// Config export/import
 	s.mux.HandleFunc("/api/config/export", s.handleConfigExport)
 	s.mux.HandleFunc("/api/config/import/preview", s.handleConfigImportPreview)
+	s.mux.HandleFunc("/api/config/import/apply", s.handleConfigImportApply)
 
 	// Setup wizard endpoints
 	s.mux.HandleFunc("/api/setup/status", s.handleSetupStatus)

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/RealDtx/maxwell-irc/config"
 	"github.com/RealDtx/maxwell-irc/db"
 )
 
@@ -239,6 +241,207 @@ func TestConfigImportPreview_BadFiles(t *testing.T) {
 	} {
 		if w := postJSON(t, srv, "/api/config/import/preview", body); w.Code != 400 {
 			t.Errorf("%s: got %d %s", name, w.Code, w.Body.String())
+		}
+	}
+}
+
+func applyImport(t *testing.T, srv *Server, file, def, decisions string) map[string]importResult {
+	t.Helper()
+	if decisions == "" {
+		decisions = "{}"
+	}
+	w := postJSON(t, srv, "/api/config/import/apply", `{"file":`+file+`,"default":"`+def+`","decisions":`+decisions+`}`)
+	if w.Code != 200 {
+		t.Fatalf("apply: %d %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Items []importResult `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	m := map[string]importResult{}
+	for _, it := range resp.Items {
+		m[it.Key] = it
+	}
+	return m
+}
+
+func serverByName(t *testing.T, store db.Store, name string) *db.Server {
+	t.Helper()
+	all, _ := store.GetServers()
+	for i := range all {
+		if all[i].Name == name {
+			return &all[i]
+		}
+	}
+	return nil
+}
+
+func TestConfigImport_DefaultSkip(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	seedTransfer(t, srv.store)
+	res := applyImport(t, srv, transferFile, "skip", "")
+	want := map[string]string{"srvA": "skipped", "srvA/#a1": "skipped", "srvA/#a3": "created", "srvC": "created", "srvC/#c1": "created"}
+	for k, r := range want {
+		if res[k].Result != r {
+			t.Errorf("%s: %+v want %s", k, res[k], r)
+		}
+	}
+	if a := serverByName(t, srv.store, "srvA"); a.Port != 6697 {
+		t.Errorf("skipped server changed: port %d", a.Port)
+	}
+	c := serverByName(t, srv.store, "srvC")
+	if c == nil || c.AuthPassword != "" {
+		t.Fatalf("srvC: %+v", c)
+	}
+	if realms, _ := srv.store.GetRealms(c.ID); len(realms) != 1 || realms[0].Name != "#c1" {
+		t.Errorf("srvC realms: %+v", realms)
+	}
+}
+
+func TestConfigImport_OverwriteKeepsSecrets(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	s := seedTransfer(t, srv.store)
+	// Change #a1's display name in the file so the realm really gets written.
+	file := strings.Replace(transferFile, `"display_name":"A one"`, `"display_name":"A uno"`, 1)
+	res := applyImport(t, srv, file, "overwrite", "")
+	if res["srvA"].Result != "updated" || res["srvA/#a1"].Result != "updated" {
+		t.Fatalf("results: %+v", res)
+	}
+	a, _ := srv.store.GetServer(s.A.ID)
+	if a.Port != 7000 || a.AuthPassword != "s3cret-pw" {
+		t.Errorf("srvA after overwrite: port %d password %q", a.Port, a.AuthPassword)
+	}
+	r, _ := srv.store.GetRealm(s.A1.ID)
+	if r.DisplayName != "A uno" || r.Key != "chan-k3y" {
+		t.Errorf("#a1 after overwrite: %+v", r)
+	}
+	if r2, _ := srv.store.GetRealm(s.A2.ID); r2 == nil {
+		t.Errorf("#a2 (absent from file) was deleted")
+	}
+}
+
+func TestConfigImport_PerItemOverride(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	seedTransfer(t, srv.store)
+	res := applyImport(t, srv, transferFile, "skip", `{"srvA":"overwrite","srvC/#c1":"exclude"}`)
+	if res["srvA"].Result != "updated" || res["srvA/#a1"].Result != "skipped" || res["srvC/#c1"].Result != "excluded" {
+		t.Errorf("results: %+v", res)
+	}
+	c := serverByName(t, srv.store, "srvC")
+	if realms, _ := srv.store.GetRealms(c.ID); len(realms) != 0 {
+		t.Errorf("excluded realm created: %+v", realms)
+	}
+}
+
+func TestConfigImport_ParentHandling(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	s := seedTransfer(t, srv.store)
+	res := applyImport(t, srv, transferFile, "skip", `{"srvA":"exclude","srvC":"exclude"}`)
+	// Existing parent excluded → its new realm still merges into it.
+	if res["srvA/#a3"].Result != "created" {
+		t.Errorf("#a3: %+v", res["srvA/#a3"])
+	}
+	if realms, _ := srv.store.GetRealms(s.A.ID); len(realms) != 3 {
+		t.Errorf("srvA realms: %d", len(realms))
+	}
+	// New parent excluded → realm errors.
+	if r := res["srvC/#c1"]; r.Result != "error" || r.Error != "parent server not imported" {
+		t.Errorf("#c1: %+v", r)
+	}
+	if serverByName(t, srv.store, "srvC") != nil {
+		t.Errorf("excluded server created")
+	}
+}
+
+func TestConfigImport_BadRequests(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	for name, body := range map[string]string{
+		"bad default":  `{"file":` + transferFile + `,"default":"maybe","decisions":{}}`,
+		"bad decision": `{"file":` + transferFile + `,"default":"skip","decisions":{"srvA":"later"}}`,
+		"bad version":  `{"file":{"format":"xirc-config","version":9},"default":"skip"}`,
+		"no file":      `{"default":"skip"}`,
+	} {
+		if w := postJSON(t, srv, "/api/config/import/apply", body); w.Code != 400 {
+			t.Errorf("%s: %d %s", name, w.Code, w.Body.String())
+		}
+	}
+	if all, _ := srv.store.GetServers(); len(all) != 0 {
+		t.Errorf("bad requests wrote servers: %+v", all)
+	}
+}
+
+func TestConfigImport_SettingsAppliedAndPersisted(t *testing.T) {
+	srv, cfg, path := newSettingsTestServer(t, 2)
+	exp := decodeExport(t, adminDo(t, srv, "GET", "/api/config/export?settings=1", "").Body.String())
+	exp.Settings.Downloads.MaxConcurrent = 5
+	raw, _ := json.Marshal(exp)
+	res := applyImport(t, srv, string(raw), "overwrite", "")
+	if res["settings"].Result != "updated" {
+		t.Fatalf("settings: %+v", res["settings"])
+	}
+	if cfg.Downloads.MaxConcurrent != 5 {
+		t.Errorf("not applied live: %d", cfg.Downloads.MaxConcurrent)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "max_concurrent: 5") {
+		t.Errorf("not persisted:\n%s", data)
+	}
+	if !strings.Contains(string(data), "10.0.0.0/8") {
+		t.Errorf("auth section lost:\n%s", data)
+	}
+}
+
+func TestConfigImport_SettingsEnvLockedKeptSilently(t *testing.T) {
+	t.Setenv("XIRC_DOWNLOADS_MAX_CONCURRENT", "3")
+	srv, cfg, _ := newSettingsTestServer(t, 3)
+	exp := decodeExport(t, adminDo(t, srv, "GET", "/api/config/export?settings=1", "").Body.String())
+	exp.Settings.Downloads.MaxConcurrent = 7
+	exp.Settings.Maintenance.IntervalHours = 9
+	raw, _ := json.Marshal(exp)
+	if it := previewItems(t, srv, string(raw))["settings"]; it.Status != "exists" {
+		t.Fatalf("preview: %+v", it)
+	}
+	if res := applyImport(t, srv, string(raw), "overwrite", ""); res["settings"].Result != "updated" {
+		t.Fatalf("apply: %+v", res["settings"])
+	}
+	if cfg.Downloads.MaxConcurrent != 3 || cfg.Maintenance.IntervalHours != 9 {
+		t.Errorf("got max_concurrent %d interval %d", cfg.Downloads.MaxConcurrent, cfg.Maintenance.IntervalHours)
+	}
+}
+
+func TestConfigTransfer_RoundTrip(t *testing.T) {
+	src, _, _ := newSettingsTestServer(t, 4)
+	seedTransfer(t, src.store)
+	first := decodeExport(t, adminDo(t, src, "GET", "/api/config/export", "").Body.String())
+	raw, _ := json.Marshal(first)
+
+	dst, _, _ := newSettingsTestServer(t, 2)
+	for k, r := range applyImport(t, dst, string(raw), "overwrite", "") {
+		if r.Result != "created" && r.Result != "updated" {
+			t.Errorf("%s: %+v", k, r)
+		}
+	}
+	second := decodeExport(t, adminDo(t, dst, "GET", "/api/config/export", "").Body.String())
+	first.ExportedAt = second.ExportedAt
+	a, _ := json.Marshal(first)
+	b, _ := json.Marshal(second)
+	if string(a) != string(b) {
+		t.Errorf("round trip differs:\n%s\n%s", a, b)
+	}
+}
+
+func TestConfigTransfer_AdminOnly(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{TrustedNetworks: []string{"192.168.0.0/16"}, TrustedRole: "user"})
+	hdr := map[string]string{"Content-Type": "application/json"}
+	for _, c := range []struct{ m, p string }{
+		{"GET", "/api/config/export"},
+		{"POST", "/api/config/import/preview"},
+		{"POST", "/api/config/import/apply"},
+	} {
+		if w := do(srv, c.m, c.p, "192.168.1.5:1", hdr, `{}`); w.Code != 403 {
+			t.Errorf("%s %s as user: %d", c.m, c.p, w.Code)
 		}
 	}
 }
