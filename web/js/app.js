@@ -2459,12 +2459,14 @@ document.addEventListener('alpine:init', () => {
         // Servers, IRC status (channels) and realm configs — used at startup
         // and after a config import.
         async loadServersAndRealms() {
-            // Load servers
+            // Build locally and assign once at the end, so overlapping calls
+            // can't interleave pushes into shared arrays.
+            let servers = this.servers;
             try {
                 const res = await api.getServers();
-                this.servers = Array.isArray(res) ? res : [];
-                for (const srv of this.servers) {
-                    this.expandedServers[srv.id] = true;
+                servers = Array.isArray(res) ? res : [];
+                for (const srv of servers) {
+                    if (!(srv.id in this.expandedServers)) this.expandedServers[srv.id] = true;
                 }
             } catch (e) {
                 console.error('loadServers error', e);
@@ -2486,8 +2488,7 @@ document.addEventListener('alpine:init', () => {
                     };
                 }
                 this.ircStatus = statusMap;
-                // Merge channels from IRC status into servers array
-                this.servers = this.servers.map(srv => {
+                servers = servers.map(srv => {
                     const st = statusMap[srv.id];
                     return Object.assign({}, srv, {
                         channels: (st && st.channels) ? st.channels : (srv.channels || []),
@@ -2498,16 +2499,20 @@ document.addEventListener('alpine:init', () => {
             }
 
             // Load realm configs (for download_channel and display name mapping)
-            this.realms = [];
-            for (const srv of this.servers) {
+            const realmList = [], channelConfigs = {}, realmConfigs = {};
+            for (const srv of servers) {
                 const realms = await api.getRealms(srv.id).catch(() => []);
                 for (const r of (realms || [])) {
-                    this.realms.push(Object.assign({}, r, { server_id: srv.id }));
+                    realmList.push(Object.assign({}, r, { server_id: srv.id }));
                     const key = this.channelKey(srv.id, r.name);
-                    this._channelConfigs[key] = r.download_channel || r.name;
-                    this._realmConfigs[key] = Object.assign({}, r, { server_id: srv.id });
+                    channelConfigs[key] = r.download_channel || r.name;
+                    realmConfigs[key] = Object.assign({}, r, { server_id: srv.id });
                 }
             }
+            this.servers = servers;
+            this.realms = realmList;
+            Object.assign(this._channelConfigs, channelConfigs);
+            Object.assign(this._realmConfigs, realmConfigs);
         },
 
         async loadSystemSettings() {
@@ -2639,6 +2644,8 @@ document.addEventListener('alpine:init', () => {
                 const res = await api.configImportApply(this.backup.file, this.backup.def, this.backup.decisions);
                 for (const r of res.items) this.backup.results[r.key] = r;
                 await this.loadServersAndRealms();
+                await this.loadSettingsData();
+                if (this.settingsServerId) await this.loadSettingsRealms(this.settingsServerId);
                 if (this.backup.results.settings && this.backup.results.settings.result === 'updated') await this.loadSystemSettings();
             } catch (e) {
                 this.backup.results = null;

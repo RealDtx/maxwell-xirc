@@ -464,3 +464,69 @@ func TestConfigImport_ReloadRules(t *testing.T) {
 		t.Errorf("changed overwrite did not reload the server")
 	}
 }
+
+func TestConfigImport_AmbiguousNames(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	seedTransfer(t, srv.store)
+	dup := db.Server{Name: "srvA", Host: "irc.dup.example", Port: 6667, Nickname: "dup", AuthMethod: "none", Enabled: true}
+	if err := srv.store.CreateServer(&dup); err != nil {
+		t.Fatal(err)
+	}
+	items := previewItems(t, srv, transferFile)
+	if it := items["srvA"]; it.Status != "error" || !strings.Contains(it.Error, "2 servers named srvA") {
+		t.Errorf("srvA: %+v", it)
+	}
+	if items["srvA/#a1"].Status != "error" {
+		t.Errorf("realm: %+v", items["srvA/#a1"])
+	}
+	before, _ := srv.store.GetServers()
+	res := applyImport(t, srv, transferFile, "overwrite", "")
+	if res["srvA"].Result != "error" {
+		t.Errorf("apply: %+v", res["srvA"])
+	}
+	after, _ := srv.store.GetServers()
+	for i := range before {
+		if before[i].Port != after[i].Port || before[i].Host != after[i].Host {
+			t.Errorf("row changed: %+v -> %+v", before[i], after[i])
+		}
+	}
+}
+
+func TestConfigImport_AmbiguousRealmNames(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	seed := seedTransfer(t, srv.store)
+	dup := db.Realm{ServerID: seed.A.ID, Name: "#a1", SearchTimeout: 5, Enabled: true}
+	if err := srv.store.CreateRealm(&dup); err != nil {
+		t.Fatal(err)
+	}
+	it := previewItems(t, srv, transferFile)["srvA/#a1"]
+	if it.Status != "error" || !strings.Contains(it.Error, "2 realms named #a1 on server srvA") {
+		t.Errorf("%+v", it)
+	}
+}
+
+func TestConfigImport_ExplicitSkipOnNew(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	seedTransfer(t, srv.store)
+	res := applyImport(t, srv, transferFile, "overwrite", `{"srvC":"skip"}`)
+	if res["srvC"].Result != "skipped" || serverByName(t, srv.store, "srvC") != nil {
+		t.Errorf("srvC: %+v", res["srvC"])
+	}
+	if res["srvC/#c1"].Result == "created" && res["srvC/#c1"].Error == "" {
+		// realm has its own decision; parent absent so it must not be created
+		t.Errorf("realm created without parent: %+v", res["srvC/#c1"])
+	}
+}
+
+func TestConfigImport_SettingsMissingFieldsKeepCurrent(t *testing.T) {
+	srv, cfg, _ := newSettingsTestServer(t, 2)
+	before := cfg.Maintenance.IntervalHours
+	file := `{"format":"xirc-config","version":1,"servers":[],"settings":{"downloads":{"max_concurrent":7},"maintenance":{"index_max_files":123}}}`
+	res := applyImport(t, srv, file, "overwrite", "")
+	if res["settings"].Result != "updated" {
+		t.Fatalf("%+v", res["settings"])
+	}
+	if cfg.Maintenance.IntervalHours != before || cfg.Maintenance.IndexMaxFiles != 123 || cfg.Downloads.MaxConcurrent != 7 {
+		t.Errorf("maintenance %+v (interval before %d), downloads %+v", cfg.Maintenance, before, cfg.Downloads)
+	}
+}

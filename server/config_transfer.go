@@ -64,6 +64,8 @@ type configFile struct {
 	ExportedAt time.Time       `json:"exported_at"`
 	Servers    []exportServer  `json:"servers"`
 	Settings   *exportSettings `json:"settings,omitempty"`
+
+	rawSettings json.RawMessage // as in the file, so missing fields keep current values
 }
 
 func toExportServer(s db.Server) exportServer {
@@ -181,6 +183,11 @@ func decodeConfigFile(raw []byte) (*configFile, error) {
 	if f.Version != configVersion {
 		return nil, fmt.Errorf("unsupported config version %d (this build reads %d)", f.Version, configVersion)
 	}
+	var rs struct {
+		Settings json.RawMessage `json:"settings"`
+	}
+	_ = json.Unmarshal(raw, &rs) // already parsed once above
+	f.rawSettings = rs.Settings
 	return &f, nil
 }
 
@@ -225,8 +232,10 @@ func validateExportServer(e exportServer) string {
 
 // settingsCandidate is cur with the file's sections swapped in; auth and
 // env-locked keys keep their current values.
-func settingsCandidate(cur config.Editable, fs *exportSettings) config.Editable {
+func settingsCandidate(cur config.Editable, raw json.RawMessage) config.Editable {
 	e := cur
+	fs := settingsFromEditable(cur)
+	_ = json.Unmarshal(raw, fs) // fields missing from the file keep their current values
 	e.Storage, e.Downloads, e.Maintenance, e.UI = fs.Storage, fs.Downloads, fs.Maintenance, fs.UI
 	keepLocked(cur, &e, config.EnvLockedKeys())
 	return e
@@ -241,8 +250,10 @@ func (s *Server) planImport(f *configFile) ([]plannedItem, error) {
 		return nil, err
 	}
 	byName := map[string]*db.Server{}
+	nameCount := map[string]int{}
 	for i := range servers {
 		byName[servers[i].Name] = &servers[i]
+		nameCount[servers[i].Name]++
 	}
 
 	var items []plannedItem
@@ -257,6 +268,9 @@ func (s *Server) planImport(f *configFile) ([]plannedItem, error) {
 			it.Error = "duplicate server " + es.Name + " in file"
 		default:
 			it.Error = validateExportServer(*es)
+		}
+		if n := nameCount[es.Name]; it.Error == "" && n > 1 {
+			it.Error = fmt.Sprintf("%d servers named %s on this instance — rename one first", n, es.Name)
 		}
 		seen[es.Name] = true
 
@@ -287,12 +301,18 @@ func (s *Server) planImport(f *configFile) ([]plannedItem, error) {
 			}
 			seen[ri.Key] = true
 			if ri.Error == "" {
+				n := 0
 				for k := range exRealms {
 					if exRealms[k].Name == er.Name {
+						n++
 						ri.exRealm = &exRealms[k]
-						ri.Changes = diffFields(toExportRealm(exRealms[k]), *er)
-						break
 					}
+				}
+				if n > 1 {
+					ri.exRealm = nil
+					ri.Error = fmt.Sprintf("%d realms named %s on server %s — rename one first", n, er.Name, es.Name)
+				} else if n == 1 {
+					ri.Changes = diffFields(toExportRealm(*ri.exRealm), *er)
 				}
 			}
 			ri.Status = itemStatus(ri.Error, ri.exRealm != nil)
@@ -308,7 +328,7 @@ func (s *Server) planImport(f *configFile) ([]plannedItem, error) {
 			s.settings.mu.Lock()
 			cur := s.settings.cfg.Editable()
 			s.settings.mu.Unlock()
-			e := settingsCandidate(cur, f.Settings)
+			e := settingsCandidate(cur, f.rawSettings)
 			if errs := validateSettings(cur, e); len(errs) > 0 {
 				it.Error = strings.Join(errs, "; ")
 			}
@@ -468,6 +488,9 @@ func (s *Server) applyImport(f *configFile, def string, decisions map[string]str
 		case d == "exclude":
 			return "excluded"
 		case it.Status == "new":
+			if d == "skip" {
+				return "skipped" // explicit only; the global default never blocks creation
+			}
 			return "create"
 		case d == "":
 			d = def
@@ -581,7 +604,7 @@ func (s *Server) applyImport(f *configFile, def string, decisions map[string]str
 			res.Result = a
 		default:
 			s.settings.mu.Lock()
-			_, errs, err := s.applySettings(settingsCandidate(s.settings.cfg.Editable(), f.Settings))
+			_, errs, err := s.applySettings(settingsCandidate(s.settings.cfg.Editable(), f.rawSettings))
 			s.settings.mu.Unlock()
 			switch {
 			case len(errs) > 0:
