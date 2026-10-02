@@ -558,7 +558,9 @@ func (s *Server) applyImport(f *configFile, def string, decisions map[string]str
 			fail(res, err.Error())
 			continue
 		}
-		touched[sid] = true
+		if a == "create" || len(it.Changes) > 0 {
+			touched[sid] = true
+		}
 	}
 	if s.ircMgr != nil {
 		for sid := range touched {

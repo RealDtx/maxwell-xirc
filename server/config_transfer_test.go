@@ -445,3 +445,22 @@ func TestConfigTransfer_AdminOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigImport_ReloadRules(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	applyImport(t, srv, transferFile, "overwrite", "")
+	c := serverByName(t, srv.store, "srvC")
+	first := srv.ircMgr.GetConnection(c.ID)
+	if first == nil {
+		t.Fatal("created server not loaded into manager")
+	}
+	applyImport(t, srv, transferFile, "overwrite", "")
+	if srv.ircMgr.GetConnection(c.ID) != first {
+		t.Errorf("no-change overwrite reloaded the server")
+	}
+	changed := strings.Replace(transferFile, `"port":6667`, `"port":6668`, 1)
+	applyImport(t, srv, changed, "overwrite", "")
+	if srv.ircMgr.GetConnection(c.ID) == first {
+		t.Errorf("changed overwrite did not reload the server")
+	}
+}
