@@ -523,3 +523,17 @@ func TestSettingsPut_HelpDefaultEnvLocked(t *testing.T) {
 		t.Errorf("ui.help_default should be listed as locked: %s", w.Body.String())
 	}
 }
+
+func TestKeepLocked(t *testing.T) {
+	cur := config.Editable{Downloads: config.DownloadsConfig{MaxConcurrent: 3}, UI: config.UIConfig{HelpDefault: "always"}}
+	e := cur
+	e.Downloads.MaxConcurrent = 9
+	e.UI.HelpDefault = "never"
+	keepLocked(cur, &e, []string{"downloads.max_concurrent", "bogus"})
+	if e.Downloads.MaxConcurrent != 3 {
+		t.Errorf("locked key not reset: %d", e.Downloads.MaxConcurrent)
+	}
+	if e.UI.HelpDefault != "never" {
+		t.Errorf("unlocked key changed: %q", e.UI.HelpDefault)
+	}
+}

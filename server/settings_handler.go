@@ -118,25 +118,38 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	s.settings.mu.Lock()
 	defer s.settings.mu.Unlock()
-	cfg := s.settings.cfg
-	cur := cfg.Editable()
 
 	// Decode onto the current values so omitted sections/fields keep them.
-	e := cfg.Editable()
+	e := s.settings.cfg.Editable()
 	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-
-	if errs := validateSettings(cur, e); len(errs) > 0 {
+	warnings, errs, err := s.applySettings(e)
+	if len(errs) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(errs, "; "))
 		return
 	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save settings: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.buildSettingsResponse(s.settings.cfg, warnings))
+}
 
+// applySettings validates e against the current settings, persists it to
+// config.yaml and applies it live. Caller must hold s.settings.mu. errs are
+// validation failures, err a persist failure; in both cases nothing is applied.
+// Shared by PUT /api/settings and config import.
+func (s *Server) applySettings(e config.Editable) (warnings, errs []string, err error) {
+	cfg := s.settings.cfg
+	cur := cfg.Editable()
+	if errs := validateSettings(cur, e); len(errs) > 0 {
+		return nil, errs, nil
+	}
 	locked := config.EnvLockedKeys()
 	if errs := checkEnvLocks(cur, e, locked); len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, strings.Join(errs, "; "))
-		return
+		return nil, errs, nil
 	}
 
 	// Env-locked fields are already equal to the current (env-derived) value
@@ -145,16 +158,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// saved so the merge in SaveKeys leaves the file's value untouched.
 	toSave, err := settingsToSave(e, locked)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to save settings: "+err.Error())
-		return
+		return nil, nil, err
 	}
 	if err := config.SaveKeys(s.settings.path, toSave); err != nil {
-		reason := err.Error()
 		if fscheck.IsPermission(err) {
-			reason = fscheck.Describe(err, filepath.Dir(s.settings.path)).Error()
+			return nil, nil, fscheck.Describe(err, filepath.Dir(s.settings.path))
 		}
-		writeError(w, http.StatusInternalServerError, "failed to save settings: "+reason)
-		return
+		return nil, nil, err
 	}
 
 	if s.engine != nil {
@@ -175,7 +185,6 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 
 	go s.RecheckCapabilities()
 
-	var warnings []string
 	if e.Auth.TrustedRole == "admin" {
 		for _, n := range e.Auth.TrustedNetworks {
 			if isOpenNetwork(n) {
@@ -184,8 +193,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-
-	writeJSON(w, http.StatusOK, s.buildSettingsResponse(cfg, warnings))
+	return warnings, nil, nil
 }
 
 // isOpenNetwork reports whether cidr matches every address (a /0 prefix —
@@ -279,8 +287,8 @@ func checkEnvLocks(current, submitted config.Editable, locked []string) []string
 		if len(parts) != 2 {
 			continue
 		}
-		cf, ok1 := dottedField(current, parts[0], parts[1])
-		sf, ok2 := dottedField(submitted, parts[0], parts[1])
+		cf, ok1 := dottedField(reflect.ValueOf(current), parts[0], parts[1])
+		sf, ok2 := dottedField(reflect.ValueOf(submitted), parts[0], parts[1])
 		if !ok1 || !ok2 || valuesEqual(cf.Interface(), sf.Interface()) {
 			continue
 		}
@@ -292,8 +300,8 @@ func checkEnvLocks(current, submitted config.Editable, locked []string) []string
 
 // dottedField returns the Editable field named by a section/key pair, as
 // EnvLockedKeys' dotted keys split into (e.g. "downloads", "max_concurrent").
-func dottedField(e config.Editable, section, key string) (reflect.Value, bool) {
-	v := reflect.ValueOf(e)
+// v must be a config.Editable value (settable if the caller wants to Set).
+func dottedField(v reflect.Value, section, key string) (reflect.Value, bool) {
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
 		if strings.Split(t.Field(i).Tag.Get("yaml"), ",")[0] != section {
@@ -308,6 +316,22 @@ func dottedField(e config.Editable, section, key string) (reflect.Value, bool) {
 		}
 	}
 	return reflect.Value{}, false
+}
+
+// keepLocked resets every env-locked key in e to its current value, so a
+// config import never fights an XIRC_* override (checkEnvLocks would reject it).
+func keepLocked(cur config.Editable, e *config.Editable, locked []string) {
+	for _, dotted := range locked {
+		parts := strings.SplitN(dotted, ".", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		cf, ok1 := dottedField(reflect.ValueOf(cur), parts[0], parts[1])
+		ef, ok2 := dottedField(reflect.ValueOf(e).Elem(), parts[0], parts[1])
+		if ok1 && ok2 {
+			ef.Set(cf)
+		}
+	}
 }
 
 func valuesEqual(a, b any) bool {
