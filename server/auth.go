@@ -259,7 +259,7 @@ var adminRules = []rule{
 	{"/api/files", true},
 	{"/api/downloads/delete", false}, {"/api/downloads/clear", false},
 	{"/api/downloads/set-target", false}, {"/api/downloads/move", false},
-	{"/api/settings", false},
+	{"/api/settings", false}, {"/api/config", false},
 }
 
 func adminOnly(method, path string) bool {

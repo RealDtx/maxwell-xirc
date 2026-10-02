@@ -170,6 +170,9 @@ func (s *Server) routes() {
 	// Admin settings endpoint
 	s.mux.HandleFunc("/api/settings", s.handleSettings)
 
+	// Config export/import
+	s.mux.HandleFunc("/api/config/export", s.handleConfigExport)
+
 	// Setup wizard endpoints
 	s.mux.HandleFunc("/api/setup/status", s.handleSetupStatus)
 	s.mux.HandleFunc("/api/setup/defaults", s.handleSetupDefaults)
