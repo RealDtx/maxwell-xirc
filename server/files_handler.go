@@ -408,30 +408,23 @@ var rawInlineExt = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".avif": true,
 }
 
-// GET /api/files/raw?path=ABS[&download=1] — stream one file below a
-// configured root (Range/HEAD/If-Modified-Since via http.ServeContent).
-func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	p := filepath.Clean(r.URL.Query().Get("path"))
+// resolveRootFile validates p for /api/files/raw and /api/files/text:
+// absolute, not hidden, below a configured root after symlink resolution,
+// and a regular file. status 0 means OK; otherwise writeError(status, msg).
+func (s *Server) resolveRootFile(p string) (real string, info os.FileInfo, status int, msg string) {
+	p = filepath.Clean(p)
 	if !filepath.IsAbs(p) {
-		writeError(w, http.StatusBadRequest, "path must be absolute")
-		return
+		return "", nil, http.StatusBadRequest, "path must be absolute"
 	}
 	if strings.HasPrefix(filepath.Base(p), ".") {
-		writeError(w, http.StatusForbidden, "hidden files are not served")
-		return
+		return "", nil, http.StatusForbidden, "hidden files are not served"
 	}
 	if ok, err := s.isValidTargetDir(filepath.Dir(p)); err != nil || !ok {
-		writeError(w, http.StatusForbidden, "not below a configured destination directory")
-		return
+		return "", nil, http.StatusForbidden, "not below a configured destination directory"
 	}
 	real, err := filepath.EvalSymlinks(p)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "file not found")
-		return
+		return "", nil, http.StatusNotFound, "file not found"
 	}
 	inRoot := false
 	for _, root := range s.fileRoots() {
@@ -441,7 +434,29 @@ func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !inRoot {
-		writeError(w, http.StatusForbidden, "not below a configured destination directory")
+		return "", nil, http.StatusForbidden, "not below a configured destination directory"
+	}
+	info, err = os.Stat(real)
+	if err != nil {
+		return "", nil, statusFor(fscheck.Describe(err, filepath.Dir(p))), "cannot open file"
+	}
+	if !info.Mode().IsRegular() {
+		return "", nil, http.StatusBadRequest, "not a regular file"
+	}
+	return real, info, 0, ""
+}
+
+// GET /api/files/raw?path=ABS[&download=1] — stream one file below a
+// configured root (Range/HEAD/If-Modified-Since via http.ServeContent).
+func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	p := filepath.Clean(r.URL.Query().Get("path"))
+	real, info, status, msg := s.resolveRootFile(p)
+	if status != 0 {
+		writeError(w, status, msg)
 		return
 	}
 	f, err := os.Open(real)
@@ -450,11 +465,6 @@ func (s *Server) handleFilesRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		writeError(w, http.StatusBadRequest, "not a regular file")
-		return
-	}
 	name := filepath.Base(p)
 	ext := strings.ToLower(filepath.Ext(name))
 	ct := rawMimeFallback[ext]
