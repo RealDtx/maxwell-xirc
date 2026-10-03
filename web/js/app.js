@@ -49,6 +49,10 @@ const FM_VIEWABLE = {
     image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'],
 };
 
+// Icon categories that are never text: a click downloads directly instead
+// of probing /api/files/text. Everything else (subtitle, generic) tries text.
+const FM_BINARY_CATEGORIES = ['video', 'audio', 'book', 'archive', 'disc', 'image', 'app'];
+
 // fmViewKind returns 'video'|'audio'|'pdf'|'image' or '' (download instead).
 function fmViewKind(name) {
     var ext = fmExt(name);
@@ -1997,6 +2001,7 @@ document.addEventListener('alpine:init', () => {
             if (entry.is_dir) return this.fmOpenFolder(entry);
             var kind = fmViewKind(entry.name);
             if (!kind) {
+                if (this.fmIsText(entry)) return this.fmOpenText(entry);
                 window.location.href = this.fmRawUrl(entry, true);
                 return;
             }
@@ -2006,7 +2011,99 @@ document.addEventListener('alpine:init', () => {
                 x: Math.round((window.innerWidth - w) / 2), y: Math.round((window.innerHeight - h) / 2), max: false };
         },
 
-        fmCloseViewer() { this.fmViewer = null; this._fmDrag = null; },
+        fmCloseViewer() {
+            if (this.fmTextDirty() && !confirm('Discard unsaved changes to ' + this.fmViewer.name + '?')) return;
+            this.fmViewer = null; this._fmDrag = null;
+        },
+
+        fmIsText(entry) {
+            return !entry.is_dir && !fmViewKind(entry.name) && FM_BINARY_CATEGORIES.indexOf(fmCategory(entry)) === -1;
+        },
+
+        // Opens a text file in the viewer window; binaries (415) download instead.
+        async fmOpenText(entry) {
+            const path = this.fmJoin(this.fileManagerDir, entry.name);
+            const res = await api.getTextFile(path, '', 0);
+            if (res.status === 415) { window.location.href = this.fmRawUrl(entry, true); return; }
+            if (!res.ok) { this.fileManagerError = res.data.error || ('Cannot open ' + entry.name); return; }
+            var w = Math.min(960, window.innerWidth * 0.9), h = Math.min(640, window.innerHeight * 0.85);
+            this.fmViewer = { name: entry.name, kind: 'text', path: path, download: this.fmRawUrl(entry, true), error: false,
+                x: Math.round((window.innerWidth - w) / 2), y: Math.round((window.innerHeight - h) / 2), max: false,
+                cursor: '1:1', msg: '', busy: false };
+            this._fmTextLoaded(res.data);
+        },
+
+        _fmTextLoaded(d) {
+            Object.assign(this.fmViewer, { text: d.text, orig: d.text, enc: d.encoding, bom: d.bom, eol: d.eol,
+                editable: d.editable, mtime: d.mtime, size: d.size, start: d.offset,
+                end: d.next_offset === -1 ? d.size : d.next_offset, next: d.next_offset, msg: '' });
+        },
+
+        fmTextDirty() {
+            return !!(this.fmViewer && this.fmViewer.kind === 'text' && this.fmViewer.text !== this.fmViewer.orig);
+        },
+
+        async fmReloadText(enc) {
+            const v = this.fmViewer;
+            const res = await api.getTextFile(v.path, enc || v.enc, 0);
+            if (!res.ok) { v.msg = res.data.error || 'Reload failed'; return false; }
+            this._fmTextLoaded(res.data);
+            return true;
+        },
+
+        fmReloadClick() {
+            if (!this.fmTextDirty() || confirm('Discard your unsaved changes?')) this.fmReloadText();
+        },
+
+        async fmChangeEncoding(ev) {
+            const v = this.fmViewer, enc = ev.target.value;
+            if (this.fmTextDirty() && !confirm('Discard your unsaved changes and reload as ' + enc + '?')) { ev.target.value = v.enc; return; }
+            if (!(await this.fmReloadText(enc))) ev.target.value = v.enc;
+        },
+
+        // Read-only paging for large files: append the next window, or jump to the last one.
+        async fmTextMore(toEnd) {
+            const v = this.fmViewer;
+            const res = await api.getTextFile(v.path, v.enc, toEnd ? -1 : v.next);
+            if (!res.ok) { v.msg = res.data.error || 'Load failed'; return; }
+            const d = res.data;
+            if (toEnd) { v.text = d.text; v.start = d.offset; } else { v.text += d.text; }
+            v.orig = v.text;
+            v.next = d.next_offset;
+            v.end = d.next_offset === -1 ? d.size : d.next_offset;
+        },
+
+        async fmSaveText(force) {
+            const v = this.fmViewer;
+            if (!v || v.kind !== 'text' || !v.editable || !this.isAdmin || v.busy) return;
+            v.busy = true;
+            v.msg = '';
+            const text = v.text;
+            try {
+                const res = await api.saveTextFile({ path: v.path, text, encoding: v.enc, bom: v.bom, eol: v.eol,
+                    expected_mtime: v.mtime, expected_size: v.size, force: !!force });
+                if (res.ok) {
+                    v.mtime = res.data.mtime; v.size = res.data.size; v.orig = text;
+                    return;
+                }
+                if (res.status === 409) {
+                    if (confirm('The file changed on disk since you opened it.\n\nOK: overwrite it with your version\nCancel: keep editing')) {
+                        v.busy = false;
+                        return this.fmSaveText(true);
+                    }
+                    if (confirm('Reload from disk and discard your edits?')) await this.fmReloadText();
+                    return;
+                }
+                v.msg = res.data.error || ('Save failed (' + res.status + ')');
+            } finally {
+                v.busy = false;
+            }
+        },
+
+        fmTextCursor(ev) {
+            const before = ev.target.value.slice(0, ev.target.selectionStart);
+            this.fmViewer.cursor = before.split('\n').length + ':' + (before.length - before.lastIndexOf('\n'));
+        },
 
         // Title-bar dragging; the bar is kept on screen so the window can't be lost.
         fmDragStart(e) {
@@ -3026,6 +3123,9 @@ document.addEventListener('alpine:init', () => {
         // --- Init ---
 
         async init() {
+            window.addEventListener('beforeunload', (e) => {
+                if (this.fmTextDirty()) { e.preventDefault(); e.returnValue = ''; }
+            });
             if (!this._authListener) {
                 this._authListener = true;
                 window.addEventListener('xirc:unauthorized', () => { this.me = null; this.authMode = 'login'; });

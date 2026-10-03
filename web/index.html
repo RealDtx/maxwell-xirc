@@ -1855,6 +1855,8 @@
                                                 <td class="py-1">
                                                     <span style="display:inline-flex;gap:4px;align-items:center;">
                                                         <a x-show="!entry.is_dir" class="btn btn-sm" :href="fmRawUrl(entry, true)" title="Download">⬇</a>
+                                                        <button x-show="fmIsText(entry)" class="btn btn-sm" @click.stop="fmOpenText(entry)"
+                                                                :title="isAdmin ? 'Edit as text' : 'View as text'" x-text="isAdmin ? 'Edit' : 'View'"></button>
                                                         <button x-show="!entry.is_dir && isAdmin && fmIsFirstArchiveVolume(entry.name)" class="btn btn-sm"
                                                                 :disabled="!rootWritable(fileManagerDir)"
                                                                 @click.stop="fmExtractDialog = { name: entry.name, deleteArchive: false }"
@@ -2327,6 +2329,40 @@
             </template>
             <template x-if="fmViewer.kind === 'image'">
                 <img :src="fmViewer.url" :alt="fmViewer.name">
+            </template>
+            <template x-if="fmViewer.kind === 'text'">
+                <div class="fm-text">
+                    <div class="fm-text-bar">
+                        <select :value="fmViewer.enc" @change="fmChangeEncoding($event)" aria-label="Text encoding">
+                            <option value="utf-8">UTF-8</option>
+                            <option value="cp437">CP437 (DOS / NFO)</option>
+                            <option value="windows-1252">Windows-1252</option>
+                        </select>
+                        <span class="badge badge-queued" x-text="fmViewer.eol === 'crlf' ? 'CRLF' : 'LF'"></span>
+                        <span class="badge badge-queued" x-show="fmViewer.bom">BOM</span>
+                        <span x-show="fmTextDirty()" title="Unsaved changes" style="color:var(--warning);">●</span>
+                        <span style="flex:1;"></span>
+                        <button class="btn btn-sm" @click="fmReloadClick()" title="Reload from disk">↻ Reload</button>
+                        <button x-show="isAdmin && fmViewer.editable" class="btn btn-sm btn-primary"
+                                @click="fmSaveText()" :disabled="fmViewer.busy || !fmTextDirty()" title="Save (Ctrl+S)">Save</button>
+                    </div>
+                    <div x-show="!fmViewer.editable" class="fm-text-banner">
+                        <span>Large file — read-only, showing
+                            <span x-text="formatSize(fmViewer.start)"></span>–<span x-text="formatSize(fmViewer.end)"></span>
+                            of <span x-text="formatSize(fmViewer.size)"></span></span>
+                        <button class="btn btn-sm" x-show="fmViewer.next !== -1" @click="fmTextMore(false)">Load more</button>
+                        <button class="btn btn-sm" x-show="fmViewer.next !== -1" @click="fmTextMore(true)">Jump to end</button>
+                    </div>
+                    <textarea x-model="fmViewer.text" :readonly="!fmViewer.editable || !isAdmin" spellcheck="false" wrap="off"
+                              aria-label="File contents"
+                              @keydown.ctrl.s.prevent="fmSaveText()" @keydown.meta.s.prevent="fmSaveText()"
+                              @keyup="fmTextCursor($event)" @click="fmTextCursor($event)"></textarea>
+                    <div class="fm-text-foot">
+                        <span x-text="fmViewer.cursor"></span>
+                        <span x-text="formatSize(fmViewer.size)"></span>
+                        <span x-show="fmViewer.msg" style="color:var(--danger);" x-text="fmViewer.msg"></span>
+                    </div>
+                </div>
             </template>
         </div>
 </template>

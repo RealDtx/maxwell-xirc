@@ -144,6 +144,27 @@ const api = {
         return _apiBase + '/files/raw?path=' + encodeURIComponent(path) + (download ? '&download=1' : '');
     },
 
+    // Text files: resolve to {status, ok, data} instead of throwing, so the
+    // caller can branch on 409 (conflict), 415 (binary) and 422 (encoding).
+    async _rawJSON(method, path, body) {
+        const opts = { method, headers: {} };
+        if (body !== undefined) {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(body);
+        }
+        const res = await fetch(_apiBase + path, opts);
+        if (res.status === 401) window.dispatchEvent(new CustomEvent('xirc:unauthorized'));
+        const data = await res.json().catch(() => ({}));
+        return { status: res.status, ok: res.ok, data };
+    },
+    getTextFile(path, encoding, offset) {
+        let q = '/files/text?path=' + encodeURIComponent(path);
+        if (encoding) q += '&encoding=' + encodeURIComponent(encoding);
+        if (offset) q += '&offset=' + offset;
+        return this._rawJSON('GET', q);
+    },
+    saveTextFile(req) { return this._rawJSON('PUT', '/files/text', req); },
+
     // Stats
     getDownloadStats()                { return this.get('/stats/downloads'); },
     getDownloadHistory(offset, limit) {
