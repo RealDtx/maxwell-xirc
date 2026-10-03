@@ -2062,11 +2062,13 @@ document.addEventListener('alpine:init', () => {
         },
 
         fmReloadClick() {
+            if (this.fmViewer && this.fmViewer.busy) return;
             if (!this.fmTextDirty() || confirm('Discard your unsaved changes?')) this.fmReloadText();
         },
 
         async fmChangeEncoding(ev) {
             const v = this.fmViewer, enc = ev.target.value;
+            if (v.busy) { ev.target.value = v.enc; return; }
             if (this.fmTextDirty() && !confirm('Discard your unsaved changes and reload as ' + enc + '?')) { ev.target.value = v.enc; return; }
             if (!(await this.fmReloadText(enc)) && this.fmViewer === v) ev.target.value = v.enc;
         },
@@ -2090,9 +2092,10 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        async fmSaveText(force) {
+        // `inner` = recursive forced call: the outer call already owns v.busy.
+        async fmSaveText(force, inner) {
             const v = this.fmViewer;
-            if (!v || v.kind !== 'text' || !v.editable || !this.isAdmin || v.busy) return;
+            if (!v || v.kind !== 'text' || !v.editable || !this.isAdmin || (v.busy && !inner)) return;
             v.busy = true;
             v.msg = '';
             const text = v.text;
@@ -2101,19 +2104,19 @@ document.addEventListener('alpine:init', () => {
                     expected_mtime: v.mtime, expected_size: v.size, force: !!force });
                 if (res.ok) {
                     v.mtime = res.data.mtime; v.size = res.data.size; v.orig = text;
+                    await this.loadFileManager(this.fileManagerDir);
                     return;
                 }
                 if (res.status === 409) {
                     if (confirm('The file changed on disk since you opened it.\n\nOK: overwrite it with your version\nCancel: keep editing')) {
-                        v.busy = false;
-                        return this.fmSaveText(true);
+                        return await this.fmSaveText(true, true);
                     }
                     if (confirm('Reload from disk and discard your edits?')) await this.fmReloadText();
                     return;
                 }
                 v.msg = res.data.error || ('Save failed (' + res.status + ')');
             } finally {
-                v.busy = false;
+                if (!inner) v.busy = false;
             }
         },
 

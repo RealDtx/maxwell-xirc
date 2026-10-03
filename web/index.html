@@ -1855,7 +1855,7 @@
                                                 <td class="py-1">
                                                     <span style="display:inline-flex;gap:4px;align-items:center;">
                                                         <a x-show="!entry.is_dir" class="btn btn-sm" :href="fmRawUrl(entry, true)" title="Download">⬇</a>
-                                                        <button x-show="fmIsText(entry)" class="btn btn-sm" @click.stop="fmOpenText(entry)"
+                                                        <button x-show="fmIsText(entry) && !(isAdmin && /\.part$/i.test(entry.name))" class="btn btn-sm" @click.stop="fmOpenText(entry)"
                                                                 :title="isAdmin ? 'Edit as text' : 'View as text'" x-text="isAdmin ? 'Edit' : 'View'"></button>
                                                         <button x-show="!entry.is_dir && isAdmin && fmIsFirstArchiveVolume(entry.name)" class="btn btn-sm"
                                                                 :disabled="!rootWritable(fileManagerDir)"
