@@ -2004,13 +2004,13 @@ document.addEventListener('alpine:init', () => {
 
         fmOpenFile(entry) {
             if (entry.is_dir) return this.fmOpenFolder(entry);
-            if (!this._fmDiscardOk()) return;
             var kind = fmViewKind(entry.name);
             if (!kind) {
                 if (this.fmIsText(entry)) return this.fmOpenText(entry);
                 window.location.href = this.fmRawUrl(entry, true);
                 return;
             }
+            if (!this._fmDiscardOk()) return;
             // Initial size comes from CSS (min(960px, 90vw) × min(640px, 85vh)); centre it.
             var w = Math.min(960, window.innerWidth * 0.9), h = Math.min(640, window.innerHeight * 0.85);
             this.fmViewer = { name: entry.name, url: this.fmRawUrl(entry, false), download: this.fmRawUrl(entry, true), kind: kind, error: false,
@@ -2029,9 +2029,10 @@ document.addEventListener('alpine:init', () => {
         // Opens a text file in the viewer window; binaries (415) download instead.
         async fmOpenText(entry) {
             if (!this._fmDiscardOk()) return;
+            const prev = this.fmViewer;
             const path = this.fmJoin(this.fileManagerDir, entry.name);
             const res = await api.getTextFile(path, '', 0);
-            if (this.fmViewer && this.fmTextDirty()) return; // edits started in the old window while fetching
+            if (this.fmViewer !== prev) return; // another open/close happened during the fetch
             if (res.status === 415) { window.location.href = this.fmRawUrl(entry, true); return; }
             if (!res.ok) { this.fileManagerError = res.data.error || ('Cannot open ' + entry.name); return; }
             var w = Math.min(960, window.innerWidth * 0.9), h = Math.min(640, window.innerHeight * 0.85);
@@ -2073,7 +2074,7 @@ document.addEventListener('alpine:init', () => {
         // Read-only paging for large files: append the next window, or jump to the last one.
         async fmTextMore(toEnd) {
             const v = this.fmViewer;
-            if (v.busy) return;
+            if (!v || v.busy) return;
             v.busy = true;
             try {
                 const res = await api.getTextFile(v.path, v.enc, toEnd ? -1 : v.next);
