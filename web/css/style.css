@@ -696,6 +696,14 @@ tr:hover { background: rgba(255,255,255,0.02); }
 .fm-viewer audio { width: 100%; padding: 16px; box-sizing: border-box; }
 .fm-viewer iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
 .fm-viewer-error { padding: 24px; color: var(--warning); }
+.fm-text { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fm-text-bar, .fm-text-foot, .fm-text-banner { display: flex; gap: 8px; align-items: center; padding: 6px 12px; font-size: 12px; flex-shrink: 0; }
+.fm-text-bar { border-bottom: 1px solid var(--border); }
+.fm-text-foot { border-top: 1px solid var(--border); color: var(--text-secondary); }
+.fm-text-banner { color: var(--warning); }
+.fm-text textarea { flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none; border: 0; outline: none;
+    padding: 8px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.4;
+    background: var(--bg-primary); color: var(--text-primary); white-space: pre; overflow: auto; tab-size: 4; }
 
 .help { border: 1px solid var(--border); border-radius: 6px; margin: 0 0 12px; background: var(--bg-secondary); font-size: 13px; }
 .help > summary { cursor: pointer; padding: 6px 10px; color: var(--text-secondary); }
