@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -229,7 +230,11 @@ func encodeText(text, enc string) ([]byte, error) {
 		col++
 		b, ok := le.cm.EncodeRune(r)
 		if !ok {
-			return nil, fmt.Errorf("character %q at line %d:%d not representable in %s", r, line, col, le.label)
+			msg := fmt.Sprintf("character %q at line %d:%d not representable in %s", r, line, col, le.label)
+			if r == utf8.RuneError {
+				msg += " — the file contains bytes this encoding can't store; try another encoding"
+			}
+			return nil, errors.New(msg)
 		}
 		out = append(out, b)
 		if r == '\n' {
@@ -284,6 +289,10 @@ func (s *Server) handlePutText(w http.ResponseWriter, r *http.Request) {
 	real, info, status, msg := s.resolveRootFile(req.Path)
 	if status != 0 {
 		writeError(w, status, msg)
+		return
+	}
+	if strings.HasSuffix(strings.ToLower(info.Name()), ".part") { // in-progress download (dcc/transfer.go)
+		writeError(w, http.StatusConflict, "file is still downloading")
 		return
 	}
 	if info.Size() > textEditMax {

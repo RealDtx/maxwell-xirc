@@ -344,3 +344,45 @@ func TestFilesText_PutPathChecksAndRoles(t *testing.T) {
 		t.Errorf("user PUT: %d", w.Code)
 	}
 }
+
+func TestFilesText_ConflictMtimeOnly(t *testing.T) {
+	srv, root := newTextTestServer(t)
+	p := filepath.Join(root, "a.txt")
+	writeFile(t, p, []byte("v1\n"))
+	_, resp := getText(t, srv, p, "")
+	writeFile(t, p, []byte("v2\n")) // same size
+	later := time.Now().Add(time.Minute)
+	os.Chtimes(p, later, later)
+	if w := putText(t, srv, saveReq(p, resp, "mine\n")); w.Code != 409 {
+		t.Fatalf("mtime-only change: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestFilesText_UndefinedByteHint(t *testing.T) {
+	srv, root := newTextTestServer(t)
+	p := filepath.Join(root, "a.txt")
+	orig := []byte("x\x81y\n")
+	writeFile(t, p, orig)
+	_, resp := getText(t, srv, p, "")
+	if resp.Encoding != "windows-1252" {
+		t.Fatalf("encoding %q", resp.Encoding)
+	}
+	w := putText(t, srv, saveReq(p, resp, resp.Text))
+	if w.Code != 422 || !strings.Contains(w.Body.String(), "try another encoding") {
+		t.Errorf("got %d %s", w.Code, w.Body.String())
+	}
+	if got, _ := os.ReadFile(p); !bytes.Equal(got, orig) {
+		t.Errorf("file changed: %q", got)
+	}
+}
+
+func TestFilesText_RefusePartial(t *testing.T) {
+	srv, root := newTextTestServer(t)
+	p := filepath.Join(root, "movie.mkv.part")
+	writeFile(t, p, []byte("abc"))
+	_, resp := getText(t, srv, p, "")
+	w := putText(t, srv, saveReq(p, resp, "x"))
+	if w.Code != 409 || !strings.Contains(w.Body.String(), "still downloading") {
+		t.Errorf("got %d %s", w.Code, w.Body.String())
+	}
+}
