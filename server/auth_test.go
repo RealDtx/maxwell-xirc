@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -257,5 +258,34 @@ func TestSessionCookieAuthenticates(t *testing.T) {
 	hdr = map[string]string{"Cookie": sessionCookie + "=old"}
 	if w := do(srv, "GET", "/api/downloads", "203.0.113.9:1", hdr, ""); w.Code != http.StatusUnauthorized {
 		t.Errorf("expired session: got %d want 401", w.Code)
+	}
+}
+
+func TestDockerHostNets(t *testing.T) {
+	routes := "Iface\tDestination\tGateway \tFlags\n" +
+		"eth0\t00000000\t010012AC\t0003\n" +
+		"eth0\t000012AC\t00000000\t0001\n"
+	if dockerHostNets("0.0.0.0", routes) != nil || dockerHostNets("", routes) != nil {
+		t.Error("non-loopback bind must not trust the host")
+	}
+	nets := dockerHostNets("127.0.0.1", routes)
+	for ip, want := range map[string]bool{"172.18.0.1": true, "192.168.65.1": true, "172.18.0.5": false} {
+		if inNets(net.ParseIP(ip), nets) != want {
+			t.Errorf("%s: want %v", ip, want)
+		}
+	}
+}
+
+func TestDockerHostIsAdminWithoutProxy(t *testing.T) {
+	srv, _ := newAuthTestServer(t, config.AuthConfig{})
+	srv.auth.hostNets = dockerHostNets("127.0.0.1", "eth0\t00000000\t010012AC\t0003\n")
+	if w := do(srv, "GET", "/api/users", "172.18.0.1:5000", nil, ""); w.Code != http.StatusOK {
+		t.Errorf("host browser: got %d", w.Code)
+	}
+	if w := do(srv, "GET", "/api/users", "172.18.0.1:5000", map[string]string{"X-Forwarded-For": "203.0.113.9"}, ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("proxied client: got %d", w.Code)
+	}
+	if w := do(srv, "GET", "/api/users", "172.18.0.5:5000", nil, ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("other container: got %d", w.Code)
 	}
 }

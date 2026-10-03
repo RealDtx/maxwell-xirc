@@ -9,6 +9,8 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -47,6 +49,9 @@ type Auth struct {
 	policy     atomic.Pointer[authPolicy]
 	cookiePath string
 	limiter    *loginLimiter // Task 6
+	// hostNets are the addresses the Docker host itself arrives from, set
+	// only when the published port is bound to loopback (XIRC_DOCKER_BIND).
+	hostNets []*net.IPNet
 }
 
 // authPolicy is the trusted-network login policy: which networks skip
@@ -111,7 +116,35 @@ func NewAuth(cfg config.AuthConfig, store db.Store, prefix string) (*Auth, error
 	}
 	a := &Auth{store: store, cookiePath: path, limiter: newLoginLimiter()}
 	a.policy.Store(p)
+	if routes, err := os.ReadFile("/proc/net/route"); err == nil {
+		a.hostNets = dockerHostNets(os.Getenv("XIRC_DOCKER_BIND"), string(routes))
+	}
 	return a, nil
+}
+
+// dockerHostNets returns where the Docker host's own browser connects from,
+// but only if bind (the published port's host address) is loopback: then
+// nothing else can come in through the gateway. LAN-published ports (BIND=
+// 0.0.0.0) get nil — on Docker Desktop every client arrives via the gateway.
+func dockerHostNets(bind, routes string) []*net.IPNet {
+	if ip := net.ParseIP(bind); ip == nil || !ip.IsLoopback() {
+		return nil
+	}
+	// ponytail: Docker Desktop's default VM subnet; a custom one isn't detected.
+	_, desktop, _ := net.ParseCIDR("192.168.65.0/24")
+	nets := []*net.IPNet{desktop}
+	for _, line := range strings.Split(routes, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || f[1] != "00000000" {
+			continue
+		}
+		if g, err := strconv.ParseUint(f[2], 16, 32); err == nil && g != 0 {
+			// little-endian hex, e.g. 010012AC = 172.18.0.1
+			gw := net.IPv4(byte(g), byte(g>>8), byte(g>>16), byte(g>>24))
+			nets = append(nets, &net.IPNet{IP: gw, Mask: net.CIDRMask(32, 32)})
+		}
+	}
+	return nets
 }
 
 // Update swaps the trusted-network policy live; in-flight requests finish
@@ -219,6 +252,11 @@ func (a *Auth) principal(r *http.Request) *Principal {
 	if p := a.sessionPrincipal(r); p != nil {
 		return p
 	}
+	// A proxy on the host also arrives via the gateway; it adds XFF, a local
+	// browser doesn't (and a forged XFF only drops this privilege).
+	if ip := remoteIP(r); ip != nil && inNets(ip, a.hostNets) && len(r.Header.Values("X-Forwarded-For")) == 0 {
+		return &Principal{Username: "host", Role: "admin", Via: "network"}
+	}
 	return a.networkPrincipal(r)
 }
 
@@ -311,6 +349,9 @@ func (a *Auth) middleware(next http.Handler) http.Handler {
 }
 
 func logAuthConfig(a *Auth) {
+	if len(a.hostNets) > 0 {
+		log.Printf("auth: port bound to loopback, the Docker host's browser is admin without login")
+	}
 	p := a.policy.Load()
 	if len(p.trustedNets) == 0 {
 		log.Printf("auth: login required for all clients")

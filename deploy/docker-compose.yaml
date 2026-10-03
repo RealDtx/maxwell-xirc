@@ -9,10 +9,11 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     ports:
-      # Localhost only until an admin exists:
-      #   docker exec -it xirc xirc --create-admin <name>
-      # then, to reach xirc from other machines without a reverse proxy on
-      # this host, set BIND=0.0.0.0 in .env.
+      # Localhost only by default: your browser on this machine is admin
+      # without a login. To reach xirc from other machines without a reverse
+      # proxy on this host, first create an admin in Settings → Users (or
+      # `docker exec -it xirc xirc --create-admin <name>`), then set
+      # BIND=0.0.0.0 in .env — from then on everyone logs in.
       - "${BIND:-127.0.0.1}:8085:8085"
     volumes:
       - ./data:/data
@@ -22,9 +23,12 @@ services:
       - ${MEDIA_DIR:?set MEDIA_DIR in .env}:/media
     environment:
       - TZ=${TZ:-UTC}
-      # LAN clients skip login (comma-separated CIDRs). Only safe when the
-      # container sees real client IPs (no NAT in between) or sits behind a
-      # proxy listed in XIRC_AUTH_TRUSTED_PROXIES.
+      # Tells xirc whether only this machine can reach it (see ports above).
+      - XIRC_DOCKER_BIND=${BIND:-127.0.0.1}
+      # LAN clients skip login (comma-separated CIDRs). Only works when the
+      # container sees real client IPs: Linux with BIND=0.0.0.0, or behind a
+      # proxy listed in XIRC_AUTH_TRUSTED_PROXIES. Docker Desktop (Windows/
+      # Mac) hides client IPs — every client would match the gateway.
       - XIRC_AUTH_TRUSTED_NETWORKS=${TRUSTED_NETWORKS:-}
       - XIRC_AUTH_TRUSTED_ROLE=${TRUSTED_ROLE:-admin}
       # sqlite (default) or mysql; DSN e.g. xirc:pw@tcp(db:3306)/xirc

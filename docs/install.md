@@ -100,7 +100,7 @@ cd deploy
 cp .env.example .env   # edit DOWNLOADS_DIR, MEDIA_DIR, PUID/PGID
 mkdir -p data && sudo chown 1000:1000 data   # your PUID:PGID from .env
 docker compose up -d
-docker exec -it xirc xirc --create-admin <name>   # before exposing the port
+docker exec -it xirc xirc --create-admin <name>   # optional, see below
 ```
 
 Either way, this needs Docker Compose ≥ 2.20 (`docker compose version`) —
@@ -112,11 +112,14 @@ The container runs as `PUID:PGID` (compose `user:`), so `./data`,
 `./data` yourself as above — if it's missing, Docker creates it owned by
 root and xirc can't open its database (it exits and restarts in a loop).
 
-The port is published on `127.0.0.1:8085` only. Create the admin first (last
-line above); then either put a reverse proxy on the host in front of it, or
-set `BIND=0.0.0.0` in `.env` and `docker compose up -d` again to reach xirc
-directly from other machines. Until an admin exists, whoever opens xirc
-first can create one.
+The port is published on `127.0.0.1:8085` only, and a browser on the Docker
+host itself (http://localhost:8085) is admin without logging in — the last
+line above is optional. Requests through a reverse proxy (they carry
+`X-Forwarded-For`) still log in. To reach xirc directly from other machines,
+create an admin account first (Settings → Users, or the last line above),
+then set `BIND=0.0.0.0` in `.env` and `docker compose up -d` again; from then
+on everyone logs in. Until an admin account exists, whoever opens xirc first
+can create one.
 
 `.env` (see `deploy/.env.example`):
 
@@ -125,7 +128,7 @@ first can create one.
 | `DOWNLOADS_DIR`, `MEDIA_DIR` | Host directories mounted into the container; must already exist and be writable by `PUID:PGID` |
 | `PUID`, `PGID` | uid/gid the container runs as (default `1000`) — set to `id -u` / `id -g` of the owner of `./data` and the host directories |
 | `TZ` | Container timezone (default `UTC`) |
-| `BIND` | Address the port is published on — `127.0.0.1` (default, behind a reverse proxy on this host) or `0.0.0.0` (reachable from the LAN) |
+| `BIND` | Address the port is published on — `127.0.0.1` (default: only this machine — admin without login — or a reverse proxy on it) or `0.0.0.0` (reachable from the LAN) |
 | `TRUSTED_NETWORKS`, `TRUSTED_ROLE` | See [Users & login](#users--login) |
 | `DB_DRIVER`, `DB_DSN` | `sqlite` (default) or `mysql`; `DB_DSN` is only needed for `mysql` — see MariaDB below |
 | `COMPOSE_PROFILES` | Set to `mariadb` to start the bundled `xirc-db` container |
