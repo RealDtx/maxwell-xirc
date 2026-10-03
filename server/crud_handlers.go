@@ -109,12 +109,33 @@ func (s *Server) handleGetServers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, servers)
 }
 
+// serverRequest adds the write-only password to db.Server, whose
+// AuthPassword is json:"-" so it never appears in responses.
+type serverRequest struct {
+	db.Server
+	Password string `json:"auth_password"`
+}
+
+// authPassword is the password to store: an empty request value keeps the
+// current one, and no auth method means no password.
+func (req serverRequest) authPassword(current string) string {
+	if req.AuthMethod == "" || req.AuthMethod == "none" {
+		return ""
+	}
+	if req.Password != "" {
+		return req.Password
+	}
+	return current
+}
+
 func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
-	var srv db.Server
-	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
+	var req serverRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	srv := req.Server
+	srv.AuthPassword = req.authPassword("")
 	if strings.TrimSpace(srv.Nickname) == "" {
 		writeError(w, http.StatusBadRequest, "nickname is required")
 		return
@@ -136,16 +157,23 @@ func (s *Server) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	var srv db.Server
-	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
+	var req serverRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	srv := req.Server
 	if strings.TrimSpace(srv.Nickname) == "" {
 		writeError(w, http.StatusBadRequest, "nickname is required")
 		return
 	}
+	existing, err := s.store.GetServer(id)
+	if err != nil || existing == nil {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
 	srv.ID = id
+	srv.AuthPassword = req.authPassword(existing.AuthPassword)
 	if err := s.store.UpdateServer(&srv); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

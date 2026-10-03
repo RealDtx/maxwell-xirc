@@ -124,6 +124,15 @@ func TestFileManager(t *testing.T) {
 	if code, _ := action(map[string]interface{}{"action": "mkdir", "dir": root, "name": "Music"}); code != http.StatusConflict {
 		t.Errorf("mkdir existing: %d", code)
 	}
+	if code, _ := action(map[string]interface{}{"action": "newfile", "dir": root, "name": "notes.txt"}); code != 200 || !exists("notes.txt") {
+		t.Errorf("newfile: %d", code)
+	}
+	if code, _ := action(map[string]interface{}{"action": "newfile", "dir": root, "name": "notes.txt"}); code != http.StatusConflict {
+		t.Errorf("newfile existing: %d", code)
+	}
+	if code, _ := action(map[string]interface{}{"action": "newfile", "dir": root, "name": "../escape.txt"}); code != http.StatusBadRequest {
+		t.Errorf("newfile invalid name: %d", code)
+	}
 
 	// Delete: recursive folder, symlink removes only the link.
 	code, resp = action(map[string]interface{}{"action": "delete", "dir": series, "names": []string{"Show"}})

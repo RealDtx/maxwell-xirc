@@ -42,6 +42,7 @@ type filesResponse struct {
 //	POST {action:"delete", dir, names}               delete (folders recursively)
 //	POST {action:"rename", dir, name, new_name}
 //	POST {action:"mkdir",  dir, name}
+//	POST {action:"newfile", dir, name}              create an empty file
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -225,17 +226,27 @@ func (s *Server) handleFileAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"path": dst})
-	case "mkdir":
+	case "mkdir", "newfile":
 		dir, ok := checkDir(req.Dir)
 		if !ok {
 			return
 		}
 		if !validName(req.Name) {
-			writeError(w, http.StatusBadRequest, "invalid folder name")
+			writeError(w, http.StatusBadRequest, "invalid name")
 			return
 		}
 		p := filepath.Join(dir, req.Name)
-		if err := os.Mkdir(p, 0775); err != nil {
+		create := func() error { return os.Mkdir(p, 0775) }
+		if req.Action == "newfile" {
+			create = func() error { // O_EXCL: never truncates an existing file
+				f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0664)
+				if err != nil {
+					return err
+				}
+				return f.Close()
+			}
+		}
+		if err := create(); err != nil {
 			switch {
 			case os.IsExist(err):
 				writeError(w, http.StatusConflict, "already exists")

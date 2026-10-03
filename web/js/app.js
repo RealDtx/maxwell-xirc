@@ -2275,8 +2275,9 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        fmStartNewFolder() {
-            this.fileManagerNewFolderOpen = true;
+        // kind: 'folder' | 'file' — one inline name input serves both.
+        fmStartNew(kind) {
+            this.fileManagerNewFolderOpen = kind;
             this.fileManagerNewFolderName = '';
         },
 
@@ -2285,16 +2286,18 @@ document.addEventListener('alpine:init', () => {
             this.fileManagerNewFolderName = '';
         },
 
-        async fmCreateFolder() {
+        async fmCreateNew() {
             var name = (this.fileManagerNewFolderName || '').trim();
+            var isFile = this.fileManagerNewFolderOpen === 'file';
             if (!name) { this.fmCancelNewFolder(); return; }
             this.fileManagerError = '';
             try {
-                await api.fileAction({ action: 'mkdir', dir: this.fileManagerDir, name: name });
+                await api.fileAction({ action: isFile ? 'newfile' : 'mkdir', dir: this.fileManagerDir, name: name });
                 this.fmCancelNewFolder();
                 await this.loadFileManager(this.fileManagerDir);
+                if (isFile) await this.fmOpenText({ name: name, is_dir: false });
             } catch (e) {
-                this.fileManagerError = 'Create folder failed: ' + (e.message || e);
+                this.fileManagerError = (isFile ? 'Create file failed: ' : 'Create folder failed: ') + (e.message || e);
             }
         },
 
@@ -2393,9 +2396,10 @@ document.addEventListener('alpine:init', () => {
         },
 
         openServerForm(server) {
+            // auth_password is write-only: blank keeps the stored password.
             this.serverForm = server
-                ? Object.assign({}, server)
-                : { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true };
+                ? Object.assign({ auth_method: 'none' }, server, { auth_password: '' })
+                : { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true, auth_method: 'none', auth_password: '' };
             this.showServerForm = true;
         },
 
@@ -2461,7 +2465,7 @@ document.addEventListener('alpine:init', () => {
         openRealmForm(realm) {
             this.realmForm = realm
                 ? Object.assign({}, realm)
-                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true };
+                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', key: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true };
             this.showRealmForm = true;
             if (!this.patternSettingsList.length) {
                 api.getParsePatterns().then(r => { this.patternSettingsList = Array.isArray(r) ? r : []; }).catch(() => {});

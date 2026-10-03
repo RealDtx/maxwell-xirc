@@ -59,7 +59,7 @@ Files is a browser for everything under your configured destination folders (dow
 
 **How to use it:** pick a Destination on the left, browse or filter, click a file to open it. Playback is native-only, so video (mp4, m4v, webm, mkv, mov), audio (mp3, m4a, aac, flac, ogg, opus, wav), PDF, and images (jpg, jpeg, png, gif, webp, avif) open in a built-in viewer; text files (subtitles, .nfo, .txt and anything else that turns out to be text) open in a text window; other files download instead. Even within a playable extension, your browser may not decode the codec inside it — an MKV using HEVC, AC3 or DTS, for example, usually needs downloading and playing in a desktop player like VLC; the viewer shows a "can't play" message when that happens. Every file also has a ⬇ download button regardless of whether it can preview.
 
-**Admin-only:** drag-and-drop or "Move to…" between destinations, rename, delete (folders go with their contents), and create folders. **Extract…** appears next to the first volume of a detected archive; it runs in the background and unpacks into a new folder named after the archive. "Delete archive afterwards" removes all volumes of the archive, but only if extraction succeeded — failures are left in place and show up in the error list next to the file.
+**Admin-only:** drag-and-drop or "Move to…" between destinations, rename, delete (folders go with their contents), create folders, and create empty files (**+ New file** — the new file opens straight in the text editor). **Extract…** appears next to the first volume of a detected archive; it runs in the background and unpacks into a new folder named after the archive. "Delete archive afterwards" removes all volumes of the archive, but only if extraction succeeded — failures are left in place and show up in the error list next to the file.
 
 **Text files:** admins can edit files up to 2 MB and save with the Save button or Ctrl+S; everyone else sees them read-only. Larger files (logs) open read-only in 256 KB pieces with "Load more" and "Jump to end". The encoding is detected (UTF-8, otherwise CP437 for .nfo/.diz and Windows-1252 for the rest) and can be switched in the window; saving keeps the file's encoding (or the one you switched to in the window) and normalises line endings to the file's dominant style (lone CR and `\r\r\n` become that style), and refuses characters the encoding can't store instead of mangling them. If the file changed on disk since you opened it, you're asked whether to overwrite it or keep editing. Binary files are recognized by content and simply download.
 
@@ -73,14 +73,14 @@ The **Download mode** toggle here — "Save file" vs. "Stats only (don't save)" 
 ## Settings: Servers {#settings-servers}
 The IRC networks maXwell IRC connects to (admin-only).
 
-**How to use it:** Add Server with a name, host, port, nickname, SSL and auto-connect; Edit or Delete existing ones from the table.
+**How to use it:** Add Server with a name, host, port, nickname, SSL, auto-connect and authentication (none, NickServ or SASL, with a password); Edit or Delete existing ones from the table. The password is never shown again — when editing, leave it empty to keep the current one; switching authentication to None removes it.
 
 A server needs at least one realm before it's useful for searching or downloading — see [Settings → Realms](#settings-realms).
 
 ## Settings: Realms {#settings-realms}
 The chat/download channel pairs for each server (see [Concepts](#concepts) for what a realm is).
 
-**How to use it:** pick a server, then Add Realm: the chat channel name (e.g. `#example-chat`), a display name, the search command (e.g. `!s`), the download channel (e.g. `#example-downloads`), the search bot (leave blank to auto-detect on the first search), a search timeout, and whether to auto-join it on connect. From the same form you can scope existing parse patterns to just this realm.
+**How to use it:** pick a server, then Add Realm: the chat channel name (e.g. `#example-chat`), a display name, a channel key if the channel is `+k`, the search command (e.g. `!s`), the download channel (e.g. `#example-downloads`), the search bot (leave blank to auto-detect on the first search), a search timeout, and whether to auto-join it on connect. From the same form you can scope existing parse patterns to just this realm.
 
 Good to know: leaving the download channel blank isn't final — xirc fills it in the first time it reads that channel's topic after joining, if the topic names one.
 

@@ -379,3 +379,45 @@ func TestCreateServer_AcceptsValidNickname(t *testing.T) {
 		t.Errorf("expected 201 for valid nickname, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestServerPassword_WriteOnly(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	send := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+
+	w := send("POST", "/api/servers", `{"name":"s","host":"h","port":6667,"nickname":"n","auth_method":"sasl","auth_password":"pw1","enabled":true}`)
+	if w.Code != http.StatusCreated || strings.Contains(w.Body.String(), "pw1") {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	var created db.Server
+	json.Unmarshal(w.Body.Bytes(), &created)
+	path := fmt.Sprintf("/api/servers/%d", created.ID)
+	pw := func() string { s, _ := store.GetServer(created.ID); return s.AuthPassword }
+	if pw() != "pw1" {
+		t.Fatalf("create stored %q", pw())
+	}
+
+	// Edit without a password keeps it (the bug: it was wiped).
+	send("PUT", path, `{"name":"s2","host":"h","port":6667,"nickname":"n","auth_method":"sasl","enabled":true}`)
+	if pw() != "pw1" {
+		t.Errorf("edit without password: %q", pw())
+	}
+	// A new password replaces it, and is never echoed.
+	if w := send("PUT", path, `{"name":"s2","host":"h","port":6667,"nickname":"n","auth_method":"sasl","auth_password":"pw2","enabled":true}`); strings.Contains(w.Body.String(), "pw2") {
+		t.Errorf("password echoed: %s", w.Body.String())
+	}
+	if pw() != "pw2" {
+		t.Errorf("new password: %q", pw())
+	}
+	// Switching auth off clears it.
+	send("PUT", path, `{"name":"s2","host":"h","port":6667,"nickname":"n","auth_method":"none","enabled":true}`)
+	if pw() != "" {
+		t.Errorf("auth none should clear: %q", pw())
+	}
+}
