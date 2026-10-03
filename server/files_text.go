@@ -2,6 +2,8 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -203,7 +205,122 @@ func (s *Server) handleGetText(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handlePutText is implemented in the next task.
+type textSaveRequest struct {
+	Path          string    `json:"path"`
+	Text          string    `json:"text"`
+	Encoding      string    `json:"encoding"`
+	BOM           bool      `json:"bom"`
+	EOL           string    `json:"eol"`
+	ExpectedMtime time.Time `json:"expected_mtime"`
+	ExpectedSize  int64     `json:"expected_size"`
+	Force         bool      `json:"force"`
+}
+
+// encodeText converts \n-terminated text to enc. A rune the target can't
+// represent is an error naming its 1-based line:column (column in runes).
+func encodeText(text, enc string) ([]byte, error) {
+	if enc == "utf-8" {
+		return []byte(text), nil // a JSON-decoded string is always valid UTF-8
+	}
+	le := legacyEncodings[enc]
+	out := make([]byte, 0, len(text))
+	line, col := 1, 0
+	for _, r := range text {
+		col++
+		b, ok := le.cm.EncodeRune(r)
+		if !ok {
+			return nil, fmt.Errorf("character %q at line %d:%d not representable in %s", r, line, col, le.label)
+		}
+		out = append(out, b)
+		if r == '\n' {
+			line, col = line+1, 0
+		}
+	}
+	return out, nil
+}
+
+// writeFileAtomic replaces path via a temp file in the same directory, so a
+// crash leaves either the old or the new content, never a mix.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".xirc-edit-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // no-op once renamed
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// PUT /api/files/text (admin-only via adminRules).
 func (s *Server) handlePutText(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	var req textSaveRequest
+	// Generous body cap: 2 MB of CP437 box art is ~6 MB of UTF-8 plus JSON escaping.
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*textEditMax)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if _, ok := legacyEncodings[req.Encoding]; req.Encoding != "utf-8" && !ok {
+		writeError(w, http.StatusBadRequest, "unknown encoding "+req.Encoding)
+		return
+	}
+	if req.EOL != "lf" && req.EOL != "crlf" {
+		writeError(w, http.StatusBadRequest, "eol must be lf or crlf")
+		return
+	}
+	real, info, status, msg := s.resolveRootFile(req.Path)
+	if status != 0 {
+		writeError(w, status, msg)
+		return
+	}
+	if info.Size() > textEditMax {
+		writeError(w, http.StatusRequestEntityTooLarge, "file too large to edit (max 2 MB)")
+		return
+	}
+	if !req.Force && (!info.ModTime().Equal(req.ExpectedMtime) || info.Size() != req.ExpectedSize) {
+		writeError(w, http.StatusConflict, "file changed on disk")
+		return
+	}
+
+	data, err := encodeText(strings.ReplaceAll(req.Text, "\r\n", "\n"), req.Encoding)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	if req.EOL == "crlf" { // 0x0A/0x0D are the same in all supported encodings
+		data = bytes.ReplaceAll(data, []byte("\n"), []byte("\r\n"))
+	}
+	if req.BOM && req.Encoding == "utf-8" {
+		data = append(append([]byte{}, utf8BOM...), data...)
+	}
+	if len(data) > textEditMax {
+		writeError(w, http.StatusRequestEntityTooLarge, "result too large to save (max 2 MB)")
+		return
+	}
+
+	dir := filepath.Dir(real)
+	if err := writeFileAtomic(real, data, info.Mode().Perm()); err != nil {
+		err = fscheck.Describe(err, dir)
+		writeError(w, statusFor(err), err.Error())
+		return
+	}
+	ni, err := os.Stat(real)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "saved, but cannot stat file")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"mtime": ni.ModTime(), "size": ni.Size()})
 }
