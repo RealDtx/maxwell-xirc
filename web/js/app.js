@@ -1997,8 +1997,14 @@ document.addEventListener('alpine:init', () => {
             return api.rawFileUrl(this.fmJoin(this.fileManagerDir, entry.name), download);
         },
 
+        // Confirms before a new file replaces a viewer with unsaved edits.
+        _fmDiscardOk() {
+            return !this.fmTextDirty() || confirm('Discard unsaved changes to ' + this.fmViewer.name + '?');
+        },
+
         fmOpenFile(entry) {
             if (entry.is_dir) return this.fmOpenFolder(entry);
+            if (!this._fmDiscardOk()) return;
             var kind = fmViewKind(entry.name);
             if (!kind) {
                 if (this.fmIsText(entry)) return this.fmOpenText(entry);
@@ -2022,19 +2028,21 @@ document.addEventListener('alpine:init', () => {
 
         // Opens a text file in the viewer window; binaries (415) download instead.
         async fmOpenText(entry) {
+            if (!this._fmDiscardOk()) return;
             const path = this.fmJoin(this.fileManagerDir, entry.name);
             const res = await api.getTextFile(path, '', 0);
+            if (this.fmViewer && this.fmTextDirty()) return; // edits started in the old window while fetching
             if (res.status === 415) { window.location.href = this.fmRawUrl(entry, true); return; }
             if (!res.ok) { this.fileManagerError = res.data.error || ('Cannot open ' + entry.name); return; }
             var w = Math.min(960, window.innerWidth * 0.9), h = Math.min(640, window.innerHeight * 0.85);
             this.fmViewer = { name: entry.name, kind: 'text', path: path, download: this.fmRawUrl(entry, true), error: false,
                 x: Math.round((window.innerWidth - w) / 2), y: Math.round((window.innerHeight - h) / 2), max: false,
                 cursor: '1:1', msg: '', busy: false };
-            this._fmTextLoaded(res.data);
+            this._fmTextLoaded(this.fmViewer, res.data);
         },
 
-        _fmTextLoaded(d) {
-            Object.assign(this.fmViewer, { text: d.text, orig: d.text, enc: d.encoding, bom: d.bom, eol: d.eol,
+        _fmTextLoaded(v, d) {
+            Object.assign(v, { text: d.text, orig: d.text, enc: d.encoding, bom: d.bom, eol: d.eol,
                 editable: d.editable, mtime: d.mtime, size: d.size, start: d.offset,
                 end: d.next_offset === -1 ? d.size : d.next_offset, next: d.next_offset, msg: '' });
         },
@@ -2046,8 +2054,9 @@ document.addEventListener('alpine:init', () => {
         async fmReloadText(enc) {
             const v = this.fmViewer;
             const res = await api.getTextFile(v.path, enc || v.enc, 0);
+            if (this.fmViewer !== v) return false;
             if (!res.ok) { v.msg = res.data.error || 'Reload failed'; return false; }
-            this._fmTextLoaded(res.data);
+            this._fmTextLoaded(v, res.data);
             return true;
         },
 
@@ -2058,19 +2067,26 @@ document.addEventListener('alpine:init', () => {
         async fmChangeEncoding(ev) {
             const v = this.fmViewer, enc = ev.target.value;
             if (this.fmTextDirty() && !confirm('Discard your unsaved changes and reload as ' + enc + '?')) { ev.target.value = v.enc; return; }
-            if (!(await this.fmReloadText(enc))) ev.target.value = v.enc;
+            if (!(await this.fmReloadText(enc)) && this.fmViewer === v) ev.target.value = v.enc;
         },
 
         // Read-only paging for large files: append the next window, or jump to the last one.
         async fmTextMore(toEnd) {
             const v = this.fmViewer;
-            const res = await api.getTextFile(v.path, v.enc, toEnd ? -1 : v.next);
-            if (!res.ok) { v.msg = res.data.error || 'Load failed'; return; }
-            const d = res.data;
-            if (toEnd) { v.text = d.text; v.start = d.offset; } else { v.text += d.text; }
-            v.orig = v.text;
-            v.next = d.next_offset;
-            v.end = d.next_offset === -1 ? d.size : d.next_offset;
+            if (v.busy) return;
+            v.busy = true;
+            try {
+                const res = await api.getTextFile(v.path, v.enc, toEnd ? -1 : v.next);
+                if (this.fmViewer !== v) return;
+                if (!res.ok) { v.msg = res.data.error || 'Load failed'; return; }
+                const d = res.data;
+                if (toEnd) { v.text = d.text; v.start = d.offset; } else { v.text += d.text; }
+                v.orig = v.text;
+                v.next = d.next_offset;
+                v.end = d.next_offset === -1 ? d.size : d.next_offset;
+            } finally {
+                v.busy = false;
+            }
         },
 
         async fmSaveText(force) {

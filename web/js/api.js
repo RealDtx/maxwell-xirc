@@ -152,7 +152,9 @@ const api = {
             opts.headers['Content-Type'] = 'application/json';
             opts.body = JSON.stringify(body);
         }
-        const res = await fetch(_apiBase + path, opts);
+        let res;
+        try { res = await fetch(_apiBase + path, opts); }
+        catch (e) { return { status: 0, ok: false, data: { error: 'Network error' } }; }
         if (res.status === 401) window.dispatchEvent(new CustomEvent('xirc:unauthorized'));
         const data = await res.json().catch(() => ({}));
         return { status: res.status, ok: res.ok, data };
