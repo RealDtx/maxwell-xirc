@@ -242,6 +242,7 @@ func main() {
 		BadDirs:      badDirs,
 		MediaDir:     cfg.Storage.MediaDir,
 		DownloadsDir: cfg.Storage.DownloadsDir,
+		TempDir:      cfg.Storage.TempDir,
 		HomeDir:      homeDir,
 		ConfigPath:   *configPath,
 	}
@@ -254,6 +255,7 @@ func main() {
 			if newCfg, err := config.Load(*configPath); err == nil {
 				cfg.Storage.MediaDir = newCfg.Storage.MediaDir
 				cfg.Storage.DownloadsDir = newCfg.Storage.DownloadsDir
+				cfg.Storage.TempDir = newCfg.Storage.TempDir
 			}
 		}
 		// Non-TTY: setupState.Required stays true; web wizard will handle it.

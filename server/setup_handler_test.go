@@ -118,6 +118,7 @@ func TestSetupComplete_WritesConfig(t *testing.T) {
 		BadDirs:      []string{"/old/media", "/old/dl"},
 		MediaDir:     "/old/media",
 		DownloadsDir: "/old/dl",
+		TempDir:      "/old/dl/.tmp",
 		ConfigPath:   cfgPath,
 	}
 
@@ -164,6 +165,9 @@ func TestSetupComplete_WritesConfig(t *testing.T) {
 	}
 	if !strings.Contains(got, "downloads_dir: "+newDl) {
 		t.Errorf("expected downloads_dir updated to %q in config, got:\n%s", newDl, got)
+	}
+	if !strings.Contains(got, "temp_dir: "+newDl+"/.tmp") {
+		t.Errorf("expected temp_dir to follow downloads_dir, got:\n%s", got)
 	}
 }
 
