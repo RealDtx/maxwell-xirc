@@ -2301,7 +2301,7 @@
                         <div style="display:flex; gap:8px;">
                             <span style="color:var(--text-muted); flex-shrink:0;" x-text="formatTime(msg.timestamp)"></span>
                             <span style="color:var(--accent, #60a5fa); flex-shrink:0;" x-text="msg.nick ? '&lt;' + msg.nick + '&gt;' : '*'"></span>
-                            <span style="color:var(--text-primary); word-break:break-all;" x-text="msg.text || msg.message"></span>
+                            <span style="color:var(--text-primary); word-break:break-all;" x-html="formatIrcMessage(msg.text || msg.message || '')"></span>
                         </div>
                     </template>
                 </div>
