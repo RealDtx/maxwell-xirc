@@ -2305,10 +2305,9 @@
 </div>
 
 <!-- Directory Picker Modal -->
-<div x-show="dirPickerOpen"
-     @keydown.escape.window="cancelDirPicker()"
+<div @keydown.escape.window="cancelDirPicker()"
      style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;"
-     :style="dirPickerOpen ? 'display:flex;' : 'display:none;'">
+     :style="{ display: dirPickerOpen ? 'flex' : 'none' }">
     <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; width:480px; max-width:90vw; max-height:70vh; display:flex; flex-direction:column; overflow:hidden;">
         <!-- Modal header -->
         <div style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
@@ -2345,9 +2344,10 @@
             <button @click="selectDir()" class="btn btn-primary btn-sm">Select</button>
         </div>
     </div>
+</div>
 
     <!-- Login / first-admin overlay -->
-    <div x-show="authMode" x-cloak
+    <div :style="{ display: authMode ? 'flex' : 'none' }" x-cloak
          style="position:fixed; inset:0; z-index:10000; background:var(--bg-primary,#12121c); display:flex; align-items:center; justify-content:center; padding:16px;">
         <form @submit.prevent="submitAuth()"
               style="background:var(--bg-secondary,#1e1e2e); border-radius:8px; padding:32px; width:100%; max-width:360px; box-shadow:0 8px 32px rgba(0,0,0,0.5);">
@@ -2377,7 +2377,7 @@
     </div>
 
     <!-- Startup wizard overlay -->
-    <div :style="setupRequired ? 'display:flex' : 'display:none'"
+    <div :style="{ display: setupRequired ? 'flex' : 'none' }"
          style="position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center;">
         <div style="background:var(--bg-secondary,#1e1e2e); border-radius:8px; padding:32px; max-width:560px; width:100%; box-shadow:0 8px 32px rgba(0,0,0,0.5);">
             <h2 style="margin:0 0 8px; font-size:18px;">Setup Required</h2>
@@ -2410,12 +2410,11 @@
     </div>
 
     <!-- Post-setup restart banner -->
-    <div :style="setupBanner ? 'display:block' : 'display:none'"
+    <div :style="{ display: setupBanner ? 'block' : 'none' }"
          style="position:fixed; top:0; left:0; right:0; z-index:9998; background:#1a5c2a; color:#fff; padding:10px 20px; font-size:13px; text-align:center;">
         Setup complete — restart maXwell IRC for changes to take effect.
         <button @click="setupBanner=false" style="margin-left:12px; background:transparent; border:none; color:#fff; cursor:pointer; font-size:16px;">×</button>
     </div>
-</div>
 
 <!-- File viewer: floating window (drag the title bar, resize from the corner) -->
 <template x-if="fmViewer">

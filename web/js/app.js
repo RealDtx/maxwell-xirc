@@ -3236,7 +3236,21 @@ document.addEventListener('alpine:init', () => {
         },
 
         async loadMe() {
-            const res = await fetch(_apiBase + '/auth/me');
+            // Unreachable server (still at the CLI wizard, restarting): cover
+            // the app with the login screen and retry, instead of rendering it
+            // with no principal.
+            const offline = 'Server not reachable — retrying…';
+            let res;
+            try {
+                res = await fetch(_apiBase + '/auth/me');
+            } catch (e) {
+                this.me = null;
+                this.authMode = this.authMode || 'login';
+                this.authForm.error = offline;
+                await new Promise(r => setTimeout(r, 2000));
+                return this.loadMe();
+            }
+            if (this.authForm.error === offline) this.authForm.error = '';
             const data = await res.json().catch(() => ({}));
             if (res.ok && data.username) { this.me = data; this.authMode = ''; return true; }
             this.me = null;

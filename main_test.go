@@ -189,3 +189,25 @@ func TestRunCreateAdmin_NoPasswordNonTTY(t *testing.T) {
 		t.Fatal("expected error without password source")
 	}
 }
+
+// A stray </div> once nested the login overlay inside the hidden directory
+// picker: fresh installs got the app without a login and without admin.
+func TestIndexHTML_OverlaysAreTopLevel(t *testing.T) {
+	src, err := embeddedWeb.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)[strings.Index(string(src), "<body"):]
+	depth := 0 // ponytail: counts <div> tags only, enough for this file's layout
+	for _, line := range strings.Split(body, "\n") {
+		for _, m := range []string{`display: authMode ?`, `display: setupRequired ?`, `display: setupBanner ?`} {
+			if strings.Contains(line, m) && depth != 0 {
+				t.Errorf("%s overlay is nested %d divs deep, want a direct child of <body>", m, depth)
+			}
+		}
+		depth += strings.Count(line, "<div") - strings.Count(line, "</div>")
+	}
+	if depth != 0 {
+		t.Errorf("unbalanced <div>s in index.html: %+d", depth)
+	}
+}
