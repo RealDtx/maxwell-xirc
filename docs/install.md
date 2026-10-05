@@ -48,8 +48,9 @@ The wizard:
    the related feature is disabled at runtime with a reason shown in the UI
    (see [Permissions](#permissions)). An existing directory's ownership is
    never changed without asking.
-5. **Asks about login** — networks that skip login, and the role granted to
-   them (see [Users & login](#users--login)).
+5. **Asks about login** — who skips login: nobody, a detected home subnet,
+   or networks you type (detected home/VPN subnets are suggested), and the
+   role granted to them (see [Users & login](#users--login)).
 6. **Writes `config.yaml` and `/etc/systemd/system/xirc.service`**. If
    either file already exists and differs, it asks before overwriting; a
    replaced proxy file is instead backed up as `<file>.bak.<timestamp>`.
@@ -260,7 +261,7 @@ The script prompts for the following (press Enter to accept the default):
 | Mode | `i` (subpath) | `s` = own site (hostname), `i` = subpath snippet for an existing site |
 | Hostname *(own site)* | `xirc.local` | Only asked in site mode |
 | URL prefix *(subpath)* | `/xirc` | Only asked in subpath mode; also written to `server.prefix` |
-| Networks that skip login | *(empty)* | Comma-separated CIDRs; empty = always log in |
+| Who skips login | `1` (nobody) | Nobody / a detected home subnet / other networks (comma-separated CIDRs, detected subnets suggested) |
 | Role for those networks | `admin` | `admin` / `user` |
 
 **Database tables:** xirc uses `CREATE TABLE IF NOT EXISTS` and runs all
@@ -416,7 +417,15 @@ Each profile directory is added to `.gitignore` by the preconfig script.
 skipped that step, or installed via Docker / `make deploy` without running
 `--create-admin`), the first visit to xirc shows an admin-creation form
 instead of the login screen and whoever fills it in becomes `admin` — so
-create the admin before xirc is reachable from other machines. After that, everyone else logs in at the same URL. Admins manage
+create the admin before xirc is reachable from other machines.
+
+Started by hand in a terminal for the first time (no admin, no
+`trusted_networks`), the binary asks who may skip login: nobody (default),
+only this computer, a detected home subnet, or networks you type. A network
+choice also sets `server.host: 0.0.0.0` so the LAN can reach it. The answer is
+saved to `config.yaml`; change it later in **Settings → System**.
+
+After that, everyone else logs in at the same URL. Admins manage
 further accounts under **Settings → Users** — add a user, change their role,
 reset their password, or delete them (the last remaining admin can't be
 demoted or deleted).

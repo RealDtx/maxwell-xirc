@@ -15,6 +15,44 @@ env_quote() {
     printf "'%s'" "$1"
 }
 
+# lan_subnets — reads `ip -o -4 route show scope link`, prints "home CIDR" or
+# "vpn CIDR" per private subnet; container/VM bridges and down links skipped.
+lan_subnets() {
+    local cidr dev rest
+    while read -r cidr _ dev rest; do
+        [[ $cidr == */* && $rest == *"proto kernel"* && $rest != *linkdown* ]] || continue
+        case $dev in lo|docker*|br-*|veth*|virbr*|cali*|vxlan*|tunl*|cni*|flannel*|podman*) continue;; esac
+        case $cidr in 10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) ;; *) continue;; esac
+        case $dev in tun*|wg*|tailscale*|zt*) echo "vpn $cidr";; *) echo "home $cidr";; esac
+    done
+}
+
+# ask_trusted_networks — multiple-choice prompt (uses the caller's ask/say);
+# sets TRUSTED_NETWORKS, empty when everyone logs in.
+ask_trusted_networks() {
+    local home=() vpn=() kind cidr i c other sug
+    TRUSTED_NETWORKS=""
+    while read -r kind cidr; do
+        if [[ $kind == home ]]; then home+=("$cidr"); else vpn+=("$cidr"); fi
+    done < <(ip -o -4 route show scope link 2>/dev/null | lan_subnets)
+    say "Who may use xirc without logging in?"
+    say "  1) Nobody: everyone logs in  [default]"
+    for i in "${!home[@]}"; do say "  $((i + 2))) Home network ${home[i]}"; done
+    other=$((${#home[@]} + 2))
+    say "  $other) Other networks (home, VPN, …: you type them)"
+    ask "Choice" "1" c
+    if [[ $c =~ ^[0-9]+$ ]] && ((c >= 2 && c < other)); then
+        TRUSTED_NETWORKS=${home[c - 2]}
+    elif [[ $c == "$other" ]]; then
+        local all=("${home[@]}" "${vpn[@]}")
+        sug=$(IFS=,; echo "${all[*]}")
+        ((${#vpn[@]})) && say "     Detected VPN: ${vpn[*]}"
+        say "     Common: 192.168.0.0/16 (any 192.168.x home), 10.0.0.0/8, 172.16.0.0/12,"
+        say "             10.8.0.0/24 (OpenVPN), 10.6.0.0/24 (WireGuard/PiVPN), 100.64.0.0/10 (Tailscale)"
+        ask "Networks (comma-separated)" "$sug" TRUSTED_NETWORKS
+    fi
+}
+
 render_env() {
     local k
     echo "# Written by scripts/install.sh — re-run it to change these."
@@ -115,10 +153,12 @@ docker_install() {
         runuser -u xirc -- test -w "$MEDIA_DIR" || say "! $MEDIA_DIR is not writable by xirc (uid $PUID)."
 
         echo
-        say "Login: everyone must log in, unless their network is listed here."
-        say "(Inside Docker, clients appear as the bridge gateway unless a proxy on this host forwards their IP.)"
-        ask "Networks that skip login (comma-separated; empty = none)" "" TRUSTED_NETWORKS
-        TRUSTED_ROLE=admin
+        TRUSTED_NETWORKS="" TRUSTED_ROLE=admin
+        if [[ $BIND == 127.* || $BIND == ::1 ]]; then
+            say "Login: your browser on this machine is admin without login; everyone else logs in."
+        else
+            ask_trusted_networks
+        fi
         [[ -n "$TRUSTED_NETWORKS" ]] && ask "Role for those networks (admin / user)" "admin" TRUSTED_ROLE
 
         local db net=""

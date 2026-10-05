@@ -38,6 +38,10 @@ import (
 //go:embed all:web
 var embeddedWeb embed.FS
 
+// stdin is shared by the startup prompts so one prompt's read-ahead can't
+// swallow the next one's answer.
+var stdin = bufio.NewReader(os.Stdin)
+
 //go:embed docs/guide.md
 var guideMD []byte
 
@@ -133,7 +137,7 @@ func runCLIWizard(badDirs []string, state *server.SetupState) {
 	}
 	fmt.Fprintf(os.Stderr, "\nEnter replacement paths (press Enter to accept suggestion):\n\n")
 
-	reader := bufio.NewReader(os.Stdin)
+	reader := stdin
 	var mappings []server.Mapping
 	for _, dir := range badDirs {
 		sug := suggestions[dir]
@@ -221,6 +225,25 @@ func main() {
 		}
 		fmt.Printf("admin %q ready\n", strings.ToLower(strings.TrimSpace(*createAdmin)))
 		return
+	}
+
+	// First start on a terminal: ask who skips login. Asked again on later
+	// starts until an admin exists or networks are set.
+	if _, envSet := os.LookupEnv("XIRC_AUTH_TRUSTED_NETWORKS"); !envSet && len(cfg.Auth.TrustedNetworks) == 0 && isTerminal() {
+		if n, err := store.CountUsers(); err == nil && n == 0 {
+			home, vpn := detectSubnets(systemInterfaces())
+			if nets, lan := askTrust(stdin, os.Stderr, home, vpn); nets != nil {
+				keys := map[string]any{"auth": map[string]any{"trusted_networks": nets, "trusted_role": "admin"}}
+				cfg.Auth.TrustedNetworks, cfg.Auth.TrustedRole = nets, "admin"
+				if _, hostEnv := os.LookupEnv("XIRC_SERVER_HOST"); lan && !hostEnv {
+					keys["server"] = map[string]any{"host": "0.0.0.0"}
+					cfg.Server.Host = "0.0.0.0"
+				}
+				if err := config.SaveKeys(*configPath, keys); err != nil {
+					log.Printf("warning: could not save login choice to %s: %v (applies to this run only)", *configPath, err)
+				}
+			}
+		}
 	}
 
 	auth, err := server.NewAuth(cfg.Auth, store, cfg.Server.Prefix)

@@ -11,6 +11,15 @@ eq dsn_v4 "$(build_dsn xirc 'p@ss' 10.0.0.5 3306 xirc)" 'xirc:p@ss@tcp(10.0.0.5:
 eq dsn_v6 "$(build_dsn xirc pw fd00::5 3307 db)" 'xirc:pw@tcp([fd00::5]:3307)/db'
 eq dsn_name "$(build_dsn u p host.docker.internal 3306 x)" 'u:p@tcp(host.docker.internal:3306)/x'
 eq quote "$(env_quote 'a$b #c "d"')" "'a\$b #c \"d\"'"
+routes='10.244.0.7 dev cali0123456789a
+172.17.0.0/16 dev docker0 proto kernel src 172.17.0.1 linkdown
+172.18.0.0/16 dev br-0123456789ab proto kernel src 172.18.0.1
+192.168.20.0/24 dev eth0 proto kernel src 192.168.20.5 metric 600
+192.168.20.0/24 dev wlan0 proto kernel src 192.168.20.7 metric 700
+192.168.122.0/24 dev virbr0 proto kernel src 192.168.122.1
+10.8.0.0/24 dev tun0 proto kernel src 10.8.0.1
+84.1.2.0/24 dev wan0 proto kernel src 84.1.2.3'
+eq lan_subnets "$(lan_subnets <<<"$routes" | sort -u | tr '\n' ' ')" "home 192.168.20.0/24 vpn 10.8.0.0/24 "
 env_quote "it's" >/dev/null 2>&1 && { echo "FAIL quote: accepted a single quote"; fail=1; }
 
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT

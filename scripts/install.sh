@@ -253,9 +253,8 @@ check_dir "$MEDIA_DIR" "Media dir"
 
 # ── login ─────────────────────────────────────────────────────────────────────
 echo
-say "Login: everyone must log in, unless their network is listed here."
-ask "Networks that skip login (comma-separated, e.g. 192.168.0.0/16; empty = none)" "" TRUSTED_NETWORKS
 TRUSTED_ROLE=admin
+ask_trusted_networks
 [[ -n "$TRUSTED_NETWORKS" ]] && ask "Role for those networks (admin / user)" "admin" TRUSTED_ROLE
 
 # ── proxy choice (before config: subpath sets server.prefix) ──────────────────
