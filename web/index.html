@@ -455,7 +455,7 @@
                                             <template x-if="msg.msg_type !== 'raw'">
                                                 <span class="nick" x-text="msg.nick + ':'"></span>
                                             </template>
-                                            <span x-html="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : formatIrcMessage(msg.message || msg.text || '')"></span>
+                                            <span x-html="msg.msg_type === 'raw' ? formatIrcMessage(formatRawLine(msg.message || msg.text || '')) : formatIrcMessage(msg.message || msg.text || '')"></span>
                                         </div>
                                     </template>
                                     <template x-if="currentChannelMessages().length === 0">
@@ -617,7 +617,7 @@
                                             <template x-if="msg.msg_type !== 'raw'">
                                                 <span class="nick" x-text="msg.nick + ':'"></span>
                                             </template>
-                                            <span x-html="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : formatIrcMessage(msg.message || msg.text || '')"></span>
+                                            <span x-html="msg.msg_type === 'raw' ? formatIrcMessage(formatRawLine(msg.message || msg.text || '')) : formatIrcMessage(msg.message || msg.text || '')"></span>
                                         </div>
                                     </template>
                                 </div>
@@ -777,7 +777,7 @@
                                                     <template x-if="msg.msg_type !== 'raw'">
                                                         <span class="nick" x-text="msg.nick + ':'"></span>
                                                     </template>
-                                                    <span x-html="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : formatIrcMessage(msg.message || msg.text || '')"></span>
+                                                    <span x-html="msg.msg_type === 'raw' ? formatIrcMessage(formatRawLine(msg.message || msg.text || '')) : formatIrcMessage(msg.message || msg.text || '')"></span>
                                                 </div>
                                             </template>
                                         </div>
@@ -791,7 +791,7 @@
                                                     <template x-if="msg.msg_type !== 'raw'">
                                                         <span class="nick" x-text="msg.nick + ':'"></span>
                                                     </template>
-                                                    <span x-html="msg.msg_type === 'raw' ? formatRawLine(msg.message || msg.text || '') : formatIrcMessage(msg.message || msg.text || '')"></span>
+                                                    <span x-html="msg.msg_type === 'raw' ? formatIrcMessage(formatRawLine(msg.message || msg.text || '')) : formatIrcMessage(msg.message || msg.text || '')"></span>
                                                 </div>
                                             </template>
                                         </div>
