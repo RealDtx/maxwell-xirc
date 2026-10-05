@@ -562,11 +562,17 @@ Admins additionally see a banner listing every failing capability with a fix
 hint and a "Recheck" button (capabilities are also rechecked automatically
 every 5 minutes, or on demand via `POST /api/capabilities/recheck`).
 
-**Fix commands** (also what the banner suggests):
+**Fixes** (the banner suggests the first two):
+
+- Point the setting at a directory xirc can already write to (Settings →
+  System). Unset `temp_dir` follows `downloads_dir` (`<downloads_dir>/.tmp`).
+- Or give the user xirc runs as (shown in the reason) write access to `<dir>`.
+  Pick what fits — a shared group, an ACL, or, for a directory xirc owns
+  alone, a chown. Don't re-own a whole tree that other users or services use.
 
 ```bash
-# systemd install — re-own the directory for the xirc user:
-sudo chown -R xirc:xirc <dir>
+# systemd install, directory used by xirc only:
+sudo chown xirc:xirc <dir>
 
 # Docker — the container runs as PUID:PGID from .env; either make <dir> on
 # the host writable by that uid/gid:

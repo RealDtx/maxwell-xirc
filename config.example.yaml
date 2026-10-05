@@ -12,7 +12,7 @@ database:
 storage:
   media_dir: /srv/dlna/media
   downloads_dir: /srv/downloads
-  temp_dir: /srv/downloads/.tmp
+  # temp_dir: /srv/downloads/.tmp  # default: <downloads_dir>/.tmp
   min_free_space: 1GB
 
 downloads:

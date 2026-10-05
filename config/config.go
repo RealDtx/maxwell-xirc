@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -150,7 +151,6 @@ func defaults() Config {
 		Storage: StorageConfig{
 			MediaDir:     "/srv/dlna/media",
 			DownloadsDir: "/srv/downloads",
-			TempDir:      "/srv/downloads/.tmp",
 			MinFreeSpace: "1GB",
 		},
 		Downloads: DownloadsConfig{
@@ -185,6 +185,11 @@ func Load(path string) (*Config, error) {
 	}
 
 	applyEnvOverrides(&cfg)
+	// Unset temp_dir follows downloads_dir, so moving downloads (wizard,
+	// hand edit) doesn't leave temp behind on an unwritable default.
+	if cfg.Storage.TempDir == "" {
+		cfg.Storage.TempDir = filepath.Join(cfg.Storage.DownloadsDir, ".tmp")
+	}
 
 	return &cfg, nil
 }

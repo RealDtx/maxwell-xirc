@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/RealDtx/maxwell-irc/config"
@@ -18,7 +17,6 @@ type SetupState struct {
 	BadDirs      []string
 	MediaDir     string // original cfg.Storage.MediaDir
 	DownloadsDir string // original cfg.Storage.DownloadsDir
-	TempDir      string // original cfg.Storage.TempDir; follows DownloadsDir when inside it
 	HomeDir      string // os.UserHomeDir() result
 	ConfigPath   string // path to config.yaml for writing back
 }
@@ -73,13 +71,9 @@ func ApplyMappings(mappings []Mapping, state *SetupState) error {
 		}
 	}
 
-	storage := map[string]string{"media_dir": newMediaDir, "downloads_dir": newDownloadsDir}
-	// The default temp dir lives under downloads (/srv/downloads/.tmp); left
-	// behind, it keeps downloads disabled after the remap.
-	if rel, err := filepath.Rel(state.DownloadsDir, state.TempDir); err == nil && state.TempDir != "" && rel != ".." && !strings.HasPrefix(rel, "../") {
-		storage["temp_dir"] = filepath.Join(newDownloadsDir, rel)
-	}
-	if err := config.SaveKeys(state.ConfigPath, map[string]any{"storage": storage}); err != nil {
+	if err := config.SaveKeys(state.ConfigPath, map[string]any{
+		"storage": map[string]string{"media_dir": newMediaDir, "downloads_dir": newDownloadsDir},
+	}); err != nil {
 		return err
 	}
 

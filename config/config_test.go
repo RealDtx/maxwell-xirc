@@ -80,6 +80,9 @@ notifications:
 	if cfg.Storage.DownloadsDir != "/dl" {
 		t.Errorf("downloads_dir = %q", cfg.Storage.DownloadsDir)
 	}
+	if cfg.Storage.TempDir != "/dl/.tmp" {
+		t.Errorf("unset temp_dir = %q, want it to follow downloads_dir", cfg.Storage.TempDir)
+	}
 }
 
 func TestLoadConfigEnvOverride(t *testing.T) {

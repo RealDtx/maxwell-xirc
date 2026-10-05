@@ -297,7 +297,7 @@ document.addEventListener('alpine:init', () => {
             dir = dir.replace(/[()]+$/, '');
             return this.caps && this.caps.docker
                 ? 'Make the host directory mounted at ' + dir + ' writable by PUID:PGID from .env (or set PUID/PGID to its owner), then docker compose up -d'
-                : 'sudo chown -R xirc:xirc ' + dir;
+                : 'Pick a directory xirc can write to in Settings → System, or give the user xirc runs as write access to ' + dir;
         },
         rootWritable(path) {
             if (!this.caps) return true;

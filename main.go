@@ -242,7 +242,6 @@ func main() {
 		BadDirs:      badDirs,
 		MediaDir:     cfg.Storage.MediaDir,
 		DownloadsDir: cfg.Storage.DownloadsDir,
-		TempDir:      cfg.Storage.TempDir,
 		HomeDir:      homeDir,
 		ConfigPath:   *configPath,
 	}
