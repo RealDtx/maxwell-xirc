@@ -52,6 +52,7 @@
                         <span
                             class="status-dot"
                             :class="serverStatus(server.id)"
+                            :title="serverStatusTitle(server.id)"
                         ></span>
                         <span style="flex:1; cursor:pointer; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
                               x-text="server.name"
@@ -1086,10 +1087,36 @@
                                             <option value="sasl">SASL</option>
                                         </select>
                                     </div>
-                                    <div class="form-group" x-show="serverForm.auth_method && serverForm.auth_method !== 'none'">
+                                    <div class="form-group" x-show="(serverForm.auth_method && serverForm.auth_method !== 'none') || nickReg.open">
                                         <label>Password</label>
-                                        <input type="password" x-model="serverForm.auth_password" autocomplete="new-password"
-                                               :placeholder="serverForm.id ? 'Leave empty to keep the current password' : 'Password'">
+                                        <div style="display:flex; gap:6px;">
+                                            <input :type="authPwVisible ? 'text' : 'password'" x-model="serverForm.auth_password" autocomplete="new-password" style="flex:1;"
+                                                   :placeholder="serverForm.id ? 'Leave empty to keep the current password' : 'Password'">
+                                            <button type="button" class="btn btn-sm" @click="generateAuthPassword()" title="Generate a random 20-character password">Generate</button>
+                                            <button type="button" class="btn btn-sm" @click="toggleAuthPassword()" x-text="authPwVisible ? 'Hide' : 'Show'"></button>
+                                        </div>
+                                        <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+                                            This password is stored in clear text (the client must send it to log in). Use <b>Generate</b>
+                                            rather than a password you use anywhere else.
+                                        </div>
+                                    </div>
+                                    <div class="form-group" x-show="serverForm.id">
+                                        <label style="cursor:pointer;" @click="nickReg.open = !nickReg.open">
+                                            <span x-text="nickReg.open ? '▾' : '▸'"></span> Register nick with NickServ
+                                        </label>
+                                        <div x-show="nickReg.open" style="display:flex; flex-direction:column; gap:6px;">
+                                            <input type="email" x-model="nickReg.email" placeholder="E-mail (contact/recovery only)">
+                                            <div>
+                                                <button type="button" class="btn btn-sm" @click="registerNick()"
+                                                        :disabled="nickReg.busy || !serverForm.auth_password || !nickReg.email.trim()">Register</button>
+                                            </div>
+                                            <div style="font-size:11px; color:var(--text-muted);">
+                                                Sends <code>/msg NickServ REGISTER &lt;password&gt; &lt;email&gt;</code> as <span x-text="serverForm.nickname"></span> on the live connection
+                                                and saves the password above. Generate one first. NickServ replies appear in the NickServ chat tab.
+                                            </div>
+                                            <div x-show="nickReg.msg" x-text="nickReg.msg" style="font-size:12px;"
+                                                 :style="{ color: nickReg.ok ? 'var(--text-primary)' : 'var(--danger, #e55)' }"></div>
+                                        </div>
                                     </div>
                                     <div style="margin-top:12px; display:flex; gap:8px;">
                                         <button class="btn btn-primary btn-sm" @click="saveServer()">Save</button>
@@ -2191,6 +2218,7 @@
                                     <span style="font-weight:500;" x-text="srv.name"></span>
                                     <span class="badge"
                                           :class="'badge-' + serverStatus(srv.id)"
+                                          :title="serverStatusTitle(srv.id)"
                                           x-text="serverStatus(srv.id)"></span>
                                 </div>
                                 <div style="font-size:12px; color:var(--text-muted); display:flex; flex-direction:column; gap:4px;">
@@ -2245,6 +2273,7 @@
                               background: serverStatus(activeServer) === 'connected' ? 'var(--success-bg, #14532d)' : serverStatus(activeServer) === 'connecting' ? 'var(--warning-bg, #713f12)' : 'var(--danger-bg, #7f1d1d)',
                               color: serverStatus(activeServer) === 'connected' ? 'var(--success-text, #bbf7d0)' : serverStatus(activeServer) === 'connecting' ? 'var(--warning-text, #fef08a)' : 'var(--danger-text, #fecaca)'
                           }"
+                          :title="serverStatusTitle(activeServer)"
                           x-text="serverStatus(activeServer)"></span>
                 </div>
 

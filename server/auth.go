@@ -301,6 +301,9 @@ var adminRules = []rule{
 }
 
 func adminOnly(method, path string) bool {
+	if strings.HasSuffix(path, "/auth-password") { // reveals a credential, even on GET
+		return true
+	}
 	if path == "/api/library/preview" { // read-only POST under an admin-write prefix
 		return false
 	}

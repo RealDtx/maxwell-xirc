@@ -161,6 +161,8 @@ document.addEventListener('alpine:init', () => {
         settingsChannels: [],
         settingsServerId: null,
         serverForm: { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true },
+        authPwVisible: false,
+        nickReg: { open: false, email: '', busy: false, msg: '', ok: false },
         channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
         showServerForm: false,
         showChannelForm: false,
@@ -333,6 +335,29 @@ document.addEventListener('alpine:init', () => {
         serverStatus(serverId) {
             const s = this.ircStatus[serverId];
             return s ? s.status : 'disconnected';
+        },
+
+        // Hover text for status dots/badges: since when, lag, reconnects, last error.
+        serverStatusTitle(serverId) {
+            const s = this.ircStatus[serverId] || {};
+            const status = s.status || 'disconnected';
+            const lines = [];
+            if (status === 'connected') {
+                lines.push('Connected' + (s.connected_at
+                    ? ' since ' + formatTime(s.connected_at) + ' (' + formatDuration(s.connected_at, new Date().toISOString()) + ')'
+                    : ''));
+                if (s.lag_ms) lines.push('Lag: ' + s.lag_ms + ' ms');
+            } else if (status === 'connecting') {
+                lines.push('Connecting… registering with the IRC server can take a minute');
+            } else {
+                lines.push('Disconnected');
+            }
+            if (s.reconnect_count) lines.push('Reconnect attempts: ' + s.reconnect_count);
+            if (status !== 'connected') {
+                const e = this.errors.find(e => e.server_id === serverId && e.error_type === 'irc_disconnect');
+                if (e) lines.push('Last error (' + formatTime(e.timestamp) + '): ' + e.message);
+            }
+            return lines.join('\n');
         },
 
         channelKey(serverId, channel) {
@@ -628,11 +653,13 @@ document.addEventListener('alpine:init', () => {
             const text = this.ircInput.trim();
             if (!text || !serverId) return;
             this.ircInput = '';
-            if (text.startsWith('/')) {
-                api.sendRaw(serverId, text.slice(1)).catch(console.error);
-            } else {
-                api.sendRaw(serverId, 'PRIVMSG * :' + text).catch(console.error);
-            }
+            // "/cmd" and bare "cmd" are both raw IRC; the server echoes it into this stream.
+            api.sendRaw(serverId, text.startsWith('/') ? text.slice(1) : text).catch(e => {
+                const msgs = (this.serverMessages[serverId] || []).concat([
+                    { nick: '', message: 'Command failed: ' + e.message, timestamp: new Date().toISOString(), msg_type: 'raw' }]);
+                this.serverMessages = Object.assign({}, this.serverMessages, { [serverId]: msgs });
+                this._msgVersion++;
+            });
         },
 
         // --- IRC actions ---
@@ -2400,7 +2427,41 @@ document.addEventListener('alpine:init', () => {
             this.serverForm = server
                 ? Object.assign({ auth_method: 'none' }, server, { auth_password: '' })
                 : { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true, auth_method: 'none', auth_password: '' };
+            this.authPwVisible = false;
+            this.nickReg = { open: false, email: '', busy: false, msg: '', ok: false };
             this.showServerForm = true;
+        },
+
+        generateAuthPassword() {
+            this.serverForm.auth_password = genPassword();
+            this.authPwVisible = true;
+        },
+
+        async toggleAuthPassword() {
+            if (!this.authPwVisible && this.serverForm.id && !this.serverForm.auth_password) {
+                try {
+                    const r = await api.getAuthPassword(this.serverForm.id);
+                    this.serverForm.auth_password = r.auth_password || '';
+                } catch (e) { console.error('getAuthPassword', e); }
+            }
+            this.authPwVisible = !this.authPwVisible;
+        },
+
+        async registerNick() {
+            const f = this.serverForm;
+            this.nickReg.busy = true;
+            this.nickReg.msg = '';
+            try {
+                const r = await api.registerNick(f.id, f.auth_password, this.nickReg.email.trim());
+                if (!f.auth_method || f.auth_method === 'none') f.auth_method = r.auth_method || 'nickserv';
+                this.nickReg.ok = true;
+                this.nickReg.msg = 'REGISTER sent and password saved. Check the NickServ chat tab for the reply.';
+            } catch (e) {
+                this.nickReg.ok = false;
+                this.nickReg.msg = 'Register failed: ' + (e.message || e);
+            } finally {
+                this.nickReg.busy = false;
+            }
         },
 
         saveServer() {

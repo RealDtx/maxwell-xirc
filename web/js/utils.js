@@ -119,8 +119,22 @@ function formatRawLine(line) {
         case '333':   return '';  // topic setter timestamp — skip
         case '353':   return '';  // NAMES list — skip (too noisy)
         case '366':   return '';  // End of NAMES — skip
+        case '477':   return `⚠ ${trailing} — this channel needs a registered nick: register or identify under Settings → Servers.`;
         default:      return trailing || line;
     }
+}
+
+// genPassword returns n alphanumeric chars from crypto.getRandomValues —
+// alphanumeric so it is safe inside an IRC command (NickServ REGISTER/IDENTIFY).
+function genPassword(n = 20) {
+    const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    const out = [];
+    const buf = new Uint8Array(1);
+    while (out.length < n) {
+        crypto.getRandomValues(buf);
+        if (buf[0] < 256 - (256 % abc.length)) out.push(abc[buf[0] % abc.length]); // no modulo bias
+    }
+    return out.join('');
 }
 
 // --- User guide (docs/guide.md, served at /guide.md) ---

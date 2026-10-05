@@ -40,6 +40,8 @@ const api = {
     createServer(s)        { return this.post('/servers', s); },
     updateServer(id, s)    { return this.put('/servers/' + id, s); },
     deleteServer(id)       { return this.del('/servers/' + id); },
+    getAuthPassword(id)    { return this.get('/servers/' + id + '/auth-password'); },
+    registerNick(id, password, email) { return this.post('/servers/' + id + '/register-nick', { password, email }); },
     getRealms(serverId)    { return this.get(`/realms?server_id=${serverId}`); },
     createRealm(r)         { return this.post('/realms', r); },
     updateRealm(id, r)     { return this.put('/realms/' + id, r); },

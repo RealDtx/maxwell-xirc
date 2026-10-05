@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/RealDtx/maxwell-irc/db"
+	ircpkg "github.com/RealDtx/maxwell-irc/irc"
 )
 
 func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +45,14 @@ func (s *Server) handleServerByID(w http.ResponseWriter, r *http.Request) {
 			realms = []db.Realm{}
 		}
 		writeJSON(w, http.StatusOK, realms)
+		return
+	}
+	if idStr, ok := strings.CutSuffix(suffix, "/auth-password"); ok {
+		s.handleServerAuthPassword(w, r, idStr)
+		return
+	}
+	if idStr, ok := strings.CutSuffix(suffix, "/register-nick"); ok {
+		s.handleRegisterNick(w, r, idStr)
 		return
 	}
 	// /api/servers/{id} — PUT or DELETE
@@ -274,4 +283,82 @@ func (s *Server) handleDeleteRealm(w http.ResponseWriter, r *http.Request) {
 		s.ircMgr.ReloadRealms(realm.ServerID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// handleServerAuthPassword: GET /api/servers/{id}/auth-password (admin-only via
+// adminOnly). The NickServ/SASL password is stored reversibly on purpose — the
+// client needs it in clear to identify — so admins can read it back.
+func (s *Server) handleServerAuthPassword(w http.ResponseWriter, r *http.Request, idStr string) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id == 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	srv, err := s.store.GetServer(id)
+	if err != nil || srv == nil {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"auth_password": srv.AuthPassword})
+}
+
+// handleRegisterNick: POST /api/servers/{id}/register-nick {password, email}.
+// Sends NickServ REGISTER on the live connection and stores the password
+// (auth method none → nickserv) without reconnecting.
+func (s *Server) handleRegisterNick(w http.ResponseWriter, r *http.Request, idStr string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id == 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Password == "" || req.Email == "" {
+		writeError(w, http.StatusBadRequest, "password and email are required")
+		return
+	}
+	if strings.ContainsAny(req.Password+req.Email, " \t") || ircpkg.HasLineBreak(req.Password, req.Email) {
+		writeError(w, http.StatusBadRequest, "password and email must not contain spaces")
+		return
+	}
+	srv, err := s.store.GetServer(id)
+	if err != nil || srv == nil {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
+	var conn *ircpkg.Connection
+	if s.ircMgr != nil {
+		conn = s.ircMgr.GetConnection(id)
+	}
+	if conn == nil {
+		writeError(w, http.StatusConflict, "server is not connected")
+		return
+	}
+	if err := conn.RegisterNick(req.Password, req.Email); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	srv.AuthPassword = req.Password
+	if srv.AuthMethod == "" || srv.AuthMethod == "none" {
+		srv.AuthMethod = "nickserv"
+	}
+	if err := s.store.UpdateServer(srv); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sent", "auth_method": srv.AuthMethod})
 }

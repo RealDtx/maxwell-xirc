@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -90,6 +91,17 @@ func (m *Manager) ConnectServer(serverID int64) error {
 		return fmt.Errorf("server %d not found", serverID)
 	}
 
+	err := conn.Connect()
+	if !errors.Is(err, ErrConnectionStopped) {
+		return err
+	}
+	// Disconnected earlier: swap in a fresh Connection, then connect it.
+	if err := m.ReloadServer(serverID); err != nil {
+		return err
+	}
+	if conn = m.GetConnection(serverID); conn == nil {
+		return fmt.Errorf("server %d is disabled", serverID)
+	}
 	return conn.Connect()
 }
 
@@ -253,8 +265,7 @@ func (m *Manager) SendRaw(serverID int64, raw string) error {
 	if conn == nil {
 		return fmt.Errorf("server %d not found", serverID)
 	}
-	conn.SendRaw(raw)
-	return nil
+	return conn.SendRaw(raw)
 }
 
 func (m *Manager) JoinChannel(serverID int64, channel, key string) error {

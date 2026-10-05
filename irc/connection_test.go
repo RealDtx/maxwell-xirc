@@ -373,3 +373,115 @@ func TestConnection_UpdateRealms_ThreadSafe(t *testing.T) {
 		t.Fatal("expected channel names after concurrent update/read")
 	}
 }
+
+func TestExtractChannelFromRaw_JoinErrors(t *testing.T) {
+	for _, num := range []string{"471", "473", "474", "475", "477"} {
+		line := ":irc.example.net " + num + " me #locked :Cannot join channel"
+		if got := extractChannelFromRaw(strings.SplitN(line, " ", 5)); got != "#locked" {
+			t.Errorf("%s: got %q, want #locked", num, got)
+		}
+	}
+}
+
+func TestIsIdentifiedSignal(t *testing.T) {
+	cases := []struct {
+		line string
+		want bool
+	}{
+		{":services.example.net 900 me me!u@h me :You are now logged in as me", true},
+		{":me MODE me :+r", true},
+		{":me!u@h MODE me +ir", true},
+		{":me MODE me :-r", false},
+		{":me MODE me :+i-r", false},
+		{":op!u@h MODE #chan +r", false},
+		{":NickServ!service@example.net NOTICE me :Password accepted - you are now recognized.", true},
+		{":NickServ!NickServ@services. NOTICE me :You are now identified for \x02me\x02.", true},
+		{":NickServ!service@example.net NOTICE me :You are not identified.", false},
+		{":NickServ!service@example.net NOTICE me :This nickname is registered. Please IDENTIFY.", false},
+		{":someone!u@h NOTICE me :you are now identified, trust me", false},
+	}
+	for _, c := range cases {
+		if got := isIdentifiedSignal(c.line, "me"); got != c.want {
+			t.Errorf("%q: got %v, want %v", c.line, got, c.want)
+		}
+	}
+}
+
+type privmsgRecorder struct {
+	IRCClient // only Privmsg is used
+	sent      []string
+}
+
+func (p *privmsgRecorder) Privmsg(target, msg string) { p.sent = append(p.sent, target+" "+msg) }
+
+func TestRegisterNick_SendsQuietlyAndAdoptsAuth(t *testing.T) {
+	bus := NewEventBus()
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+	c := NewConnection(&db.Server{ID: 1, AuthMethod: "none"}, nil, bus)
+
+	if err := c.RegisterNick("pw", "a@example.com"); err == nil {
+		t.Fatal("expected error while disconnected")
+	}
+
+	rec := &privmsgRecorder{}
+	c.client, c.status = rec, StatusConnected
+	if err := c.RegisterNick("pw", "a@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.sent) != 1 || rec.sent[0] != "NickServ REGISTER pw a@example.com" {
+		t.Errorf("sent %q", rec.sent)
+	}
+	if c.server.AuthMethod != "nickserv" || c.server.AuthPassword != "pw" {
+		t.Errorf("auth not adopted: %q/%q", c.server.AuthMethod, c.server.AuthPassword)
+	}
+	select {
+	case ev := <-ch:
+		t.Errorf("REGISTER must not be echoed to the bus, got %+v", ev)
+	default:
+	}
+}
+
+type lineRecorder struct {
+	IRCClient
+	lines []string
+}
+
+func (l *lineRecorder) SendLine(s string) { l.lines = append(l.lines, s) }
+func (l *lineRecorder) Nick() string     { return "me" }
+
+func TestSendRaw_SendsEchoesAndMasks(t *testing.T) {
+	bus := NewEventBus()
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+	c := NewConnection(&db.Server{ID: 1}, nil, bus)
+	if err := c.SendRaw("NICKSERV IDENTIFY pw"); err == nil {
+		t.Fatal("expected error while disconnected")
+	}
+	rec := &lineRecorder{}
+	c.client, c.status = rec, StatusConnected
+
+	cases := []struct{ in, sent, echo string }{
+		{"NICKSERV IDENTIFY s3cret", "NICKSERV IDENTIFY s3cret", "NICKSERV IDENTIFY ****"},
+		{"msg NickServ identify me s3cret", "PRIVMSG NickServ :identify me s3cret", "PRIVMSG NickServ :identify ****"},
+		{"PRIVMSG NickServ :REGISTER pw a@b.c", "PRIVMSG NickServ :REGISTER pw a@b.c", "PRIVMSG NickServ :REGISTER ****"},
+		{"ns set password new1", "ns set password new1", "ns set password ****"},
+		{"WHOIS someone", "WHOIS someone", "WHOIS someone"},
+	}
+	for _, tc := range cases {
+		rec.lines = nil
+		if err := c.SendRaw(tc.in); err != nil {
+			t.Fatal(err)
+		}
+		if len(rec.lines) != 1 || rec.lines[0] != tc.sent {
+			t.Errorf("%q: sent %q, want %q", tc.in, rec.lines, tc.sent)
+		}
+		ev := <-ch
+		if ev.Channel != "" || ev.Data.(map[string]string)["message"] != "-> "+tc.echo {
+			t.Errorf("%q: echo %+v, want server buffer %q", tc.in, ev, "-> "+tc.echo)
+		}
+	}
+	if err := c.SendRaw("JOIN #a\r\nQUIT"); err == nil {
+		t.Error("line breaks must be refused")
+	}
+}

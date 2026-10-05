@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -47,6 +48,9 @@ type Connection struct {
 	namesMu                   sync.Mutex
 	namesPending              map[string]chan []string // channel name -> result chan
 	pingDone                  chan struct{}
+	running                   bool          // a connectLoop goroutine is active
+	identWait                 chan struct{} // closed on NickServ identification; nil when nobody waits
+	identSeen                 bool          // an identification signal arrived during this connection
 	onDownloadChannelDetected func(channel, detected string)
 }
 
@@ -172,9 +176,33 @@ func (c *Connection) AllChannelNames() []string {
 	return names
 }
 
+// ErrConnectionStopped: Disconnect closed stopCh for good; the Manager
+// replaces the Connection to connect again.
+var ErrConnectionStopped = errors.New("connection stopped")
+
+// Connect starts the connect loop. It is a no-op while a loop is already
+// running (connecting, backing off or connected), so a second click can't
+// spawn a second IRC client.
 func (c *Connection) Connect() error {
+	select {
+	case <-c.stopCh:
+		return ErrConnectionStopped
+	default:
+	}
+	c.mu.Lock()
+	if c.running {
+		c.mu.Unlock()
+		return nil
+	}
+	c.running = true
+	c.mu.Unlock()
 	c.setStatus(StatusConnecting)
-	go c.connectLoop()
+	go func() {
+		c.connectLoop()
+		c.mu.Lock()
+		c.running = false
+		c.mu.Unlock()
+	}()
 	return nil
 }
 
@@ -236,22 +264,38 @@ func (c *Connection) applyHandlers(client IRCClient) {
 		c.mu.Unlock()
 		go c.pingLoop(client, done)
 
-		// Auto-join channels
-		c.mu.RLock()
-		realms := make([]db.Realm, len(c.realms))
-		copy(realms, c.realms)
-		c.mu.RUnlock()
-
-		for _, r := range realms {
-			if !r.Enabled || !r.AutoJoin {
-				continue
-			}
-			client.Join(r.Name, r.Key)
-			// Also join download channel if different
-			if r.DownloadChannel != "" && r.DownloadChannel != r.Name {
-				client.Join(r.DownloadChannel, "")
-			}
+		// With NickServ auth, IDENTIFY went out on 001; joining right away would
+		// hit +R channels (477) before services answer, so hold the joins.
+		c.mu.Lock()
+		c.identSeen = false
+		c.identWait = nil
+		var wait chan struct{}
+		if c.server.AuthMethod == "nickserv" && c.server.AuthPassword != "" {
+			wait = make(chan struct{})
+			c.identWait = wait
 		}
+		c.mu.Unlock()
+		if wait == nil {
+			c.autoJoin(client)
+			return
+		}
+		go func() {
+			select {
+			case <-wait:
+			// ponytail: fixed 10s fallback for services whose wording isIdentifiedSignal misses
+			case <-time.After(10 * time.Second):
+				c.mu.Lock()
+				if c.identWait == wait {
+					c.identWait = nil
+				}
+				c.mu.Unlock()
+			case <-done:
+				return
+			case <-c.stopCh:
+				return
+			}
+			c.autoJoin(client)
+		}()
 	})
 
 	client.OnDisconnect(func() {
@@ -304,6 +348,21 @@ func (c *Connection) applyHandlers(client IRCClient) {
 				"message": message,
 			},
 		})
+		// Private notices (NickServ, bots) also land in the server stream,
+		// where the command that triggered them was typed. Server notices
+		// (prefix has a dot, nicks never do) already arrive there via handleRawLine.
+		if channel != target && !strings.Contains(nick, ".") {
+			c.bus.Publish(Event{
+				Type:      EventIRCMessage,
+				ServerID:  c.server.ID,
+				Nick:      nick,
+				Timestamp: time.Now().Format(time.RFC3339Nano),
+				Data: map[string]string{
+					"type":    "notice",
+					"message": message,
+				},
+			})
+		}
 	})
 
 	client.OnRaw(func(line string) {
@@ -331,7 +390,10 @@ func (c *Connection) connectLoop() {
 		c.setStatus(StatusConnecting)
 
 		// Create a fresh client for each attempt so handlers and state are clean.
-		client := newIRCClient(c.server)
+		c.mu.RLock()
+		srv := *c.server // RegisterNick may update auth fields concurrently
+		c.mu.RUnlock()
+		client := newIRCClient(&srv)
 		c.applyHandlers(client)
 
 		c.mu.Lock()
@@ -411,6 +473,25 @@ func (c *Connection) PartChannel(name string) {
 	}
 }
 
+// RegisterNick sends NickServ REGISTER and adopts the password for future
+// connects. Unlike SendMessage it does not echo into the bus: the line holds
+// the password and would otherwise land in the message buffer and log files.
+func (c *Connection) RegisterNick(password, email string) error {
+	c.mu.Lock()
+	client := c.client
+	if client == nil || c.status != StatusConnected {
+		c.mu.Unlock()
+		return fmt.Errorf("not connected to server %d", c.server.ID)
+	}
+	c.server.AuthPassword = password
+	if c.server.AuthMethod == "" || c.server.AuthMethod == "none" {
+		c.server.AuthMethod = "nickserv"
+	}
+	c.mu.Unlock()
+	client.Privmsg("NickServ", "REGISTER "+password+" "+email)
+	return nil
+}
+
 func (c *Connection) SendMessage(target, message string) error {
 	c.mu.RLock()
 	client := c.client
@@ -442,10 +523,62 @@ func (c *Connection) SendMessage(target, message string) error {
 	return nil
 }
 
-func (c *Connection) SendRaw(raw string) {
-	// Raw send is not exposed on IRCClient; log a warning.
-	// For XDCC this path is not exercised; use SendMessage for all real sends.
-	log.Printf("[%s] SendRaw called but not supported by IRCClient: %s", c.server.Name, raw)
+// SendRaw sends a line typed by the user ("/" already stripped) and echoes
+// it — secrets masked — into the server buffer so request and reply appear
+// together in the server stream and its log.
+func (c *Connection) SendRaw(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || HasLineBreak(raw) {
+		return fmt.Errorf("command must be a single non-empty line")
+	}
+	c.mu.RLock()
+	client, status := c.client, c.status
+	c.mu.RUnlock()
+	if client == nil || status != StatusConnected {
+		return fmt.Errorf("not connected to server %d", c.server.ID)
+	}
+	line := expandClientAlias(raw)
+	client.SendLine(line)
+	c.bus.Publish(Event{
+		Type:      EventIRCMessage,
+		ServerID:  c.server.ID,
+		Nick:      client.Nick(),
+		Timestamp: time.Now().Format(time.RFC3339Nano),
+		Data: map[string]string{
+			"type":    "sent",
+			"message": "-> " + maskSecrets(line),
+		},
+	})
+	return nil
+}
+
+// expandClientAlias turns client-side "/msg target text" (and /query) into
+// the PRIVMSG the server understands; everything else goes out verbatim.
+func expandClientAlias(raw string) string {
+	f := strings.SplitN(raw, " ", 3)
+	if len(f) == 3 && (strings.EqualFold(f[0], "MSG") || strings.EqualFold(f[0], "QUERY")) {
+		return "PRIVMSG " + f[1] + " :" + f[2]
+	}
+	return raw
+}
+
+// secretKeywords: everything after one of these words is a password.
+// ponytail: keyword list, extend when a network uses another verb.
+var secretKeywords = map[string]bool{
+	"IDENTIFY": true, "REGISTER": true, "GHOST": true, "RECOVER": true, "RELEASE": true,
+	"PASSWORD": true, "PASS": true, "OPER": true, "LOGIN": true, "AUTH": true, "AUTHENTICATE": true,
+}
+
+// maskSecrets replaces the arguments after the first secret keyword with
+// "****" so echoed commands never put passwords in buffers or logs.
+func maskSecrets(line string) string {
+	words := strings.Split(line, " ")
+	for i, w := range words {
+		if secretKeywords[strings.ToUpper(strings.TrimPrefix(w, ":"))] && i < len(words)-1 {
+			return strings.Join(append(words[:i+1:i+1], "****"), " ")
+		}
+	}
+	return line
 }
 
 func (c *Connection) IsInChannel(name string) bool {
@@ -512,6 +645,96 @@ func (c *Connection) pingLoop(client IRCClient, done <-chan struct{}) {
 	}
 }
 
+// autoJoin joins every enabled auto-join realm and its download channel.
+// JOINing a channel we are already in is a no-op server-side, so a repeat is harmless.
+func (c *Connection) autoJoin(client IRCClient) {
+	c.mu.RLock()
+	realms := make([]db.Realm, len(c.realms))
+	copy(realms, c.realms)
+	c.mu.RUnlock()
+
+	for _, r := range realms {
+		if !r.Enabled || !r.AutoJoin {
+			continue
+		}
+		client.Join(r.Name, r.Key)
+		// Also join download channel if different
+		if r.DownloadChannel != "" && r.DownloadChannel != r.Name {
+			client.Join(r.DownloadChannel, "")
+		}
+	}
+}
+
+// onIdentified handles the first identification signal of a connection: it
+// releases the waiting auto-join, or — if the wait already timed out, or the
+// nick was only just registered — re-joins so channels refused with 477 open.
+func (c *Connection) onIdentified() {
+	c.mu.Lock()
+	if c.identSeen || c.status != StatusConnected || c.server.AuthMethod == "sasl" || c.client == nil {
+		c.mu.Unlock()
+		return
+	}
+	c.identSeen = true
+	wait, client := c.identWait, c.client
+	c.identWait = nil
+	c.mu.Unlock()
+	if wait != nil {
+		close(wait)
+		return
+	}
+	c.autoJoin(client)
+}
+
+// isIdentifiedSignal reports whether a raw line says our nick is now
+// identified with services: 900 RPL_LOGGEDIN, user mode +r on our nick, or a
+// NickServ notice confirming it (Anope "Password accepted - you are now
+// recognized", Atheme "You are now identified for ...").
+func isIdentifiedSignal(line, ownNick string) bool {
+	p := parseLine(line)
+	if p == nil {
+		return false
+	}
+	switch p.command {
+	case "900":
+		return true
+	case "MODE":
+		if len(p.params) == 0 || !strings.EqualFold(p.params[0], ownNick) {
+			return false
+		}
+		modes := p.trailing
+		if len(p.params) > 1 {
+			modes = p.params[1]
+		}
+		adding := true
+		for _, m := range modes {
+			switch m {
+			case '+':
+				adding = true
+			case '-':
+				adding = false
+			case 'r':
+				if adding {
+					return true
+				}
+			}
+		}
+	case "NOTICE":
+		if !strings.EqualFold(p.prefix.nick, "NickServ") {
+			return false
+		}
+		msg := strings.ToLower(p.trailing)
+		if strings.Contains(msg, "not ") {
+			return false
+		}
+		for _, w := range []string{"identified", "recognized", "accepted"} {
+			if strings.Contains(msg, w) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Connection) handleRawLine(line string) {
 	// PONG — handle latency tracking, don't publish.
 	if strings.HasPrefix(line, "PONG ") || strings.Contains(line, " PONG ") {
@@ -522,6 +745,13 @@ func (c *Connection) handleRawLine(line string) {
 		}
 		c.mu.Unlock()
 		return
+	}
+
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+	if client != nil && isIdentifiedSignal(line, client.Nick()) {
+		c.onIdentified()
 	}
 
 	// Skip user PRIVMSG and NOTICE raw lines — they are already handled by
@@ -627,7 +857,8 @@ func extractChannelFromRaw(parts []string) string {
 		if len(parts) >= 3 && isChannel(parts[2]) {
 			return strings.TrimPrefix(parts[2], ":")
 		}
-	case "332", "333", "366":
+	case "332", "333", "366", "471", "473", "474", "475", "477":
+		// 47x: join refused (full, invite-only, banned, bad key, needs registered nick)
 		// :server 332 nick #channel :topic
 		if len(parts) >= 4 && isChannel(parts[3]) {
 			return strings.TrimPrefix(parts[3], ":")

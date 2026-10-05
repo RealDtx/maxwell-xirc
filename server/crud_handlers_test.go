@@ -421,3 +421,51 @@ func TestServerPassword_WriteOnly(t *testing.T) {
 		t.Errorf("auth none should clear: %q", pw())
 	}
 }
+
+func TestRegisterNick_ValidationAndNotConnected(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	s := &db.Server{Name: "net", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(s)
+
+	cases := []struct {
+		body string
+		want int
+	}{
+		{`{"password":"abc","email":""}`, http.StatusBadRequest},
+		{`{"password":"","email":"a@example.com"}`, http.StatusBadRequest},
+		{`{"password":"abc","email":"a @example.com"}`, http.StatusBadRequest},
+		{`{"password":"ab c","email":"a@example.com"}`, http.StatusBadRequest},
+		{`{"password":"abc","email":"a@example.com"}`, http.StatusConflict}, // no live connection
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest("POST", fmt.Sprintf("/api/servers/%d/register-nick", s.ID), strings.NewReader(c.body))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != c.want {
+			t.Errorf("%s: got %d, want %d (%s)", c.body, w.Code, c.want, w.Body.String())
+		}
+	}
+	got, _ := store.GetServer(s.ID)
+	if got.AuthPassword != "" || got.AuthMethod == "nickserv" {
+		t.Errorf("failed register must not store auth, got %q/%q", got.AuthMethod, got.AuthPassword)
+	}
+}
+
+func TestServerAuthPassword_Reveal(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	s := &db.Server{Name: "net", Host: "irc.example.com", Port: 6667, Nickname: "bot", Enabled: true,
+		AuthMethod: "nickserv", AuthPassword: "s3cretPw"}
+	store.CreateServer(s)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/servers/%d/auth-password", s.ID), nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"s3cretPw"`) {
+		t.Fatalf("got %d %s", w.Code, w.Body.String())
+	}
+	if !adminOnly("GET", fmt.Sprintf("/api/servers/%d/auth-password", s.ID)) {
+		t.Error("auth-password must be admin-only on GET")
+	}
+}

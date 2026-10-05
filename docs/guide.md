@@ -73,7 +73,7 @@ The **Download mode** toggle here — "Save file" vs. "Stats only (don't save)" 
 ## Settings: Servers {#settings-servers}
 The IRC networks maXwell IRC connects to (admin-only).
 
-**How to use it:** Add Server with a name, host, port, nickname, SSL, auto-connect and authentication (none, NickServ or SASL, with a password); Edit or Delete existing ones from the table. The password is never shown again — when editing, leave it empty to keep the current one; switching authentication to None removes it.
+**How to use it:** Add Server with a name, host, port, nickname, SSL, auto-connect and authentication (none, NickServ or SASL, with a password); Edit or Delete existing ones from the table. When editing, leave the password empty to keep the current one; **Show** reveals the stored password and switching authentication to None removes it. The password is stored in clear text, because maXwell has to send it to NickServ/SASL on every connect, so use **Generate** for a random one rather than a password you use elsewhere. **Register nick with NickServ** (edit only, server must be connected) sends `REGISTER <password> <email>` for the server's nickname and saves the password; NickServ's reply appears in the NickServ chat tab. Channels that only admit registered nicks show a "needs a registered nick" line in their chat tab until the nick is identified.
 
 A server needs at least one realm before it's useful for searching or downloading — see [Settings → Realms](#settings-realms).
 

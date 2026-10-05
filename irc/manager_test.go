@@ -374,3 +374,42 @@ func TestManager_GetConnection(t *testing.T) {
 		t.Error("expected nil for nonexistent server")
 	}
 }
+
+// Disconnect closes a connection's stopCh for good; Connect afterwards must
+// not leave the server stuck in "connecting" (the UI's yellow dot).
+func TestManager_ConnectAfterDisconnect(t *testing.T) {
+	store := &mockStore{servers: []db.Server{
+		{ID: 1, Name: "srv1", Host: "127.0.0.1", Port: 1, Nickname: "bot", Enabled: true},
+	}}
+	mgr := NewManager(store, NewEventBus())
+	if err := mgr.LoadFromStore(); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.ConnectServer(1); err != nil {
+		t.Fatal(err)
+	}
+	mgr.DisconnectServer(1)
+	old := mgr.GetConnection(1)
+	if err := mgr.ConnectServer(1); err != nil {
+		t.Fatal(err)
+	}
+	conn := mgr.GetConnection(1)
+	if conn == old {
+		t.Fatal("expected a fresh connection after disconnect")
+	}
+	select {
+	case <-conn.stopCh:
+		t.Fatal("fresh connection must not be stopped")
+	default:
+	}
+	defer conn.Disconnect()
+	if err := conn.Connect(); err != nil { // second Connect while running: no-op
+		t.Fatal(err)
+	}
+	conn.mu.RLock()
+	running := conn.running
+	conn.mu.RUnlock()
+	if !running {
+		t.Error("connect loop should be marked running")
+	}
+}
