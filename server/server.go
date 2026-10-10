@@ -123,6 +123,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/index/stats", s.handleIndexStats)
 	s.mux.HandleFunc("/api/index/stats/detail", s.handleIndexStatsDetail)
 	s.mux.HandleFunc("/api/index/clear", s.handleClearIndex)
+	s.mux.HandleFunc("/api/index/export", s.handleIndexExport)
+	s.mux.HandleFunc("/api/index/import", s.handleIndexImport)
 
 	// Download endpoints
 	s.mux.HandleFunc("/api/downloads", s.handleGetDownloads)

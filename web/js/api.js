@@ -50,6 +50,13 @@ const api = {
     configExportUrl(params) { return _apiBase + '/config/export' + (params ? '?' + params : ''); },
     configImportPreview(file)                 { return this.post('/config/import/preview', file); },
     configImportApply(file, def, decisions)   { return this.post('/config/import/apply', { file, default: def, decisions }); },
+    indexExportUrl(params) { return _apiBase + '/index/export' + (params ? '?' + params : ''); },
+    async importIndex(file) {
+        const res = await fetch(_apiBase + '/index/import', { method: 'POST', body: file });
+        const data = await res.json().catch(() => ({ error: res.statusText }));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+    },
 
     // IRC
     getIRCStatus()                    { return this.get('/irc/status'); },

@@ -292,7 +292,7 @@ var adminRules = []rule{
 	{"/api/irc/raw", false}, {"/api/irc/connect", false}, {"/api/irc/disconnect", false}, {"/api/irc/join", false},
 	{"/api/servers", true}, {"/api/realms", true}, {"/api/library", true},
 	{"/api/search/patterns", false}, {"/api/search/unmatched", false},
-	{"/api/index/clear", false}, {"/api/errors", false}, {"/api/users", false}, {"/api/setup", false},
+	{"/api/index/clear", false}, {"/api/index/export", false}, {"/api/index/import", false}, {"/api/errors", false}, {"/api/users", false}, {"/api/setup", false},
 	{"/api/capabilities/recheck", false}, {"/api/browse", false},
 	{"/api/files", true},
 	{"/api/downloads/delete", false}, {"/api/downloads/clear", false},
