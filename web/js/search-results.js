@@ -62,6 +62,26 @@ function formatXircLink(row, host) {
     return qs ? s + '?' + qs : s;
 }
 
+// parsePackSpec turns "5", "5,7,9" or "5-8" (mixable) into pack numbers, max 50.
+function parsePackSpec(spec) {
+    var packs = [];
+    var parts = String(spec || '').split(',');
+    for (var i = 0; i < parts.length; i++) {
+        var p = parts[i].trim().replace(/^#/, '');
+        if (!p) continue;
+        var m = /^(\d+)\s*-\s*#?(\d+)$/.exec(p);
+        var from = m ? +m[1] : +p, to = m ? +m[2] : +p;
+        if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from) {
+            return { packs: [], error: 'Invalid pack: ' + parts[i].trim() };
+        }
+        for (var n = from; n <= to; n++) {
+            if (packs.indexOf(n) < 0) packs.push(n);
+            if (packs.length > 50) return { packs: [], error: 'At most 50 packs at once' };
+        }
+    }
+    return packs.length ? { packs: packs, error: '' } : { packs: [], error: 'Enter a pack number' };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { formatBytesForSearch, toSizeDisplay, normalizeSearchRow, sizeToBytes, searchSortValue, rowFirstSeen, rowLastSeen, formatXircLink };
+    module.exports = { formatBytesForSearch, toSizeDisplay, normalizeSearchRow, sizeToBytes, searchSortValue, rowFirstSeen, rowLastSeen, formatXircLink, parsePackSpec };
 }

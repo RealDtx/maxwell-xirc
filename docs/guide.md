@@ -49,6 +49,8 @@ Status moves through: **queued** → **downloading** → **processing** (file re
 
 Good to know: once a pack is requested, xirc waits up to one hour for the bot to actually send it before giving up and marking it failed.
 
+**Add links** (Search toolbar): paste `xirc://` links from another xirc or anywhere else and press **Check** — each link shows its network, pack, file, first/last seen and a status (*ok*, *unknown network*, *already queued*, *already downloaded*). Untick what you don't want and **Queue selected**. Links are matched to your servers by host, so the network must be configured here. **Direct download** in the same dialog queues packs by realm, bot and pack number (`5`, `5,7,9` or `5-8`, up to 50); without a filename the download shows the pack until the bot sends it. Scripts on a trusted network can POST the same text to `/api/links/queue`.
+
 ## Routing, library and auto-extract {#routing}
 After a download finishes, maXwell IRC can sort it automatically instead of leaving it flat in the downloads folder. This is the **library**: a set of categories (series, show, movie, music, magazine, ebook, game, software), each matching by file extension and filename pattern, in priority order. A matched file is moved under the category's folder, with the destination path built from a template like `{title}/{season_dir}`. A file that matches nothing stays where it landed.
 

@@ -107,6 +107,8 @@ document.addEventListener('alpine:init', () => {
         searchResults: [],
         _searchSel: {},         // searchRowKey -> row, for "Copy links"
         linksCopyText: null,    // fallback textarea when the clipboard API is unavailable
+        addLinks: { open: false, text: '', rows: null, errors: [], sel: {}, busy: false, result: '', error: '',
+                    realmId: '', bot: '', packs: '', name: '' },
         patternTrainer: {
             open: false,
             rawLine: '',
@@ -1161,6 +1163,63 @@ document.addEventListener('alpine:init', () => {
         },
 
         copySelectedLinks() { this.copySearchLinks(Object.values(this._searchSel)); },
+
+        openAddLinks() {
+            this.addLinks = Object.assign(this.addLinks, { open: true, rows: null, errors: [], sel: {}, result: '', error: '' });
+        },
+
+        async addLinksPreview() {
+            var a = this.addLinks;
+            a.busy = true; a.error = ''; a.result = '';
+            try {
+                var res = await api.previewLinks(a.text);
+                a.rows = res.links || [];
+                a.errors = res.errors || [];
+                a.sel = {};
+                a.rows.forEach(function(r) { if (r.status === 'ok') a.sel[r.line] = true; });
+            } catch (e) {
+                a.error = e.message;
+            } finally {
+                a.busy = false;
+            }
+        },
+
+        async _addLinksSend(text) {
+            var a = this.addLinks;
+            a.busy = true; a.error = '';
+            try {
+                var res = await api.queueLinks(text);
+                a.result = res.queued + ' queued' + (res.skipped && res.skipped.length ? ', ' + res.skipped.length + ' skipped' : '');
+                this.loadDownloads();
+                return res;
+            } catch (e) {
+                a.error = e.message;
+            } finally {
+                a.busy = false;
+            }
+        },
+
+        async addLinksQueue() {
+            var a = this.addLinks;
+            var lines = (a.rows || []).filter(function(r) { return a.sel[r.line]; }).map(function(r) { return r.line; });
+            if (!lines.length) return;
+            if (await this._addLinksSend(lines.join('\n'))) await this.addLinksPreview(); // refresh statuses
+        },
+
+        async addLinksDirect() {
+            var a = this.addLinks;
+            var realm = this.realms.find(function(r) { return String(r.id) === String(a.realmId); });
+            var srv = realm && this.servers.find(function(s) { return s.id === realm.server_id; });
+            if (!realm || !srv) { a.error = 'Pick a realm'; return; }
+            if (!a.bot.trim()) { a.error = 'Enter the bot nick'; return; }
+            var spec = parsePackSpec(a.packs);
+            if (spec.error) { a.error = spec.error; return; }
+            var lines = spec.packs.map(function(n) {
+                return formatXircLink({ channel: realm.download_channel || realm.name, bot_nick: a.bot.trim(), pack_number: n,
+                    filename: spec.packs.length === 1 ? a.name.trim() : '' }, srv.host);
+            });
+            await this._addLinksSend(lines.join('\n'));
+        },
 
         realmSearchCount() {
             var serverID = this.activeServer;
