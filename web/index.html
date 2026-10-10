@@ -1742,6 +1742,26 @@
                                     </div>
                                 </template>
                             </div>
+
+                            <div class="settings-card">
+                                <h3>Search index</h3>
+                                <div class="text-muted text-sm" style="margin-bottom:8px;">One <code>xirc://</code> link per indexed file (gzip). Uses the server selection above.</div>
+                                <a class="btn btn-primary" :href="indexExportHref() || null" :class="{ disabled: !indexExportHref() }"
+                                   :aria-disabled="!indexExportHref()" download>Export index</a>
+                                <div style="margin-top:12px;">
+                                    <label class="text-sm">Import index:
+                                        <input type="file" accept=".gz,.txt,application/gzip,text/plain" @change="indexImportPick($event)" :disabled="indexImport.busy" aria-label="Index file to import">
+                                    </label>
+                                    <span x-show="indexImport.busy" class="text-sm">Importing…</span>
+                                    <div x-show="indexImport.error" class="text-sm" style="color:var(--danger); margin-top:8px;" x-text="indexImport.error"></div>
+                                    <template x-if="indexImport.result">
+                                        <div class="text-sm" style="margin-top:8px;">
+                                            <span x-text="indexImport.result.added + ' added · ' + indexImport.result.merged + ' merged · ' + indexImport.result.stale + ' outdated · ' + indexImport.result.skipped_unknown_network + ' unknown network · ' + indexImport.result.invalid + ' invalid'"></span>
+                                            <div x-show="indexImport.result.skipped_unknown_network > 0" class="text-muted">Networks missing here — import the config first, then the index again.</div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
                         </div>
                     </template>
 

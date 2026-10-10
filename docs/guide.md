@@ -124,6 +124,8 @@ Export servers and realms (with all their channels) and system settings to a JSO
 
 Good to know: passwords and channel keys are never exported, and an import never changes the ones already set — re-enter them after importing onto a new machine. Login/access settings (trusted networks, role, proxies) are never exported or imported. Import only adds or updates; nothing missing from the file is deleted. Settings fixed by an environment variable keep their current value.
 
+**Search index:** **Export index** downloads the index (for the servers ticked above) as a gzip file with one `xirc://` link per file. **Import index** merges such a file into this instance's index, keeping each file's first and last seen dates; where the file and the local index disagree about a pack, the more recently seen entry wins. Files are matched to servers by host — import the config first on a new machine. The index cap from System settings is applied afterwards.
+
 ## Access: login, roles, trusted networks {#access}
 Every account has a role: **admin** (Settings, all file-management actions, pattern edits, user management) or **user** (search, request downloads, browse and view files, read-only elsewhere). Anonymous visitors, before logging in, can still reach the login page and the app's static assets — every API action requires a session or a trusted network.
 

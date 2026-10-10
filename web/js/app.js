@@ -199,6 +199,7 @@ document.addEventListener('alpine:init', () => {
         // Settings - Realms (replaces settingsChannels)
         realms: [],
         settingsRealms: [],
+        indexImport: { busy: false, result: null, error: '' },
         backup: { srv: {}, realm: {}, settings: true, file: null, fileName: '', items: null,
                   def: 'skip', decisions: {}, results: null, open: {}, error: '', busy: false },
         realmForm: { id: null, server_id: null, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
@@ -2900,6 +2901,28 @@ document.addEventListener('alpine:init', () => {
             if (realms.length) p.set('realms', realms.join(','));
             if (this.backup.settings) p.set('settings', '1');
             return api.configExportUrl(p.toString());
+        },
+
+        // Index export follows the server ticks of the config export above.
+        indexExportHref() {
+            var ids = this.servers.filter(function(s) { return this.backupServerState(s) !== 'none'; }.bind(this)).map(function(s) { return s.id; });
+            if (!ids.length) return '';
+            return api.indexExportUrl(ids.length === this.servers.length ? '' : 'servers=' + ids.join(','));
+        },
+
+        async indexImportPick(ev) {
+            var file = ev.target.files && ev.target.files[0];
+            ev.target.value = '';
+            if (!file) return;
+            this.indexImport = { busy: true, result: null, error: '' };
+            try {
+                this.indexImport.result = await api.importIndex(file);
+                this.loadIndexStats();
+            } catch (e) {
+                this.indexImport.error = e.message;
+            } finally {
+                this.indexImport.busy = false;
+            }
         },
 
         async backupPickFile(ev) {
