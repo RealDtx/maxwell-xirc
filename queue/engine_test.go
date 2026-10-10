@@ -419,3 +419,56 @@ func TestUniqueDestPathLockedUsesPassedDir(t *testing.T) {
 		t.Fatalf("uniqueDestPathLocked = %q, want %q (passed dir, not live TempDir /b/.tmp)", got, want)
 	}
 }
+
+func TestEngine_RoutesOfferToMatchingDownload(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	dir := t.TempDir()
+	bus := irc.NewEventBus()
+	storageCfg := &config.StorageConfig{
+		DownloadsDir: filepath.Join(dir, "downloads"),
+		TempDir:      filepath.Join(dir, "temp"),
+		MinFreeSpace: "1000TB", // fail fast after routing; no real transfer
+	}
+	engine := NewEngine(store, bus, irc.NewManager(store, bus), storageCfg, 2)
+
+	offer := func(name string) {
+		engine.handleMessage(irc.Event{Type: irc.EventIRCMessage, ServerID: 1, Nick: "botnick",
+			Data: map[string]string{"type": "ctcp", "message": `DCC SEND "` + name + `" 3232235777 4500 2048`}})
+	}
+
+	// Pack 1 timed out earlier; we now wait for pack 2, but the bot serves pack 1.
+	old, _ := engine.queue.Add(1, "#c", "BotNick", 1, "Old File.mkv", 1, false, false, true)
+	engine.queue.MarkFailed(old.ID, "timeout")
+	cur, _ := engine.queue.Add(1, "#c", "BotNick", 2, "Current.mkv", 1, false, false, true)
+	engine.RegisterPendingRequest(cur.ID, 1, "BotNick")
+
+	offer("old_file.mkv")
+
+	if p := engine.GetPendingRequest(1, "BOTNICK"); p == nil || p.DownloadID != cur.ID {
+		t.Fatalf("expected pending request for download %d kept, got %+v", cur.ID, p)
+	}
+	if got, _ := store.GetDownload(cur.ID); got.Filename != "Current.mkv" {
+		t.Fatalf("current download renamed to %q", got.Filename)
+	}
+	if got, _ := store.GetDownload(old.ID); got.Filename != "old_file.mkv" || got.Status == "failed" && got.ErrorMessage == "timeout" {
+		t.Fatalf("expected offer routed to old download, got %+v", got)
+	}
+
+	// A cancelled download's file is ignored, the pending request stays.
+	gone, _ := engine.queue.Add(1, "#c", "BotNick", 3, "Gone.mkv", 1, false, false, true)
+	engine.queue.Cancel(gone.ID)
+	offer("Gone.mkv")
+	if got, _ := store.GetDownload(gone.ID); got.Status != "cancelled" {
+		t.Fatalf("cancelled download resurrected: %q", got.Status)
+	}
+	if p := engine.GetPendingRequest(1, "BotNick"); p == nil || p.DownloadID != cur.ID {
+		t.Fatalf("expected pending request kept after cancelled offer, got %+v", p)
+	}
+
+	// Cancelling the waiting download frees the bot's pending slot.
+	engine.CancelTransfer(cur.ID)
+	if p := engine.GetPendingRequest(1, "BotNick"); p != nil {
+		t.Fatalf("expected pending cleared on cancel, got %+v", p)
+	}
+}

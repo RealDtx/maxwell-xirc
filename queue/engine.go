@@ -94,8 +94,23 @@ func (e *Engine) SetRuntime(downloadsDir, tempDir, minFreeSpace string, maxConcu
 }
 
 // CancelTransfer interrupts an active TCP transfer for the given download ID, if one
-// is running. It is a no-op when no transfer is active (e.g. download is still queued).
+// is running. A request still waiting for the bot's DCC SEND is withdrawn from
+// the bot's queue and its pending slot freed.
 func (e *Engine) CancelTransfer(downloadID int64) {
+	e.mu.Lock()
+	var pending *PendingRequest
+	for key, p := range e.pendingByBot {
+		if p.DownloadID == downloadID {
+			pending = p
+			delete(e.pendingByBot, key)
+			break
+		}
+	}
+	e.mu.Unlock()
+	if pending != nil {
+		e.withdrawRequest(pending)
+	}
+
 	e.transferMu.Lock()
 	e.cancelledTransfers[downloadID] = true
 	tr := e.activeTransfers[downloadID]
@@ -130,7 +145,7 @@ func (e *Engine) Stop() {
 }
 
 func pendingKey(serverID int64, botNick string) string {
-	return fmt.Sprintf("%d:%s", serverID, botNick)
+	return fmt.Sprintf("%d:%s", serverID, strings.ToLower(botNick)) // IRC nicks are case-insensitive
 }
 
 func (e *Engine) RegisterPendingRequest(downloadID, serverID int64, botNick string) {
@@ -159,6 +174,7 @@ func (e *Engine) expirePendingRequests() {
 	e.mu.Unlock()
 
 	for _, pending := range expired {
+		e.withdrawRequest(pending)
 		msg := fmt.Sprintf("no response from bot %s within %s", pending.BotNick, pendingRequestTimeout)
 		log.Printf("expiring pending XDCC request for download %d: %s", pending.DownloadID, msg)
 		if err := e.queue.MarkFailed(pending.DownloadID, msg); err != nil {
@@ -172,6 +188,23 @@ func (e *Engine) expirePendingRequests() {
 				"message":  fmt.Sprintf("Download timed out: %s", msg),
 			},
 		})
+	}
+}
+
+// withdrawRequest asks the bot to drop an abandoned request (best-effort).
+// Otherwise the bot may serve it later, while we wait for a different pack.
+func (e *Engine) withdrawRequest(p *PendingRequest) {
+	if e.ircMgr == nil {
+		return
+	}
+	dl, err := e.store.GetDownload(p.DownloadID)
+	if err != nil || dl.PackNumber <= 0 {
+		return
+	}
+	if conn := e.ircMgr.GetConnection(p.ServerID); conn != nil {
+		if err := conn.RemovePack(p.BotNick, dl.PackNumber); err != nil {
+			log.Printf("failed to withdraw %s pack %d: %v", p.BotNick, dl.PackNumber, err)
+		}
 	}
 }
 
@@ -354,6 +387,40 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		log.Printf("failed to get download %d: %v", pending.DownloadID, err)
 		return
 	}
+	// The SEND is matched by bot only. A bot serving an older request first
+	// (timed out, retried, or from before a restart) would otherwise land
+	// under the wrong download.
+	if dl.Filename != "" && !sameFilename(dl.Filename, offer.Filename) {
+		other, err := e.downloadForOffer(dl, offer.Filename)
+		if err != nil {
+			log.Printf("failed to look up download for offer %q: %v", offer.Filename, err)
+		}
+		if other != nil {
+			// Keep waiting for the pack we actually asked for.
+			e.mu.Lock()
+			if e.pendingByBot[key] == nil {
+				e.pendingByBot[key] = pending
+			}
+			e.mu.Unlock()
+			if other.Status == "cancelled" {
+				log.Printf("ignoring DCC SEND of cancelled %q from %s", offer.Filename, ev.Nick)
+				return
+			}
+			log.Printf("DCC SEND %q from %s belongs to download %d, not %d", offer.Filename, ev.Nick, other.ID, dl.ID)
+			dl = other
+		} else {
+			e.bus.Publish(irc.Event{
+				Type:     irc.EventNotification,
+				ServerID: ev.ServerID,
+				Data: map[string]string{
+					"severity":    "warning",
+					"message":     fmt.Sprintf("Bot %s sent %q for pack %d instead of %q — the pack list was outdated", ev.Nick, offer.Filename, dl.PackNumber, dl.Filename),
+					"download_id": fmt.Sprintf("%d", dl.ID),
+				},
+			})
+		}
+	}
+
 	// Reconcile the file index with reality: the bot's offer is authoritative
 	// for what this pack actually contains. The upsert also evicts any stale
 	// entry that mapped this bot+pack to a different (expected) filename.
@@ -374,22 +441,23 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	dl.Filename = offer.Filename
 	dl.Filesize = offer.Size
 	dl.Status = "downloading"
+	dl.ErrorMessage = ""
 	startedAt := time.Now()
 	dl.StartedAt = &startedAt
 	if err := e.store.UpdateDownload(dl); err != nil {
-		log.Printf("failed to update download %d with offer details: %v", pending.DownloadID, err)
+		log.Printf("failed to update download %d with offer details: %v", dl.ID, err)
 	}
 
 	// Check disk space
 	st, _ := e.runtime()
 	destDir := st.DownloadsDir // File router will move it later
 	if err := os.MkdirAll(st.TempDir, 0755); err != nil {
-		e.queue.MarkFailed(pending.DownloadID, "failed to create temp dir: "+err.Error())
+		e.queue.MarkFailed(dl.ID, "failed to create temp dir: "+err.Error())
 		return
 	}
 
 	if err := dcc.CheckDiskSpace(destDir, offer.Size, st.MinFreeSpace); err != nil {
-		e.queue.MarkFailed(pending.DownloadID, err.Error())
+		e.queue.MarkFailed(dl.ID, err.Error())
 		e.bus.Publish(irc.Event{
 			Type: irc.EventNotification,
 			Data: map[string]string{
@@ -415,7 +483,7 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
-		e.runTransfer(pending.DownloadID, offer, destPath, resumeOffset)
+		e.runTransfer(dl.ID, offer, destPath, resumeOffset)
 	}()
 }
 
@@ -899,4 +967,32 @@ func (e *Engine) checkBotHintMessage(serverID int64, botNick, message string) {
 			break
 		}
 	}
+}
+
+// sameFilename compares names the way bots mangle them: case and the
+// space/underscore swap some bots apply to filenames in DCC SEND.
+func sameFilename(a, b string) bool {
+	norm := func(s string) string { return strings.ReplaceAll(s, " ", "_") }
+	return strings.EqualFold(norm(a), norm(b))
+}
+
+// downloadForOffer finds another download from the same bot that expects
+// filename and is not finished or running.
+// ponytail: scans all downloads; add a filtered query if the table gets big.
+func (e *Engine) downloadForOffer(dl *db.Download, filename string) (*db.Download, error) {
+	all, err := e.store.GetDownloads("")
+	if err != nil {
+		return nil, err
+	}
+	for i := range all {
+		o := &all[i]
+		if o.ID == dl.ID || o.ServerID != dl.ServerID || !strings.EqualFold(o.BotNick, dl.BotNick) || !sameFilename(o.Filename, filename) {
+			continue
+		}
+		switch o.Status {
+		case "queued", "failed", "cancelled":
+			return o, nil
+		}
+	}
+	return nil, nil
 }

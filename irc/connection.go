@@ -609,6 +609,16 @@ func (c *Connection) Search(searchChannel, command, query string) error {
 }
 
 func (c *Connection) RequestPack(channel, botNick string, packNumber int) error {
+	return c.xdcc(botNick, fmt.Sprintf("xdcc send #%d", packNumber))
+}
+
+// RemovePack withdraws a queued request for packNumber from the bot's queue,
+// so an abandoned request isn't served later in place of a newer one.
+func (c *Connection) RemovePack(botNick string, packNumber int) error {
+	return c.xdcc(botNick, fmt.Sprintf("xdcc remove %d", packNumber))
+}
+
+func (c *Connection) xdcc(botNick, msg string) error {
 	c.mu.RLock()
 	client := c.client
 	status := c.status
@@ -621,7 +631,6 @@ func (c *Connection) RequestPack(channel, botNick string, packNumber int) error 
 	if HasLineBreak(botNick) {
 		return fmt.Errorf("invalid bot nick %q", botNick)
 	}
-	msg := fmt.Sprintf("xdcc send #%d", packNumber)
 	client.Privmsg(botNick, msg)
 	return nil
 }
