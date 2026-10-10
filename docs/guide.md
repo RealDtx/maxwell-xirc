@@ -32,11 +32,13 @@ Switch any time with the Simple/Advanced buttons — nothing is lost either way.
 ## Search {#search}
 Use Search to find files bots are offering, either from the collected [passive index](#concepts) or with a live query.
 
-**How to use it:** pick **Index** or **Live**, type a query, and press Enter or Search. Results show as a table: Pack #, Filename, Size, Bot, Downloads (times requested), and an Actions column with a Download button. Click a column header to sort. Save a query with **Bookmark** and reuse it from the "Saved searches…" dropdown.
+**How to use it:** pick **Index** or **Live**, type a query, and press Enter or Search. Results show as a table: File, Size, Bot, Pack, First seen, Last seen, Server, Channel, and a Download button. Click a column header to sort. Save a query with **Bookmark** and reuse it from the "Saved searches…" dropdown.
 
 Live search targets the realm's configured search bot; if none is set, it auto-detects from the first reply. A search stops waiting after the realm's search timeout.
 
 Good to know: a row is only downloadable once xirc knows the bot nick and pack number — some raw or unparsed lines aren't. Admins see a "teach parser" link on unparsed rows to add a matching pattern on the spot (see [Settings → Patterns](#settings-patterns)). Requesting a pack queues it under [Downloads](#downloads); whether the file is actually kept or only counted is controlled by the "Download mode" toggle on the [Stats](#stats) page.
+
+**Sharing:** tick rows (or the header box for all) and press **Copy links (N)**, or use 🔗 on a single row. You get one `xirc://` link per pack — paste them anywhere; another xirc adds them with **Add links**. On plain `http://` the browser blocks clipboard access, so a box with the links pre-selected opens instead. **First seen / Last seen** show when the index first and most recently saw a pack; live search-bot rows show when they arrived.
 
 ## Downloads {#downloads}
 The Downloads view lists every pack you've requested and its progress.

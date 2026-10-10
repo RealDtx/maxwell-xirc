@@ -105,6 +105,8 @@ document.addEventListener('alpine:init', () => {
         searchQuery: '',
         realmSearchQuery: '',
         searchResults: [],
+        _searchSel: {},         // searchRowKey -> row, for "Copy links"
+        linksCopyText: null,    // fallback textarea when the clipboard API is unavailable
         patternTrainer: {
             open: false,
             rawLine: '',
@@ -722,6 +724,7 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this._searchSel = {};
             this.selectedUser = null;
             this._searchDisplayLimit = 200;
             const searchStarted = Date.now();
@@ -813,6 +816,7 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this._searchSel = {};
             this.searchTargets = [];
             this.selectedUser = null;
             this._searchDisplayLimit = 200;
@@ -975,6 +979,7 @@ document.addEventListener('alpine:init', () => {
             if (this.searchMode === mode) return;
             this.searchMode = mode;
             this.searchResults = [];
+            this._searchSel = {};
             this.searchTargets = [];
             this.searchBotWarning = null;
             if (mode === 'index') this.loadIndexStats();
@@ -986,6 +991,7 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this._searchSel = {};
             this.searchTargets = [];
             try {
                 const serverId = this.globalSearchServerId || null;
@@ -1023,6 +1029,7 @@ document.addEventListener('alpine:init', () => {
                 await api.clearIndex(serverId);
                 await this.loadIndexStats();
                 this.searchResults = [];
+                this._searchSel = {};
             } catch (e) {
                 console.error('clearSearchIndex error', e);
             }
@@ -1107,6 +1114,53 @@ document.addEventListener('alpine:init', () => {
         },
 
         sortedResults() { return this.displaySearchRows(); },
+
+        seenLabel(iso) {
+            if (!iso) return '-';
+            var rel = formatRelativeTime(iso);
+            if (rel) return rel;
+            var t = Date.parse(iso);
+            return isNaN(t) ? '-' : Math.floor((Date.now() - t) / 86400000) + 'd ago';
+        },
+
+        searchRowKey(r) {
+            return (r.server_id || 0) + ':' + (r.bot_nick || '') + ':' + r.pack_number + ':' + (r.filename || '');
+        },
+
+        searchRowLink(r) {
+            var srv = this.servers.find(function(s) { return s.id === r.server_id; });
+            return formatXircLink(r, srv && srv.host);
+        },
+
+        isSearchSel(r) { return !!this._searchSel[this.searchRowKey(r)]; },
+
+        toggleSearchSel(r) {
+            var sel = Object.assign({}, this._searchSel), k = this.searchRowKey(r);
+            if (sel[k]) delete sel[k]; else sel[k] = r;
+            this._searchSel = sel;
+        },
+
+        searchSelCount() { return Object.keys(this._searchSel).length; },
+
+        toggleSearchSelAll(on) {
+            var sel = {};
+            if (on) {
+                this.displaySearchRows().filter(this.canDownload).forEach(function(r) { sel[this.searchRowKey(r)] = r; }.bind(this));
+            }
+            this._searchSel = sel;
+        },
+
+        async copySearchLinks(rows) {
+            var text = rows.map(this.searchRowLink.bind(this)).filter(Boolean).join('\n');
+            if (!text) return;
+            try {
+                await navigator.clipboard.writeText(text); // undefined on plain http → falls to catch
+            } catch (e) {
+                this.linksCopyText = text;
+            }
+        },
+
+        copySelectedLinks() { this.copySearchLinks(Object.values(this._searchSel)); },
 
         realmSearchCount() {
             var serverID = this.activeServer;
@@ -1232,6 +1286,7 @@ document.addEventListener('alpine:init', () => {
             this._searchSince = null;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this._searchSel = {};
             this.searchQuery = '';
             this.selectedUser = null;
         },

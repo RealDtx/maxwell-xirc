@@ -96,3 +96,17 @@ func TestResolveServer(t *testing.T) {
 		}
 	}
 }
+
+// The UI builds links in JS (formatXircLink in web/js/search-results.js);
+// this is its literal output, so the two formatters can't drift apart.
+func TestParseJSFormattedLink(t *testing.T) {
+	got, bad := Parse("xirc://irc.example.net/%23example-downloads/%5BEx%5DBot/5?name=A+B.mkv&size=1.4G&first=2026-09-01T12%3A00%3A00Z&last=2026-10-09T08%3A13%3A00Z")
+	if len(bad) != 0 || len(got) != 1 {
+		t.Fatalf("Parse = %+v, %+v", got, bad)
+	}
+	l := got[0]
+	if l.Channel != "#example-downloads" || l.Bot != "[Ex]Bot" || l.Pack != 5 || l.Name != "A B.mkv" || l.Size != "1.4G" ||
+		!l.First.Equal(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)) || !l.Last.Equal(time.Date(2026, 10, 9, 8, 13, 0, 0, time.UTC)) {
+		t.Errorf("parsed %+v", l)
+	}
+}

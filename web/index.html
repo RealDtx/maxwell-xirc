@@ -283,6 +283,8 @@
                                     @click="clearSearchResults()"
                                     :disabled="searchResults.length === 0"
                                     title="Clear results">Clear</button>
+                            <button class="btn btn-sm" x-show="searchSelCount() > 0" @click="copySelectedLinks()"
+                                    x-text="'Copy links (' + searchSelCount() + ')'"></button>
                             <button class="btn btn-sm" @click="toggleSearchViewMode()" :title="searchViewMode === 'merged' ? 'Switch to grouped view' : 'Switch to merged view'">
                                 <span x-text="searchViewMode === 'merged' ? 'Group' : 'Merge'"></span>
                             </button>
@@ -352,10 +354,13 @@
                                 <table class="table">
                                     <thead>
                                         <tr>
+                                            <th style="width:24px;"><input type="checkbox" :checked="searchSelCount() > 0" @change="toggleSearchSelAll($event.target.checked)" title="Select all"></th>
                                             <th @click="sortBy('filename')"><div class="col-resize" style="width:360px;" x-text="'File' + sortIndicator('filename')"></div></th>
                                             <th @click="sortBy('filesize')"><div class="col-resize" x-text="'Size' + sortIndicator('filesize')"></div></th>
                                             <th @click="sortBy('bot_nick')"><div class="col-resize" x-text="'Bot' + sortIndicator('bot_nick')"></div></th>
                                             <th @click="sortBy('pack_number')"><div class="col-resize" x-text="'Pack' + sortIndicator('pack_number')"></div></th>
+                                            <th @click="sortBy('first_seen')"><div class="col-resize" x-text="'First seen' + sortIndicator('first_seen')"></div></th>
+                                            <th @click="sortBy('last_seen')"><div class="col-resize" x-text="'Last seen' + sortIndicator('last_seen')"></div></th>
                                             <th><div class="col-resize">Server</div></th>
                                             <th><div class="col-resize">Channel</div></th>
                                             <th></th>
@@ -364,13 +369,17 @@
                                     <tbody>
                                         <template x-for="(r, idx) in displaySearchRows()" :key="idx">
                                             <tr :title="r.filename || r.raw_line">
+                                                <td><input type="checkbox" :checked="isSearchSel(r)" @change="toggleSearchSel(r)" :disabled="!canDownload(r)"></td>
                                                 <td class="dl-filename-cell" x-text="r.filename || r.raw_line || '-'"></td>
                                                 <td style="white-space:nowrap;" x-text="r.size_display || '-'"></td>
                                                 <td x-text="r.bot_nick || '-'"></td>
                                                 <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
+                                                <td class="text-muted text-xs" style="white-space:nowrap;" :title="fmtDate(rowFirstSeen(r))" x-text="seenLabel(rowFirstSeen(r))"></td>
+                                                <td class="text-muted text-xs" style="white-space:nowrap;" :title="fmtDate(rowLastSeen(r))" x-text="seenLabel(rowLastSeen(r))"></td>
                                                 <td x-text="getServerName(r.server_id)"></td>
                                                 <td x-text="r.channel || '-'"></td>
                                                 <td>
+                                                    <button class="btn btn-sm" x-show="canDownload(r)" @click="copySearchLinks([r])" title="Copy xirc:// link">🔗</button>
                                                     <button class="btn btn-sm"
                                                             :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                             @click="downloadPack(r)"
@@ -402,21 +411,28 @@
                                             <table class="table" style="margin-top:4px;">
                                                 <thead>
                                                     <tr>
+                                                        <th style="width:24px;"><input type="checkbox" :checked="searchSelCount() > 0" @change="toggleSearchSelAll($event.target.checked)" title="Select all"></th>
                                                         <th><div class="col-resize" style="width:360px;">File</div></th>
                                                         <th><div class="col-resize">Size</div></th>
                                                         <th><div class="col-resize">Bot</div></th>
                                                         <th><div class="col-resize">Pack</div></th>
+                                                        <th @click="sortBy('first_seen')"><div class="col-resize" x-text="'First seen' + sortIndicator('first_seen')"></div></th>
+                                                        <th @click="sortBy('last_seen')"><div class="col-resize" x-text="'Last seen' + sortIndicator('last_seen')"></div></th>
                                                         <th></th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     <template x-for="(r, idx) in group.results" :key="idx">
                                                         <tr :title="r.filename || r.raw_line">
+                                                            <td><input type="checkbox" :checked="isSearchSel(r)" @change="toggleSearchSel(r)" :disabled="!canDownload(r)"></td>
                                                             <td class="dl-filename-cell" x-text="r.filename || r.raw_line || '-'"></td>
                                                             <td style="white-space:nowrap;" x-text="r.size_display || '-'"></td>
                                                             <td x-text="r.bot_nick || '-'"></td>
                                                             <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
+                                                            <td class="text-muted text-xs" style="white-space:nowrap;" :title="fmtDate(rowFirstSeen(r))" x-text="seenLabel(rowFirstSeen(r))"></td>
+                                                            <td class="text-muted text-xs" style="white-space:nowrap;" :title="fmtDate(rowLastSeen(r))" x-text="seenLabel(rowLastSeen(r))"></td>
                                                             <td>
+                                                                <button class="btn btn-sm" x-show="canDownload(r)" @click="copySearchLinks([r])" title="Copy xirc:// link">🔗</button>
                                                                 <button class="btn btn-sm"
                                                                         :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                                         @click="downloadPack(r)"
@@ -2526,6 +2542,18 @@
                 <button class="btn btn-sm" @click="fmExtractDialog = null">Cancel</button>
                 <button class="btn btn-sm btn-primary" @click="fmStartExtract()">Extract</button>
             </div>
+        </div>
+    </template>
+</div>
+
+<!-- Copy-links fallback (clipboard API unavailable on plain http) -->
+<div x-show="linksCopyText" x-cloak @keydown.escape.window="linksCopyText = null"
+     style="position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center;">
+    <template x-if="linksCopyText">
+        <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; width:640px; max-width:95vw; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <div style="font-weight:600;">Copy these links</div>
+            <textarea readonly rows="10" style="width:100%; font-family:monospace; font-size:12px;" x-init="$nextTick(() => $el.select())" x-text="linksCopyText"></textarea>
+            <div style="display:flex; justify-content:flex-end;"><button class="btn btn-sm" @click="linksCopyText = null">Close</button></div>
         </div>
     </template>
 </div>
