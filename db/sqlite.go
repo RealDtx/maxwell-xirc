@@ -647,17 +647,39 @@ func (s *SQLiteStore) SearchIndexedFiles(query string, serverID int64, channel s
 func (s *SQLiteStore) GetIndexStats(serverID int64) (*IndexStats, error) {
 	var stats IndexStats
 	var err error
-	// Per server, case-insensitive: the same nick or channel on two networks is two entries.
-	const q = "SELECT COUNT(*), COUNT(DISTINCT server_id || ':' || LOWER(bot_nick)), COUNT(DISTINCT server_id || ':' || LOWER(channel)) FROM indexed_files"
+	// Per server, case-insensitive: the same nick on two networks is two bots.
+	const q = "SELECT COUNT(*), COUNT(DISTINCT server_id || ':' || LOWER(bot_nick)) FROM indexed_files"
 	if serverID != 0 {
-		err = s.db.QueryRow(q+" WHERE server_id=?", serverID).Scan(&stats.TotalFiles, &stats.TotalBots, &stats.TotalChannels)
+		err = s.db.QueryRow(q+" WHERE server_id=?", serverID).Scan(&stats.TotalFiles, &stats.TotalBots)
 	} else {
-		err = s.db.QueryRow(q).Scan(&stats.TotalFiles, &stats.TotalBots, &stats.TotalChannels)
+		err = s.db.QueryRow(q).Scan(&stats.TotalFiles, &stats.TotalBots)
 	}
 	if err != nil {
 		return nil, err
 	}
+	if stats.TotalChannels, err = countDownloadChannels(s.db, serverID); err != nil {
+		return nil, err
+	}
 	return &stats, nil
+}
+
+// countDownloadChannels counts the realm download channels the index holds
+// packs from (per server, case-insensitive). Chat channels where search-bot
+// replies were indexed don't count. The inner DISTINCT runs on the covering
+// (server_id, channel, …) index, so only a handful of rows reach the join.
+// Shared by both stores: the SQL is portable.
+func countDownloadChannels(conn *sql.DB, serverID int64) (int64, error) {
+	where, args := "", []interface{}{}
+	if serverID != 0 {
+		where, args = " WHERE server_id=?", append(args, serverID)
+	}
+	var n int64
+	err := conn.QueryRow(`SELECT COUNT(*) FROM (
+		SELECT DISTINCT i.server_id, LOWER(i.channel) AS ch
+		FROM (SELECT DISTINCT server_id, channel FROM indexed_files`+where+`) i
+		JOIN realms r ON r.server_id = i.server_id AND LOWER(r.download_channel) = LOWER(i.channel)
+	) x`, args...).Scan(&n)
+	return n, err
 }
 
 func (s *SQLiteStore) ClearIndex(serverID int64) error {

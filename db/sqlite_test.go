@@ -1269,6 +1269,16 @@ func TestSQLiteStore_GetIndexStats_BotAndChannelCounts(t *testing.T) {
 		t.Fatalf("CreateServer failed: %v", err)
 	}
 
+	// Only realm download channels count; "#b" is a chat channel (search replies).
+	for _, r := range []*Realm{
+		{ServerID: srv.ID, Name: "#chat", DownloadChannel: "#A", Enabled: true},
+		{ServerID: srv2.ID, Name: "#chat", DownloadChannel: "#a", Enabled: true},
+	} {
+		if err := store.CreateRealm(r); err != nil {
+			t.Fatalf("CreateRealm failed: %v", err)
+		}
+	}
+
 	size := "1.4G"
 	seed := []IndexedFile{
 		{ServerID: srv.ID, Channel: "#a", BotNick: "bot1", Filename: "f1.mkv", Filesize: &size, RawLine: "r"},
@@ -1294,8 +1304,8 @@ func TestSQLiteStore_GetIndexStats_BotAndChannelCounts(t *testing.T) {
 	if stats.TotalBots != 3 {
 		t.Errorf("TotalBots = %d, want 3", stats.TotalBots)
 	}
-	if stats.TotalChannels != 3 {
-		t.Errorf("TotalChannels = %d, want 3", stats.TotalChannels)
+	if stats.TotalChannels != 2 {
+		t.Errorf("TotalChannels = %d, want 2", stats.TotalChannels)
 	}
 }
 

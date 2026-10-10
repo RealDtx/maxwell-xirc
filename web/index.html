@@ -298,7 +298,7 @@
                         </div>
                         <template x-if="searchMode === 'index'">
                             <div style="padding:2px 14px 8px; font-size:11px; color:var(--text-muted); display:flex; gap:8px; align-items:center;">
-                                <span title="Channels the index has packs from: download channels (announcements) plus channels you searched in (search-bot replies)" x-text="(indexStats.total_files || 0) + ' file(s) · ' + (indexStats.total_bots || 0) + ' bot(s) · ' + (indexStats.total_channels || 0) + ' channel(s)'"></span>
+                                <span title="Realm download channels the index has packs from" x-text="(indexStats.total_files || 0) + ' file(s) · ' + (indexStats.total_bots || 0) + ' bot(s) · ' + (indexStats.total_channels || 0) + ' channel(s)'"></span>
                                 <span>·</span>
                                 <button x-show="isAdmin" @click="clearSearchIndex()" class="btn btn-sm btn-danger" style="margin-left:auto;">Clear index</button>
                             </div>
