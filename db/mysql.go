@@ -265,6 +265,7 @@ func (s *MySQLStore) Migrate() error {
 			return fmt.Errorf("migration failed: %w\nSQL: %s", err, stmt)
 		}
 	}
+	mergeChatChannelRows(s.db, s.BulkMergeIndexedFiles)
 	return nil
 }
 
@@ -720,6 +721,10 @@ func (s *MySQLStore) EvictStaleIndexedFiles(serverID int64, botNick string, pack
 }
 
 func (s *MySQLStore) UpsertIndexedFile(f *IndexedFile) error {
+	channel, err := indexChannel(s.db, f.ServerID, f.Channel)
+	if err != nil {
+		return err
+	}
 	// Pack numbers rotate: the same bot re-uses #N for new content. Drop any
 	// entry still claiming this bot+pack under an older filename.
 	if f.PackNumber != nil {
@@ -728,7 +733,7 @@ func (s *MySQLStore) UpsertIndexedFile(f *IndexedFile) error {
 		}
 	}
 	now := time.Now().UTC()
-	_, err := s.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
 		ON DUPLICATE KEY UPDATE
@@ -738,7 +743,7 @@ func (s *MySQLStore) UpsertIndexedFile(f *IndexedFile) error {
 			raw_line=VALUES(raw_line),
 			hit_count=hit_count+1,
 			last_seen_at=VALUES(last_seen_at)`,
-		f.ServerID, f.Channel, f.BotNick, f.PackNumber, f.Filename, f.Filesize,
+		f.ServerID, channel, f.BotNick, f.PackNumber, f.Filename, f.Filesize,
 		f.DownloadsCount, f.RawLine, now, now,
 	)
 	return err
@@ -902,7 +907,11 @@ func (s *MySQLStore) BulkMergeIndexedFiles(files []IndexedFile) (MergeResult, er
 	defer tx.Rollback()
 	now := time.Now().UTC()
 	for i := range files {
-		f := &files[i]
+		fc := files[i]
+		f := &fc
+		if f.Channel, err = indexChannel(tx, f.ServerID, f.Channel); err != nil {
+			return res, err
+		}
 		first, last := mergeDates(f.FirstSeenAt, f.LastSeenAt, now)
 		if f.PackNumber != nil {
 			var newer int

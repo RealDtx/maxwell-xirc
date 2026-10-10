@@ -1454,3 +1454,73 @@ func TestSQLiteStore_ForEachIndexedFile(t *testing.T) {
 		t.Errorf("s2 = %d, want 3", got)
 	}
 }
+
+// Search-bot replies arrive in a realm's chat channel, announcements in its
+// download channel: both must land in one index row per pack.
+func TestSQLiteStore_IndexFilesChatChannelUnderDownloadChannel(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+	srv := &Server{Name: "srv", Host: "irc.example.net", Port: 6667, Nickname: "me", Enabled: true}
+	store.CreateServer(srv)
+	store.CreateRealm(&Realm{ServerID: srv.ID, Name: "#example-chat", DownloadChannel: "#example-downloads", Enabled: true})
+	p := func(n int) *int { return &n }
+
+	store.UpsertIndexedFile(&IndexedFile{ServerID: srv.ID, Channel: "#example-downloads", BotNick: "ExampleBot", PackNumber: p(5), Filename: "A.mkv", RawLine: "ad"})
+	store.UpsertIndexedFile(&IndexedFile{ServerID: srv.ID, Channel: "#Example-Chat", BotNick: "ExampleBot", PackNumber: p(5), Filename: "A.mkv", RawLine: "search"})
+	store.BulkMergeIndexedFiles([]IndexedFile{{ServerID: srv.ID, Channel: "#example-chat", BotNick: "ExampleBot", PackNumber: p(6), Filename: "B.mkv", RawLine: "link"}})
+	store.UpsertIndexedFile(&IndexedFile{ServerID: srv.ID, Channel: "#elsewhere", BotNick: "ExampleBot", PackNumber: p(7), Filename: "C.mkv", RawLine: "search"})
+
+	got := map[string]IndexedFile{}
+	store.ForEachIndexedFile(nil, func(f *IndexedFile) error { got[f.Filename] = *f; return nil })
+	if len(got) != 3 {
+		t.Fatalf("want 3 rows (A once), got %+v", got)
+	}
+	if got["A.mkv"].Channel != "#example-downloads" || got["A.mkv"].HitCount != 2 {
+		t.Errorf("A = %+v", got["A.mkv"])
+	}
+	if got["B.mkv"].Channel != "#example-downloads" {
+		t.Errorf("imported B channel = %q", got["B.mkv"].Channel)
+	}
+	if got["C.mkv"].Channel != "#elsewhere" {
+		t.Errorf("non-realm channel changed: %q", got["C.mkv"].Channel)
+	}
+}
+
+// Rows indexed under the chat channel before the fix are merged on startup.
+func TestSQLiteStore_MigrateMergesChatChannelRows(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+	srv := &Server{Name: "srv", Host: "irc.example.net", Port: 6667, Nickname: "me", Enabled: true}
+	store.CreateServer(srv)
+	store.CreateRealm(&Realm{ServerID: srv.ID, Name: "#example-chat", DownloadChannel: "#example-downloads", Enabled: true})
+	day := func(d int) string { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC).Format(rfc3339Fixed) }
+	for _, r := range []struct {
+		ch, file, first, last string
+	}{
+		{"#example-downloads", "A.mkv", day(5), day(8)},
+		{"#example-chat", "A.mkv", day(2), day(9)},
+		{"#example-chat", "C.mkv", day(3), day(3)},
+	} {
+		if _, err := store.db.Exec(`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, raw_line, first_seen_at, last_seen_at)
+			VALUES (?, ?, 'ExampleBot', NULL, ?, 'old', ?, ?)`, srv.ID, r.ch, r.file, r.first, r.last); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]IndexedFile{}
+	store.ForEachIndexedFile(nil, func(f *IndexedFile) error { got[f.Filename] = *f; return nil })
+	if len(got) != 2 || got["A.mkv"].Channel != "#example-downloads" || got["C.mkv"].Channel != "#example-downloads" {
+		t.Fatalf("after migrate = %+v", got)
+	}
+	a := got["A.mkv"]
+	if a.FirstSeenAt.Format(rfc3339Fixed) != day(2) || a.LastSeenAt.Format(rfc3339Fixed) != day(9) {
+		t.Errorf("A dates = %v .. %v", a.FirstSeenAt, a.LastSeenAt)
+	}
+	n := 0
+	store.ForEachIndexedFile(nil, func(*IndexedFile) error { n++; return nil })
+	if n != 2 {
+		t.Errorf("rows = %d, want 2", n)
+	}
+}

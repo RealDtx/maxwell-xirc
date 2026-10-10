@@ -54,7 +54,11 @@ func (s *SQLiteStore) Migrate() error {
 	if err := runMigrations(s.db); err != nil {
 		return err
 	}
-	return s.backfillIndexedFilesFTS()
+	if err := s.backfillIndexedFilesFTS(); err != nil {
+		return err
+	}
+	mergeChatChannelRows(s.db, s.BulkMergeIndexedFiles)
+	return nil
 }
 
 // backfillIndexedFilesFTS populates the indexed_files_fts index for rows
@@ -557,6 +561,10 @@ func (s *SQLiteStore) EvictStaleIndexedFiles(serverID int64, botNick string, pac
 }
 
 func (s *SQLiteStore) UpsertIndexedFile(f *IndexedFile) error {
+	channel, err := indexChannel(s.db, f.ServerID, f.Channel)
+	if err != nil {
+		return err
+	}
 	// Pack numbers rotate: the same bot re-uses #N for new content. Drop any
 	// entry still claiming this bot+pack under an older filename.
 	if f.PackNumber != nil {
@@ -565,7 +573,7 @@ func (s *SQLiteStore) UpsertIndexedFile(f *IndexedFile) error {
 		}
 	}
 	now := time.Now().UTC().Format(rfc3339Fixed)
-	_, err := s.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
 		ON CONFLICT(server_id, channel, bot_nick, filename) DO UPDATE SET
@@ -575,7 +583,7 @@ func (s *SQLiteStore) UpsertIndexedFile(f *IndexedFile) error {
 			raw_line=excluded.raw_line,
 			hit_count=hit_count+1,
 			last_seen_at=excluded.last_seen_at`,
-		f.ServerID, f.Channel, f.BotNick, f.PackNumber, f.Filename, f.Filesize,
+		f.ServerID, channel, f.BotNick, f.PackNumber, f.Filename, f.Filesize,
 		f.DownloadsCount, f.RawLine, now, now,
 	)
 	return err
@@ -750,7 +758,11 @@ func (s *SQLiteStore) BulkMergeIndexedFiles(files []IndexedFile) (MergeResult, e
 	defer tx.Rollback()
 	now := time.Now().UTC()
 	for i := range files {
-		f := &files[i]
+		fc := files[i]
+		f := &fc
+		if f.Channel, err = indexChannel(tx, f.ServerID, f.Channel); err != nil {
+			return res, err
+		}
 		first, last := mergeDates(f.FirstSeenAt, f.LastSeenAt, now)
 		fs, ls := first.Format(rfc3339Fixed), last.Format(rfc3339Fixed)
 		if f.PackNumber != nil {
