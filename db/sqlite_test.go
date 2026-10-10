@@ -1366,3 +1366,91 @@ func TestSQLiteStore_GetIndexStatsDetail(t *testing.T) {
 		t.Errorf("Bots[1] = %+v, want bot2 with no transfers", d.Bots[1])
 	}
 }
+func TestSQLiteStore_BulkMergeIndexedFiles(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+	srv := &Server{Name: "srv", Host: "irc.example.net", Port: 6667, Nickname: "me", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatal(err)
+	}
+	day := func(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) }
+	p := func(n int) *int { return &n }
+	sz := func(s string) *string { return &s }
+
+	// Local state: pack 1 = A.mkv seen days 5..8.
+	res, err := store.BulkMergeIndexedFiles([]IndexedFile{
+		{ServerID: srv.ID, Channel: "#example-downloads", BotNick: "ExampleBot", PackNumber: p(1), Filename: "A.mkv", Filesize: sz("1G"), RawLine: "l", FirstSeenAt: day(5), LastSeenAt: day(8)},
+	})
+	if err != nil || res != (MergeResult{Added: 1}) {
+		t.Fatalf("first merge = %+v, %v", res, err)
+	}
+
+	res, err = store.BulkMergeIndexedFiles([]IndexedFile{
+		// Same file, wider range, older size: dates widen, size stays (import is older).
+		{ServerID: srv.ID, Channel: "#example-downloads", BotNick: "ExampleBot", PackNumber: p(1), Filename: "A.mkv", Filesize: sz("2G"), RawLine: "l", FirstSeenAt: day(2), LastSeenAt: day(7)},
+		// Older export claims pack 1 is B.mkv: local A.mkv is newer → stale, skipped.
+		{ServerID: srv.ID, Channel: "#example-downloads", BotNick: "ExampleBot", PackNumber: p(1), Filename: "B.mkv", RawLine: "l", FirstSeenAt: day(1), LastSeenAt: day(3)},
+		// New file, no dates → now.
+		{ServerID: srv.ID, Channel: "#example-downloads", BotNick: "ExampleBot", PackNumber: p(2), Filename: "C.mkv", RawLine: "l"},
+	})
+	if err != nil || res != (MergeResult{Added: 1, Merged: 1, Stale: 1}) {
+		t.Fatalf("second merge = %+v, %v", res, err)
+	}
+
+	files, err := store.SearchIndexedFiles("a", srv.ID, "", 10)
+	if err != nil || len(files) != 1 {
+		t.Fatalf("search A = %+v, %v", files, err)
+	}
+	a := files[0]
+	if !a.FirstSeenAt.Equal(day(2)) || !a.LastSeenAt.Equal(day(8)) || *a.Filesize != "1G" || a.HitCount != 1 {
+		t.Errorf("merged A = first %v last %v size %s hits %d", a.FirstSeenAt, a.LastSeenAt, *a.Filesize, a.HitCount)
+	}
+	if b, _ := store.SearchIndexedFiles("b", srv.ID, "", 10); len(b) != 0 {
+		t.Errorf("stale B.mkv should not be imported, got %+v", b)
+	}
+
+	// Newer export: pack 1 is now D.mkv → replaces A.mkv.
+	res, err = store.BulkMergeIndexedFiles([]IndexedFile{
+		{ServerID: srv.ID, Channel: "#example-downloads", BotNick: "ExampleBot", PackNumber: p(1), Filename: "D.mkv", RawLine: "l", FirstSeenAt: day(9), LastSeenAt: day(9)},
+	})
+	if err != nil || res != (MergeResult{Added: 1}) {
+		t.Fatalf("third merge = %+v, %v", res, err)
+	}
+	if a, _ := store.SearchIndexedFiles("a", srv.ID, "", 10); len(a) != 0 {
+		t.Errorf("A.mkv should be evicted by newer D.mkv, got %+v", a)
+	}
+}
+
+func TestSQLiteStore_ForEachIndexedFile(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+	s1 := &Server{Name: "s1", Host: "irc.example.net", Port: 6667, Nickname: "me", Enabled: true}
+	s2 := &Server{Name: "s2", Host: "irc.example.org", Port: 6667, Nickname: "me", Enabled: true}
+	store.CreateServer(s1)
+	store.CreateServer(s2)
+	var batch []IndexedFile
+	for i := 1; i <= 7; i++ {
+		n := i
+		sid := s1.ID
+		if i%2 == 0 {
+			sid = s2.ID
+		}
+		batch = append(batch, IndexedFile{ServerID: sid, Channel: "#c", BotNick: "Bot", PackNumber: &n, Filename: fmt.Sprintf("f%d.mkv", i), RawLine: "l"})
+	}
+	if _, err := store.BulkMergeIndexedFiles(batch); err != nil {
+		t.Fatal(err)
+	}
+	count := func(ids []int64) int {
+		n := 0
+		if err := store.ForEachIndexedFile(ids, func(*IndexedFile) error { n++; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if got := count(nil); got != 7 {
+		t.Errorf("all = %d, want 7", got)
+	}
+	if got := count([]int64{s2.ID}); got != 3 {
+		t.Errorf("s2 = %d, want 3", got)
+	}
+}

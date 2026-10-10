@@ -50,6 +50,15 @@ const api = {
     configExportUrl(params) { return _apiBase + '/config/export' + (params ? '?' + params : ''); },
     configImportPreview(file)                 { return this.post('/config/import/preview', file); },
     configImportApply(file, def, decisions)   { return this.post('/config/import/apply', { file, default: def, decisions }); },
+    indexExportUrl(params) { return _apiBase + '/index/export' + (params ? '?' + params : ''); },
+    async importIndex(file) {
+        // JSON content type: the auth middleware only lets JSON-typed writes
+        // through (CSRF); the server sniffs the gzip body itself.
+        const res = await fetch(_apiBase + '/index/import', { method: 'POST', body: file, headers: { 'Content-Type': 'application/json' } });
+        const data = await res.json().catch(() => ({ error: res.statusText }));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+    },
 
     // IRC
     getIRCStatus()                    { return this.get('/irc/status'); },
@@ -118,6 +127,8 @@ const api = {
     // Downloads
     getDownloads(status)  { return this.get('/downloads' + (status ? '?status=' + status : '')); },
     requestDownload(req)  { return this.post('/downloads/request', req); },
+    previewLinks(text)    { return this.post('/links/preview', { text }); },
+    queueLinks(text)      { return this.post('/links/queue', { text }); },
     cancelDownload(id)    { return this.post('/downloads/cancel', { download_id: id }); },
     retryDownload(id)     { return this.post('/downloads/retry', { download_id: id }); },
     moveDownload(id)      { return this.post('/downloads/move', { download_id: id }); },

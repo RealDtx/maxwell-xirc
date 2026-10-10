@@ -737,6 +737,73 @@ func (s *SQLiteStore) EnforceIndexCap(maxFiles int64) (int64, error) {
 	return result.RowsAffected()
 }
 
+func (s *SQLiteStore) ForEachIndexedFile(serverIDs []int64, fn func(*IndexedFile) error) error {
+	return forEachIndexedFile(s.db, serverIDs, fn)
+}
+
+func (s *SQLiteStore) BulkMergeIndexedFiles(files []IndexedFile) (MergeResult, error) {
+	var res MergeResult
+	tx, err := s.db.Begin()
+	if err != nil {
+		return res, err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	for i := range files {
+		f := &files[i]
+		first, last := mergeDates(f.FirstSeenAt, f.LastSeenAt, now)
+		fs, ls := first.Format(rfc3339Fixed), last.Format(rfc3339Fixed)
+		if f.PackNumber != nil {
+			var newer int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM indexed_files
+				WHERE server_id=? AND bot_nick=? AND pack_number=? AND filename<>? AND last_seen_at>?`,
+				f.ServerID, f.BotNick, *f.PackNumber, f.Filename, ls).Scan(&newer); err != nil {
+				return res, err
+			}
+			if newer > 0 {
+				res.Stale++
+				continue
+			}
+			if _, err := tx.Exec(`DELETE FROM indexed_files WHERE server_id=? AND bot_nick=? AND pack_number=? AND filename<>?`,
+				f.ServerID, f.BotNick, *f.PackNumber, f.Filename); err != nil {
+				return res, err
+			}
+		}
+		var exists int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM indexed_files WHERE server_id=? AND channel=? AND bot_nick=? AND filename=?`,
+			f.ServerID, f.Channel, f.BotNick, f.Filename).Scan(&exists); err != nil {
+			return res, err
+		}
+		if _, err := tx.Exec(`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+			ON CONFLICT(server_id, channel, bot_nick, filename) DO UPDATE SET
+				pack_number=CASE WHEN excluded.last_seen_at > last_seen_at THEN excluded.pack_number ELSE pack_number END,
+				filesize=CASE WHEN excluded.last_seen_at > last_seen_at THEN excluded.filesize ELSE filesize END,
+				first_seen_at=MIN(first_seen_at, excluded.first_seen_at),
+				last_seen_at=MAX(last_seen_at, excluded.last_seen_at)`,
+			f.ServerID, f.Channel, f.BotNick, f.PackNumber, f.Filename, f.Filesize, f.DownloadsCount, f.RawLine, fs, ls); err != nil {
+			return res, err
+		}
+		if exists > 0 {
+			res.Merged++
+		} else {
+			res.Added++
+		}
+	}
+	return res, tx.Commit()
+}
+
+// mergeDates fills missing import dates: no last → now, no (or later) first → last.
+func mergeDates(first, last, now time.Time) (time.Time, time.Time) {
+	if last.IsZero() {
+		last = now
+	}
+	if first.IsZero() || first.After(last) {
+		first = last
+	}
+	return first.UTC(), last.UTC()
+}
+
 // --- Saved Searches ---
 
 func (s *SQLiteStore) GetSavedSearches() ([]SavedSearch, error) {

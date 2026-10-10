@@ -123,6 +123,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/index/stats", s.handleIndexStats)
 	s.mux.HandleFunc("/api/index/stats/detail", s.handleIndexStatsDetail)
 	s.mux.HandleFunc("/api/index/clear", s.handleClearIndex)
+	s.mux.HandleFunc("/api/index/export", s.handleIndexExport)
+	s.mux.HandleFunc("/api/index/import", s.handleIndexImport)
 
 	// Download endpoints
 	s.mux.HandleFunc("/api/downloads", s.handleGetDownloads)
@@ -135,6 +137,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/downloads/set-auto-extract", s.handleSetAutoExtract)
 	s.mux.HandleFunc("/api/downloads/targets", s.handleGetDownloadTargets)
 	s.mux.HandleFunc("/api/downloads/set-target", s.handleSetDownloadTarget)
+	s.mux.HandleFunc("/api/links/preview", s.handleLinksPreview)
+	s.mux.HandleFunc("/api/links/queue", s.handleLinksQueue)
 
 	// Library (categories) endpoints
 	s.mux.HandleFunc("/api/library", s.handleLibrary)

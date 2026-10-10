@@ -32,11 +32,13 @@ Switch any time with the Simple/Advanced buttons — nothing is lost either way.
 ## Search {#search}
 Use Search to find files bots are offering, either from the collected [passive index](#concepts) or with a live query.
 
-**How to use it:** pick **Index** or **Live**, type a query, and press Enter or Search. Results show as a table: Pack #, Filename, Size, Bot, Downloads (times requested), and an Actions column with a Download button. Click a column header to sort. Save a query with **Bookmark** and reuse it from the "Saved searches…" dropdown.
+**How to use it:** pick **Index** or **Live**, type a query, and press Enter or Search. Results show as a table: File, Size, Bot, Pack, First seen, Last seen, Server, Channel, and a Download button. Click a column header to sort. Save a query with **Bookmark** and reuse it from the "Saved searches…" dropdown.
 
 Live search targets the realm's configured search bot; if none is set, it auto-detects from the first reply. A search stops waiting after the realm's search timeout.
 
 Good to know: a row is only downloadable once xirc knows the bot nick and pack number — some raw or unparsed lines aren't. Admins see a "teach parser" link on unparsed rows to add a matching pattern on the spot (see [Settings → Patterns](#settings-patterns)). Requesting a pack queues it under [Downloads](#downloads); whether the file is actually kept or only counted is controlled by the "Download mode" toggle on the [Stats](#stats) page.
+
+**Sharing:** tick rows (or the header box for all) and press **Copy links (N)**, or use 🔗 on a single row. You get one `xirc://` link per pack — paste them anywhere; another xirc adds them with **Add links**. On plain `http://` the browser blocks clipboard access, so a box with the links pre-selected opens instead. **First seen / Last seen** show when the index first and most recently saw a pack; live search-bot rows show when they arrived.
 
 ## Downloads {#downloads}
 The Downloads view lists every pack you've requested and its progress.
@@ -46,6 +48,8 @@ Status moves through: **queued** → **downloading** → **processing** (file re
 **How to use it:** Cancel a queued or downloading item; Retry a failed or needs_action one. Admins can also reorder the queue with "Move to front", pick a specific destination folder before it starts (instead of the automatic one — see [Routing](#routing)), and toggle per-download auto-extract for archives. Click the folder icon to jump to a download's location in [Files](#files).
 
 Good to know: once a pack is requested, xirc waits up to one hour for the bot to actually send it before giving up and marking it failed.
+
+**Add links** (Search toolbar): paste `xirc://` links from another xirc or anywhere else and press **Check** — each link shows its network, pack, file, first/last seen and a status (*ok*, *unknown network*, *already queued*, *already downloaded*, *duplicate in paste*). Untick what you don't want and **Queue selected**. Links are matched to your servers by host, so the network must be configured here. **Direct download** in the same dialog queues packs by realm, bot and pack number (`5`, `5,7,9` or `5-8`, up to 50); without a filename the download shows the pack until the bot sends it. Scripts on a trusted network can queue links too — the API only accepts JSON: `curl -H 'Content-Type: application/json' -d '{"text":"xirc://…"}' http://<host>:8085/api/links/queue`.
 
 ## Routing, library and auto-extract {#routing}
 After a download finishes, maXwell IRC can sort it automatically instead of leaving it flat in the downloads folder. This is the **library**: a set of categories (series, show, movie, music, magazine, ebook, game, software), each matching by file extension and filename pattern, in priority order. A matched file is moved under the category's folder, with the destination path built from a template like `{title}/{season_dir}`. A file that matches nothing stays where it landed.
@@ -119,6 +123,8 @@ Export servers and realms (with all their channels) and system settings to a JSO
 **How to use it:** under Export, tick whole servers, single realms (their server comes along, holding only those realms) or "All", optionally System settings, then Export. Under Import, pick a file: a preview lists every item as *new*, *exists* (with the fields that would change) or *error*. Choose whether existing items are skipped or overwritten, override that per row (or exclude a row), then Apply — the result column shows what happened to each item.
 
 Good to know: passwords and channel keys are never exported, and an import never changes the ones already set — re-enter them after importing onto a new machine. Login/access settings (trusted networks, role, proxies) are never exported or imported. Import only adds or updates; nothing missing from the file is deleted. Settings fixed by an environment variable keep their current value.
+
+**Search index:** **Export index** downloads the index (for the servers ticked above) as a gzip file with one `xirc://` link per file. **Import index** merges such a file into this instance's index, keeping each file's first and last seen dates; where the file and the local index disagree about a pack, the more recently seen entry wins. Files are matched to servers by host — import the config first on a new machine. The index cap from System settings is applied afterwards.
 
 ## Access: login, roles, trusted networks {#access}
 Every account has a role: **admin** (Settings, all file-management actions, pattern edits, user management) or **user** (search, request downloads, browse and view files, read-only elsewhere). Anonymous visitors, before logging in, can still reach the login page and the app's static assets — every API action requires a session or a trusted network.

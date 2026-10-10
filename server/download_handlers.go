@@ -33,6 +33,39 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, downloads)
 }
 
+// downloadRequest is the body of POST /api/downloads/request; link queuing
+// builds the same request so both paths behave identically.
+type downloadRequest struct {
+	ServerID    int64  `json:"server_id"`
+	Channel     string `json:"channel"`
+	BotNick     string `json:"bot_nick"`
+	PackNumber  int    `json:"pack_number"`
+	Filename    string `json:"filename"`
+	Filesize    int64  `json:"filesize"`
+	StatsOnly   bool   `json:"stats_only"`
+	AutoExtract *bool  `json:"auto_extract"`
+	AutoSubdir  *bool  `json:"auto_subdir"`
+}
+
+// queueDownload adds a download with the same defaults as the request
+// endpoint. Callers pump the queue (TryDispatchQueued) afterwards.
+func (s *Server) queueDownload(req downloadRequest) (*db.Download, error) {
+	autoExtract := true
+	if req.AutoExtract != nil {
+		autoExtract = *req.AutoExtract
+	}
+	// Default auto_subdir to the library's auto-organize setting rather than
+	// always-on, so turning that off in Settings also changes new downloads.
+	autoSubdir := true
+	if s.library != nil {
+		autoSubdir = s.library.Get().AutoOrganize
+	}
+	if req.AutoSubdir != nil {
+		autoSubdir = *req.AutoSubdir
+	}
+	return s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly, autoExtract, autoSubdir)
+}
+
 func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -44,17 +77,7 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		ServerID    int64  `json:"server_id"`
-		Channel     string `json:"channel"`
-		BotNick     string `json:"bot_nick"`
-		PackNumber  int    `json:"pack_number"`
-		Filename    string `json:"filename"`
-		Filesize    int64  `json:"filesize"`
-		StatsOnly   bool   `json:"stats_only"`
-		AutoExtract *bool  `json:"auto_extract"`
-		AutoSubdir  *bool  `json:"auto_subdir"`
-	}
+	var req downloadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -74,21 +97,7 @@ func (s *Server) handleRequestDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	autoExtract := true
-	if req.AutoExtract != nil {
-		autoExtract = *req.AutoExtract
-	}
-	// Default auto_subdir to the library's auto-organize setting rather than
-	// always-on, so turning that off in Settings also changes new downloads.
-	autoSubdir := true
-	if s.library != nil {
-		autoSubdir = s.library.Get().AutoOrganize
-	}
-	if req.AutoSubdir != nil {
-		autoSubdir = *req.AutoSubdir
-	}
-
-	dl, err := s.engine.Queue().Add(req.ServerID, req.Channel, req.BotNick, req.PackNumber, req.Filename, req.Filesize, req.StatsOnly, autoExtract, autoSubdir)
+	dl, err := s.queueDownload(req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

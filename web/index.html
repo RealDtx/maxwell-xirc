@@ -283,6 +283,10 @@
                                     @click="clearSearchResults()"
                                     :disabled="searchResults.length === 0"
                                     title="Clear results">Clear</button>
+                            <button class="btn btn-sm" x-show="searchSelCount() > 0" @click="copySelectedLinks()"
+                                    x-text="'Copy links (' + searchSelCount() + ')'"></button>
+                            <button class="btn btn-sm" @click="openAddLinks()" :disabled="caps && !caps.downloads.ok"
+                                    title="Paste xirc:// links or request a pack directly">Add links</button>
                             <button class="btn btn-sm" @click="toggleSearchViewMode()" :title="searchViewMode === 'merged' ? 'Switch to grouped view' : 'Switch to merged view'">
                                 <span x-text="searchViewMode === 'merged' ? 'Group' : 'Merge'"></span>
                             </button>
@@ -352,10 +356,13 @@
                                 <table class="table">
                                     <thead>
                                         <tr>
+                                            <th style="width:24px;"><input type="checkbox" :checked="searchSelCount() > 0" @change="toggleSearchSelAll($event.target.checked)" title="Select all"></th>
                                             <th @click="sortBy('filename')"><div class="col-resize" style="width:360px;" x-text="'File' + sortIndicator('filename')"></div></th>
                                             <th @click="sortBy('filesize')"><div class="col-resize" x-text="'Size' + sortIndicator('filesize')"></div></th>
                                             <th @click="sortBy('bot_nick')"><div class="col-resize" x-text="'Bot' + sortIndicator('bot_nick')"></div></th>
                                             <th @click="sortBy('pack_number')"><div class="col-resize" x-text="'Pack' + sortIndicator('pack_number')"></div></th>
+                                            <th @click="sortBy('first_seen')"><div class="col-resize" x-text="'First seen' + sortIndicator('first_seen')"></div></th>
+                                            <th @click="sortBy('last_seen')"><div class="col-resize" x-text="'Last seen' + sortIndicator('last_seen')"></div></th>
                                             <th><div class="col-resize">Server</div></th>
                                             <th><div class="col-resize">Channel</div></th>
                                             <th></th>
@@ -364,13 +371,17 @@
                                     <tbody>
                                         <template x-for="(r, idx) in displaySearchRows()" :key="idx">
                                             <tr :title="r.filename || r.raw_line">
+                                                <td><input type="checkbox" :checked="isSearchSel(r)" @change="toggleSearchSel(r)" :disabled="!canDownload(r)"></td>
                                                 <td class="dl-filename-cell" x-text="r.filename || r.raw_line || '-'"></td>
                                                 <td style="white-space:nowrap;" x-text="r.size_display || '-'"></td>
                                                 <td x-text="r.bot_nick || '-'"></td>
                                                 <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
+                                                <td class="text-muted text-xs" style="white-space:nowrap;" :title="fmtDate(rowFirstSeen(r))" x-text="seenLabel(rowFirstSeen(r))"></td>
+                                                <td class="text-muted text-xs" style="white-space:nowrap;" :title="fmtDate(rowLastSeen(r))" x-text="seenLabel(rowLastSeen(r))"></td>
                                                 <td x-text="getServerName(r.server_id)"></td>
                                                 <td x-text="r.channel || '-'"></td>
                                                 <td>
+                                                    <button class="btn btn-sm" x-show="canDownload(r)" @click="copySearchLinks([r])" title="Copy xirc:// link">🔗</button>
                                                     <button class="btn btn-sm"
                                                             :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                             @click="downloadPack(r)"
@@ -402,21 +413,28 @@
                                             <table class="table" style="margin-top:4px;">
                                                 <thead>
                                                     <tr>
+                                                        <th style="width:24px;"><input type="checkbox" :checked="searchSelCount() > 0" @change="toggleSearchSelAll($event.target.checked)" title="Select all"></th>
                                                         <th><div class="col-resize" style="width:360px;">File</div></th>
                                                         <th><div class="col-resize">Size</div></th>
                                                         <th><div class="col-resize">Bot</div></th>
                                                         <th><div class="col-resize">Pack</div></th>
+                                                        <th @click="sortBy('first_seen')"><div class="col-resize" x-text="'First seen' + sortIndicator('first_seen')"></div></th>
+                                                        <th @click="sortBy('last_seen')"><div class="col-resize" x-text="'Last seen' + sortIndicator('last_seen')"></div></th>
                                                         <th></th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     <template x-for="(r, idx) in group.results" :key="idx">
                                                         <tr :title="r.filename || r.raw_line">
+                                                            <td><input type="checkbox" :checked="isSearchSel(r)" @change="toggleSearchSel(r)" :disabled="!canDownload(r)"></td>
                                                             <td class="dl-filename-cell" x-text="r.filename || r.raw_line || '-'"></td>
                                                             <td style="white-space:nowrap;" x-text="r.size_display || '-'"></td>
                                                             <td x-text="r.bot_nick || '-'"></td>
                                                             <td x-text="r.pack_number != null ? r.pack_number : '-'"></td>
+                                                            <td class="text-muted text-xs" style="white-space:nowrap;" :title="fmtDate(rowFirstSeen(r))" x-text="seenLabel(rowFirstSeen(r))"></td>
+                                                            <td class="text-muted text-xs" style="white-space:nowrap;" :title="fmtDate(rowLastSeen(r))" x-text="seenLabel(rowLastSeen(r))"></td>
                                                             <td>
+                                                                <button class="btn btn-sm" x-show="canDownload(r)" @click="copySearchLinks([r])" title="Copy xirc:// link">🔗</button>
                                                                 <button class="btn btn-sm"
                                                                         :class="isDownloadPending(r) && _downloadingKeys[(r.server_id||activeServer)+':'+r.pack_number]==='queued' ? 'btn-success' : 'btn-primary'"
                                                                         @click="downloadPack(r)"
@@ -1724,6 +1742,26 @@
                                     </div>
                                 </template>
                             </div>
+
+                            <div class="settings-card">
+                                <h3>Search index</h3>
+                                <div class="text-muted text-sm" style="margin-bottom:8px;">One <code>xirc://</code> link per indexed file (gzip). Uses the server selection above.</div>
+                                <a class="btn btn-primary" :href="indexExportHref() || null" :class="{ disabled: !indexExportHref() }"
+                                   :aria-disabled="!indexExportHref()" download>Export index</a>
+                                <div style="margin-top:12px;">
+                                    <label class="text-sm">Import index:
+                                        <input type="file" accept=".gz,.txt,application/gzip,text/plain" @change="indexImportPick($event)" :disabled="indexImport.busy" aria-label="Index file to import">
+                                    </label>
+                                    <span x-show="indexImport.busy" class="text-sm">Importing…</span>
+                                    <div x-show="indexImport.error" class="text-sm" style="color:var(--danger); margin-top:8px;" x-text="indexImport.error"></div>
+                                    <template x-if="indexImport.result">
+                                        <div class="text-sm" style="margin-top:8px;">
+                                            <span x-text="indexImport.result.added + ' added · ' + indexImport.result.merged + ' merged · ' + indexImport.result.stale + ' outdated · ' + indexImport.result.skipped_unknown_network + ' unknown network · ' + indexImport.result.invalid + ' invalid'"></span>
+                                            <div x-show="indexImport.result.skipped_unknown_network > 0" class="text-muted">Networks missing here — import the config first, then the index again.</div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
                         </div>
                     </template>
 
@@ -2528,6 +2566,81 @@
             </div>
         </div>
     </template>
+</div>
+
+<!-- Copy-links fallback (clipboard API unavailable on plain http) -->
+<div x-show="linksCopyText" x-cloak @keydown.escape.window="linksCopyText = null"
+     style="position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center;">
+    <template x-if="linksCopyText">
+        <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; width:640px; max-width:95vw; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <div style="font-weight:600;">Copy these links</div>
+            <textarea readonly rows="10" style="width:100%; font-family:monospace; font-size:12px;" x-init="$nextTick(() => $el.select())" x-text="linksCopyText"></textarea>
+            <div style="display:flex; justify-content:flex-end;"><button class="btn btn-sm" @click="linksCopyText = null">Close</button></div>
+        </div>
+    </template>
+</div>
+
+<!-- Add links: paste/preview/queue + direct download -->
+<div x-show="addLinks.open" x-cloak @keydown.escape.window="addLinks.open = false"
+     style="position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; width:900px; max-width:95vw; max-height:90vh; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px;">
+        <div style="display:flex; justify-content:space-between;"><strong>Add links</strong>
+            <button class="btn btn-sm" @click="addLinks.open = false">&times;</button></div>
+
+        <textarea rows="6" x-model="addLinks.text" placeholder="Paste xirc:// links — any text around them is ignored"
+                  style="width:100%; font-family:monospace; font-size:12px;"></textarea>
+        <div><button class="btn btn-sm btn-primary" @click="addLinksPreview()" :disabled="addLinks.busy || !addLinks.text.trim()">Check</button></div>
+
+        <template x-if="addLinks.rows">
+            <div>
+                <table class="table text-sm">
+                    <thead><tr><th></th><th>Network</th><th>Channel</th><th>Bot</th><th>Pack</th><th>File</th><th>Size</th><th>First seen</th><th>Last seen</th><th>Status</th></tr></thead>
+                    <tbody>
+                        <template x-for="r in addLinks.rows" :key="r.line">
+                            <tr>
+                                <td><input type="checkbox" :disabled="r.status !== 'ok'" :checked="!!addLinks.sel[r.line]"
+                                           @change="addLinks.sel[r.line] = $event.target.checked"></td>
+                                <td x-text="r.server_name || '-'"></td>
+                                <td x-text="r.channel"></td>
+                                <td x-text="r.bot"></td>
+                                <td x-text="r.pack"></td>
+                                <td class="dl-filename-cell" x-text="r.name || '-'"></td>
+                                <td x-text="r.size || '-'"></td>
+                                <td class="text-xs" :title="fmtDate(r.first)" x-text="seenLabel(r.first)"></td>
+                                <td class="text-xs" :title="fmtDate(r.last)" x-text="seenLabel(r.last)"></td>
+                                <td><span class="badge" :class="r.status === 'ok' ? 'badge-completed' : 'badge-failed'" x-text="r.status"></span></td>
+                            </tr>
+                        </template>
+                        <template x-for="e in addLinks.errors" :key="e.line">
+                            <tr><td></td><td colspan="8" class="text-xs" style="word-break:break-all;" x-text="e.line"></td>
+                                <td><span class="badge badge-failed" x-text="e.reason"></span></td></tr>
+                        </template>
+                    </tbody>
+                </table>
+                <button class="btn btn-sm btn-primary" @click="addLinksQueue()"
+                        :disabled="addLinks.busy || !Object.values(addLinks.sel).some(Boolean)">Queue selected</button>
+            </div>
+        </template>
+
+        <div class="settings-card">
+            <h3>Direct download</h3>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <select x-model="addLinks.realmId">
+                    <option value="">Realm…</option>
+                    <template x-for="r in realms" :key="r.id">
+                        <option :value="r.id" x-text="getServerName(r.server_id) + ' · ' + (r.display_name || r.name) + (r.download_channel ? ' (' + r.download_channel + ')' : '')"></option>
+                    </template>
+                </select>
+                <input type="text" x-model="addLinks.bot" placeholder="Bot nick" style="width:140px;">
+                <input type="text" x-model="addLinks.packs" placeholder="Pack: 5, 5,7 or 5-8" style="width:140px;">
+                <input type="text" x-model="addLinks.name" placeholder="Filename (optional, single pack)" style="flex:1; min-width:160px;">
+                <button class="btn btn-sm btn-primary" @click="addLinksDirect()" :disabled="addLinks.busy">Queue</button>
+            </div>
+        </div>
+
+        <div x-show="addLinks.error" class="text-sm" style="color:var(--danger);" x-text="addLinks.error"></div>
+        <div x-show="addLinks.result" class="text-sm" x-text="addLinks.result"></div>
+    </div>
 </div>
 
 <!-- Pattern Trainer Modal -->

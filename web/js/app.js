@@ -105,6 +105,10 @@ document.addEventListener('alpine:init', () => {
         searchQuery: '',
         realmSearchQuery: '',
         searchResults: [],
+        _searchSel: {},         // searchRowKey -> row, for "Copy links"
+        linksCopyText: null,    // fallback textarea when the clipboard API is unavailable
+        addLinks: { open: false, text: '', rows: null, errors: [], sel: {}, busy: false, result: '', error: '',
+                    realmId: '', bot: '', packs: '', name: '' },
         patternTrainer: {
             open: false,
             rawLine: '',
@@ -195,6 +199,7 @@ document.addEventListener('alpine:init', () => {
         // Settings - Realms (replaces settingsChannels)
         realms: [],
         settingsRealms: [],
+        indexImport: { busy: false, result: null, error: '' },
         backup: { srv: {}, realm: {}, settings: true, file: null, fileName: '', items: null,
                   def: 'skip', decisions: {}, results: null, open: {}, error: '', busy: false },
         realmForm: { id: null, server_id: null, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
@@ -722,6 +727,7 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this._searchSel = {};
             this.selectedUser = null;
             this._searchDisplayLimit = 200;
             const searchStarted = Date.now();
@@ -813,6 +819,7 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this._searchSel = {};
             this.searchTargets = [];
             this.selectedUser = null;
             this._searchDisplayLimit = 200;
@@ -975,6 +982,7 @@ document.addEventListener('alpine:init', () => {
             if (this.searchMode === mode) return;
             this.searchMode = mode;
             this.searchResults = [];
+            this._searchSel = {};
             this.searchTargets = [];
             this.searchBotWarning = null;
             if (mode === 'index') this.loadIndexStats();
@@ -986,6 +994,7 @@ document.addEventListener('alpine:init', () => {
             this.searchRunning = true;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this._searchSel = {};
             this.searchTargets = [];
             try {
                 const serverId = this.globalSearchServerId || null;
@@ -1023,6 +1032,7 @@ document.addEventListener('alpine:init', () => {
                 await api.clearIndex(serverId);
                 await this.loadIndexStats();
                 this.searchResults = [];
+                this._searchSel = {};
             } catch (e) {
                 console.error('clearSearchIndex error', e);
             }
@@ -1107,6 +1117,110 @@ document.addEventListener('alpine:init', () => {
         },
 
         sortedResults() { return this.displaySearchRows(); },
+
+        seenLabel(iso) {
+            if (!iso) return '-';
+            var rel = formatRelativeTime(iso);
+            if (rel) return rel;
+            var t = Date.parse(iso);
+            return isNaN(t) ? '-' : Math.floor((Date.now() - t) / 86400000) + 'd ago';
+        },
+
+        searchRowKey(r) {
+            return (r.server_id || 0) + ':' + (r.bot_nick || '') + ':' + r.pack_number + ':' + (r.filename || '');
+        },
+
+        searchRowLink(r) {
+            var srv = this.servers.find(function(s) { return s.id === r.server_id; });
+            return formatXircLink(r, srv && srv.host);
+        },
+
+        isSearchSel(r) { return !!this._searchSel[this.searchRowKey(r)]; },
+
+        toggleSearchSel(r) {
+            var sel = Object.assign({}, this._searchSel), k = this.searchRowKey(r);
+            if (sel[k]) delete sel[k]; else sel[k] = r;
+            this._searchSel = sel;
+        },
+
+        searchSelCount() { return Object.keys(this._searchSel).length; },
+
+        toggleSearchSelAll(on) {
+            var sel = {};
+            if (on) {
+                this.displaySearchRows().filter(this.canDownload).forEach(function(r) { sel[this.searchRowKey(r)] = r; }.bind(this));
+            }
+            this._searchSel = sel;
+        },
+
+        async copySearchLinks(rows) {
+            var text = rows.map(this.searchRowLink.bind(this)).filter(Boolean).join('\n');
+            if (!text) return;
+            try {
+                await navigator.clipboard.writeText(text); // undefined on plain http → falls to catch
+            } catch (e) {
+                this.linksCopyText = text;
+            }
+        },
+
+        copySelectedLinks() { this.copySearchLinks(Object.values(this._searchSel)); },
+
+        openAddLinks() {
+            this.addLinks = Object.assign(this.addLinks, { open: true, rows: null, errors: [], sel: {}, result: '', error: '' });
+        },
+
+        async addLinksPreview() {
+            var a = this.addLinks;
+            a.busy = true; a.error = ''; a.result = '';
+            try {
+                var res = await api.previewLinks(a.text);
+                a.rows = res.links || [];
+                a.errors = res.errors || [];
+                a.sel = {};
+                a.rows.forEach(function(r) { if (r.status === 'ok') a.sel[r.line] = true; });
+            } catch (e) {
+                a.error = e.message;
+            } finally {
+                a.busy = false;
+            }
+        },
+
+        async _addLinksSend(text) {
+            var a = this.addLinks;
+            a.busy = true; a.error = '';
+            try {
+                var res = await api.queueLinks(text);
+                a.result = res.queued + ' queued' + (res.skipped && res.skipped.length ? ', ' + res.skipped.length + ' skipped' : '');
+                this.loadDownloads();
+                return res;
+            } catch (e) {
+                a.error = e.message;
+            } finally {
+                a.busy = false;
+            }
+        },
+
+        async addLinksQueue() {
+            var a = this.addLinks;
+            var lines = (a.rows || []).filter(function(r) { return a.sel[r.line]; }).map(function(r) { return r.line; });
+            if (!lines.length) return;
+            if (await this._addLinksSend(lines.join('\n'))) await this.addLinksPreview(); // refresh statuses
+        },
+
+        async addLinksDirect() {
+            var a = this.addLinks;
+            var realm = this.realms.find(function(r) { return String(r.id) === String(a.realmId); });
+            var srv = realm && this.servers.find(function(s) { return s.id === realm.server_id; });
+            if (!realm || !srv) { a.error = 'Pick a realm'; return; }
+            if (!a.bot.trim()) { a.error = 'Enter the bot nick'; return; }
+            var spec = parsePackSpec(a.packs);
+            if (spec.error) { a.error = spec.error; return; }
+            var lines = spec.packs.map(function(n) {
+                return formatXircLink({ channel: realm.download_channel || realm.name, bot_nick: a.bot.trim(), pack_number: n,
+                    filename: spec.packs.length === 1 ? a.name.trim() : '' }, srv.host);
+            });
+            await this._addLinksSend(lines.join('\n'));
+        },
 
         realmSearchCount() {
             var serverID = this.activeServer;
@@ -1232,6 +1346,7 @@ document.addEventListener('alpine:init', () => {
             this._searchSince = null;
             this.searchBotWarning = null;
             this.searchResults = [];
+            this._searchSel = {};
             this.searchQuery = '';
             this.selectedUser = null;
         },
@@ -2786,6 +2901,28 @@ document.addEventListener('alpine:init', () => {
             if (realms.length) p.set('realms', realms.join(','));
             if (this.backup.settings) p.set('settings', '1');
             return api.configExportUrl(p.toString());
+        },
+
+        // Index export follows the server ticks of the config export above.
+        indexExportHref() {
+            var ids = this.servers.filter(function(s) { return this.backupServerState(s) !== 'none'; }.bind(this)).map(function(s) { return s.id; });
+            if (!ids.length) return '';
+            return api.indexExportUrl(ids.length === this.servers.length ? '' : 'servers=' + ids.join(','));
+        },
+
+        async indexImportPick(ev) {
+            var file = ev.target.files && ev.target.files[0];
+            ev.target.value = '';
+            if (!file) return;
+            this.indexImport = { busy: true, result: null, error: '' };
+            try {
+                this.indexImport.result = await api.importIndex(file);
+                this.loadIndexStats();
+            } catch (e) {
+                this.indexImport.error = e.message;
+            } finally {
+                this.indexImport.busy = false;
+            }
         },
 
         async backupPickFile(ev) {

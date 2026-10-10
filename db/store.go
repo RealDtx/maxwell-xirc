@@ -97,6 +97,16 @@ type Store interface {
 	// ASC) until the total is at or below the cap. maxFiles<=0 disables
 	// enforcement. Returns the number of rows evicted.
 	EnforceIndexCap(maxFiles int64) (int64, error)
+	// ForEachIndexedFile calls fn for every index entry (ascending id),
+	// limited to serverIDs when non-empty. Pages internally, so the whole
+	// index is never held in memory or in one long read transaction.
+	ForEachIndexedFile(serverIDs []int64, fn func(*IndexedFile) error) error
+	// BulkMergeIndexedFiles imports entries in one transaction, keeping their
+	// dates: first_seen_at takes the older, last_seen_at the newer value;
+	// size/pack follow the newer side; hit_count is untouched. A row whose
+	// bot+pack is held by a newer entry under another filename is skipped
+	// (Stale); an older such entry is deleted.
+	BulkMergeIndexedFiles(files []IndexedFile) (MergeResult, error)
 
 	// Parse Patterns
 	GetParsePatterns() ([]ParsePattern, error)
