@@ -156,3 +156,12 @@ type IndexStats struct {
 	TotalBots     int64 `json:"total_bots"`
 	TotalChannels int64 `json:"total_channels"`
 }
+
+// MergeResult counts what BulkMergeIndexedFiles did: new rows, rows merged
+// into an existing entry, and rows skipped because a newer entry maps the
+// same bot+pack to another file.
+type MergeResult struct {
+	Added  int `json:"added"`
+	Merged int `json:"merged"`
+	Stale  int `json:"stale"`
+}

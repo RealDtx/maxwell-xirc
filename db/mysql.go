@@ -886,6 +886,63 @@ func (s *MySQLStore) EnforceIndexCap(maxFiles int64) (int64, error) {
 	return result.RowsAffected()
 }
 
+func (s *MySQLStore) ForEachIndexedFile(serverIDs []int64, fn func(*IndexedFile) error) error {
+	return forEachIndexedFile(s.db, serverIDs, fn)
+}
+
+func (s *MySQLStore) BulkMergeIndexedFiles(files []IndexedFile) (MergeResult, error) {
+	var res MergeResult
+	tx, err := s.db.Begin()
+	if err != nil {
+		return res, err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	for i := range files {
+		f := &files[i]
+		first, last := mergeDates(f.FirstSeenAt, f.LastSeenAt, now)
+		if f.PackNumber != nil {
+			var newer int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM indexed_files
+				WHERE server_id=? AND bot_nick=? AND pack_number=? AND filename<>? AND last_seen_at>?`,
+				f.ServerID, f.BotNick, *f.PackNumber, f.Filename, last).Scan(&newer); err != nil {
+				return res, err
+			}
+			if newer > 0 {
+				res.Stale++
+				continue
+			}
+			if _, err := tx.Exec(`DELETE FROM indexed_files WHERE server_id=? AND bot_nick=? AND pack_number=? AND filename<>?`,
+				f.ServerID, f.BotNick, *f.PackNumber, f.Filename); err != nil {
+				return res, err
+			}
+		}
+		var exists int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM indexed_files WHERE server_id=? AND channel=? AND bot_nick=? AND filename=?`,
+			f.ServerID, f.Channel, f.BotNick, f.Filename).Scan(&exists); err != nil {
+			return res, err
+		}
+		// Order matters: MySQL evaluates these left to right, and later
+		// assignments see earlier ones — last_seen_at must be updated last.
+		if _, err := tx.Exec(`INSERT INTO indexed_files (server_id, channel, bot_nick, pack_number, filename, filesize, downloads_count, raw_line, hit_count, first_seen_at, last_seen_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+			ON DUPLICATE KEY UPDATE
+				pack_number=IF(VALUES(last_seen_at) > last_seen_at, VALUES(pack_number), pack_number),
+				filesize=IF(VALUES(last_seen_at) > last_seen_at, VALUES(filesize), filesize),
+				first_seen_at=LEAST(first_seen_at, VALUES(first_seen_at)),
+				last_seen_at=GREATEST(last_seen_at, VALUES(last_seen_at))`,
+			f.ServerID, f.Channel, f.BotNick, f.PackNumber, f.Filename, f.Filesize, f.DownloadsCount, f.RawLine, first, last); err != nil {
+			return res, err
+		}
+		if exists > 0 {
+			res.Merged++
+		} else {
+			res.Added++
+		}
+	}
+	return res, tx.Commit()
+}
+
 // --- Saved Searches ---
 
 func (s *MySQLStore) GetSavedSearches() ([]SavedSearch, error) {

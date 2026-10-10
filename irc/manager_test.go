@@ -92,8 +92,14 @@ func (m *mockStore) ClearIndex(serverID int64) error { return nil }
 func (m *mockStore) GetIndexStatsDetail() (*db.IndexStatsDetail, error) {
 	return &db.IndexStatsDetail{}, nil
 }
-func (m *mockStore) PruneSearchResults(olderThan time.Time) (int64, error)    { return 0, nil }
-func (m *mockStore) EnforceIndexCap(maxFiles int64) (int64, error)            { return 0, nil }
+func (m *mockStore) PruneSearchResults(olderThan time.Time) (int64, error) { return 0, nil }
+func (m *mockStore) EnforceIndexCap(maxFiles int64) (int64, error)         { return 0, nil }
+func (m *mockStore) ForEachIndexedFile(serverIDs []int64, fn func(*db.IndexedFile) error) error {
+	return nil
+}
+func (m *mockStore) BulkMergeIndexedFiles(files []db.IndexedFile) (db.MergeResult, error) {
+	return db.MergeResult{}, nil
+}
 func (m *mockStore) Close() error                                             { return nil }
 func (m *mockStore) Migrate() error                                           { return nil }
 func (m *mockStore) CreateUser(u *db.User) error                              { return nil }
