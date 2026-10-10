@@ -3,10 +3,12 @@ package server
 import (
 	"bufio"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/RealDtx/maxwell-irc/db"
@@ -14,10 +16,35 @@ import (
 )
 
 const (
-	maxIndexImportBytes   = 128 << 20 // upload, as sent (gzip or text)
-	maxIndexImportDecoded = 1 << 30   // after gunzip: guards against gzip bombs
-	indexImportBatch      = 1000
+	maxIndexImportBytes = 128 << 20 // upload, as sent (gzip or text)
+	indexImportBatch    = 1000
 )
+
+// maxIndexImportDecoded caps the gunzipped size (gzip bombs); ~200 B per
+// exported link makes this ~1.3M rows, well above the default index cap.
+// A var so tests can lower it.
+var maxIndexImportDecoded int64 = 256 << 20
+
+var errImportTooLarge = errors.New("import file too large after decompression")
+
+// cappedReader fails once more than n bytes were read, unlike io.LimitReader,
+// which would end silently and report a truncated import as success.
+type cappedReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.n < 0 {
+		return 0, errImportTooLarge
+	}
+	k, err := c.r.Read(p)
+	c.n -= int64(k)
+	if c.n < 0 {
+		return k, errImportTooLarge
+	}
+	return k, err
+}
 
 func (s *Server) handleIndexExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -94,7 +121,7 @@ func (s *Server) handleIndexImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer gz.Close()
-		src = io.LimitReader(gz, maxIndexImportDecoded)
+		src = &cappedReader{r: gz, n: maxIndexImportDecoded}
 	}
 
 	servers, err := s.store.GetServers()
@@ -120,7 +147,11 @@ func (s *Server) handleIndexImport(w http.ResponseWriter, r *http.Request) {
 	sc := bufio.NewScanner(src)
 	sc.Buffer(make([]byte, 64*1024), 64*1024)
 	for sc.Scan() {
-		parsed, bad := links.Parse(sc.Text())
+		line := sc.Text()
+		if !strings.Contains(strings.ToLower(line), "xirc://") {
+			continue // cheap skip: non-link lines (or junk) never hit the parser
+		}
+		parsed, bad := links.Parse(line)
 		res.Invalid += len(bad)
 		for _, l := range parsed {
 			srv, seen := byHost[l.Host]
@@ -153,7 +184,11 @@ func (s *Server) handleIndexImport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		writeError(w, http.StatusBadRequest, "reading import: "+err.Error())
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("reading import: %v (%d rows imported before the error)", err, res.Added+res.Merged))
+		return
+	}
+	if res == (indexImportResult{}) && len(batch) == 0 {
+		writeError(w, http.StatusBadRequest, "no xirc:// links found")
 		return
 	}
 	if err := flush(); err != nil {

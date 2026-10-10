@@ -52,7 +52,9 @@ const api = {
     configImportApply(file, def, decisions)   { return this.post('/config/import/apply', { file, default: def, decisions }); },
     indexExportUrl(params) { return _apiBase + '/index/export' + (params ? '?' + params : ''); },
     async importIndex(file) {
-        const res = await fetch(_apiBase + '/index/import', { method: 'POST', body: file });
+        // JSON content type: the auth middleware only lets JSON-typed writes
+        // through (CSRF); the server sniffs the gzip body itself.
+        const res = await fetch(_apiBase + '/index/import', { method: 'POST', body: file, headers: { 'Content-Type': 'application/json' } });
         const data = await res.json().catch(() => ({ error: res.statusText }));
         if (!res.ok) throw new Error(data.error || res.statusText);
         return data;

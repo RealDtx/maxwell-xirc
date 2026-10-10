@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -61,6 +62,7 @@ func (s *Server) resolveLinks(text string) ([]linkRow, []links.LineError, error)
 		return nil, nil, err
 	}
 	rows := make([]linkRow, 0, len(parsed))
+	seen := map[string]bool{} // server:bot:pack already in this paste
 	for _, l := range parsed {
 		row := linkRow{Line: links.Format(l), Channel: l.Channel, Bot: l.Bot, Pack: l.Pack, Name: l.Name, Size: l.Size, Status: "ok"}
 		if !l.First.IsZero() {
@@ -75,6 +77,11 @@ func (s *Server) resolveLinks(text string) ([]linkRow, []links.LineError, error)
 		} else {
 			row.ServerID, row.ServerName = srv.ID, srv.Name
 			row.Status = duplicateStatus(dls, srv.ID, l)
+			key := fmt.Sprintf("%d:%s:%d", srv.ID, strings.ToLower(l.Bot), l.Pack)
+			if row.Status == "ok" && seen[key] {
+				row.Status = "duplicate in paste"
+			}
+			seen[key] = true
 		}
 		rows = append(rows, row)
 	}

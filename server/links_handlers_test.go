@@ -78,3 +78,24 @@ func TestLinksPreviewAndQueue(t *testing.T) {
 		t.Errorf("want 1 download, got %d", len(dls))
 	}
 }
+
+// One paste naming the same pack twice (e.g. with and without a filename)
+// must queue it once.
+func TestLinksQueueDedupesWithinPaste(t *testing.T) {
+	srv, store, cleanup := newTestServerWithEngine(t)
+	defer cleanup()
+	sv := &db.Server{Name: "Example", Host: "irc.example.net", Port: 6667, Nickname: "me", Enabled: true}
+	store.CreateServer(sv)
+	text := "xirc://irc.example.net/%23c/ExampleBot/5\nxirc://irc.example.net/%23c/examplebot/5?name=A.mkv\n"
+
+	w := postLinks(t, srv, "/api/links/preview", text)
+	var pv struct{ Links []linkRow }
+	json.Unmarshal(w.Body.Bytes(), &pv)
+	if len(pv.Links) != 2 || pv.Links[0].Status != "ok" || pv.Links[1].Status != "duplicate in paste" {
+		t.Fatalf("preview = %+v", pv.Links)
+	}
+	postLinks(t, srv, "/api/links/queue", text)
+	if dls, _ := store.GetDownloads(""); len(dls) != 1 {
+		t.Fatalf("want 1 download, got %d", len(dls))
+	}
+}

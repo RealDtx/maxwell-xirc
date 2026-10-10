@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RealDtx/maxwell-irc/config"
 	"github.com/RealDtx/maxwell-irc/db"
 )
 
@@ -77,5 +79,51 @@ func TestIndexImportRejectsBrokenGzip(t *testing.T) {
 	srv.Handler().ServeHTTP(w, httptest.NewRequest("POST", "/api/index/import", bytes.NewReader([]byte{0x1f, 0x8b, 0, 1, 2, 3})))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("broken gzip: status %d, want 400", w.Code)
+	}
+}
+
+func TestIndexImportRejectsFilesWithoutLinks(t *testing.T) {
+	srv, _, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, httptest.NewRequest("POST", "/api/index/import", strings.NewReader("just some\nnotes\n")))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("no links: status %d, want 400", w.Code)
+	}
+}
+
+func TestIndexImportRejectsOversizedDecompression(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	store.CreateServer(&db.Server{Name: "Example", Host: "irc.example.net", Port: 6667, Nickname: "me", Enabled: true})
+	old := maxIndexImportDecoded
+	maxIndexImportDecoded = 1 << 10
+	defer func() { maxIndexImportDecoded = old }()
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	for i := 1; i <= 100; i++ {
+		fmt.Fprintf(gz, "xirc://irc.example.net/%%23c/ExampleBot/%d?name=F%d.mkv\n", i, i)
+	}
+	gz.Close()
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, httptest.NewRequest("POST", "/api/index/import", &buf))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("over decoded limit: status %d, want 400 (%s)", w.Code, w.Body)
+	}
+}
+
+// The UI uploads through the auth middleware, which only lets JSON-typed
+// writes through (CSRF); the handler must still sniff the gzip body.
+func TestIndexImportThroughAuthWithJSONContentType(t *testing.T) {
+	srv, store := newAuthTestServer(t, config.AuthConfig{TrustedNetworks: []string{"192.168.1.0/24"}})
+	store.CreateServer(&db.Server{Name: "Example", Host: "irc.example.net", Port: 6667, Nickname: "me", Enabled: true})
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	gz.Write([]byte("xirc://irc.example.net/%23c/ExampleBot/1?name=A.mkv\n"))
+	gz.Close()
+	w := do(srv, "POST", "/api/index/import", "192.168.1.5:4000", map[string]string{"Content-Type": "application/json"}, buf.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body)
 	}
 }

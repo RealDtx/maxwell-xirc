@@ -51,7 +51,7 @@ func Format(l Link) string {
 	return s
 }
 
-var tokenRE = regexp.MustCompile(`(?i)(?:web\+)?xirc://[^\s<>"']+`)
+var tokenRE = regexp.MustCompile("(?i)(?:web\\+)?xirc://[^\\s<>\"'`]+")
 
 // Parse extracts every xirc:// (or web+xirc://) link from arbitrary text.
 // Malformed links are returned as LineErrors; exact duplicates collapse.
@@ -60,7 +60,7 @@ func Parse(text string) ([]Link, []LineError) {
 	var bad []LineError
 	seen := map[string]bool{}
 	for _, tok := range tokenRE.FindAllString(text, -1) {
-		tok = strings.TrimRight(tok, ".,;)") // punctuation from surrounding prose
+		tok = strings.TrimRight(tok, ".,;:!?)]}>»") // punctuation and markup from surrounding chat
 		l, err := parseOne(tok)
 		if err != nil {
 			bad = append(bad, LineError{Line: tok, Reason: err.Error()})

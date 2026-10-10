@@ -110,3 +110,19 @@ func TestParseJSFormattedLink(t *testing.T) {
 		t.Errorf("parsed %+v", l)
 	}
 }
+
+func TestParseChatMarkup(t *testing.T) {
+	for _, s := range []string{
+		"`xirc://irc.example.net/%23c/ExampleBot/5`",
+		"see xirc://irc.example.net/%23c/ExampleBot/5!",
+		"[xirc://irc.example.net/%23c/ExampleBot/5]",
+		"<xirc://irc.example.net/%23c/ExampleBot/5>",
+		"«xirc://irc.example.net/%23c/ExampleBot/5»",
+		"is it xirc://irc.example.net/%23c/ExampleBot/5?",
+	} {
+		got, bad := Parse(s)
+		if len(bad) != 0 || len(got) != 1 || got[0].Pack != 5 || got[0].Bot != "ExampleBot" {
+			t.Errorf("Parse(%q) = %+v, %+v", s, got, bad)
+		}
+	}
+}
