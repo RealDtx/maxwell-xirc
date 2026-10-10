@@ -135,6 +135,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/downloads/set-auto-extract", s.handleSetAutoExtract)
 	s.mux.HandleFunc("/api/downloads/targets", s.handleGetDownloadTargets)
 	s.mux.HandleFunc("/api/downloads/set-target", s.handleSetDownloadTarget)
+	s.mux.HandleFunc("/api/links/preview", s.handleLinksPreview)
+	s.mux.HandleFunc("/api/links/queue", s.handleLinksQueue)
 
 	// Library (categories) endpoints
 	s.mux.HandleFunc("/api/library", s.handleLibrary)

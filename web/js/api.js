@@ -118,6 +118,8 @@ const api = {
     // Downloads
     getDownloads(status)  { return this.get('/downloads' + (status ? '?status=' + status : '')); },
     requestDownload(req)  { return this.post('/downloads/request', req); },
+    previewLinks(text)    { return this.post('/links/preview', { text }); },
+    queueLinks(text)      { return this.post('/links/queue', { text }); },
     cancelDownload(id)    { return this.post('/downloads/cancel', { download_id: id }); },
     retryDownload(id)     { return this.post('/downloads/retry', { download_id: id }); },
     moveDownload(id)      { return this.post('/downloads/move', { download_id: id }); },
