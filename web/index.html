@@ -1604,7 +1604,7 @@
                                         </div>
                                         <div class="form-group">
                                             <label>Stay in each channel (aggressive, minutes)</label>
-                                            <input type="number" min="0" max="1440" x-model.number="systemForm.discovery.aggressive_stay_minutes"
+                                            <input type="number" min="0" max="1440" step="any" x-model.number="systemForm.discovery.aggressive_stay_minutes"
                                                    :disabled="systemLocked('discovery.aggressive_stay_seconds')"
                                                    :title="systemLocked('discovery.aggressive_stay_seconds') ? 'Set by environment variable ' + systemEnvVar('discovery.aggressive_stay_seconds') : ''">
                                         </div>
@@ -2411,7 +2411,7 @@
                                     @click="cancelDiscovery(activeServer)">Stop</button>
                         </div>
                         <div x-show="discoveryRunning(activeServer)" style="color:var(--text-muted); margin-bottom:8px;"
-                             x-text="((discovery[activeServer] || {}).scan || {}).state === 'listing' ? 'Listing channels...' : 'Joined ' + ((discovery[activeServer] || {}).scan.joined || 0) + ' / ' + ((discovery[activeServer] || {}).scan.total || 0)"></div>
+                             x-text="((discovery[activeServer] || {}).scan || {}).state === 'listing' ? 'Listing channels...' : 'Joined ' + (((discovery[activeServer] || {}).scan || {}).joined || 0) + ' / ' + (((discovery[activeServer] || {}).scan || {}).total || 0)"></div>
                         <div x-show="!((discovery[activeServer] || {}).channels || []).length" style="color:var(--text-muted);">No channels discovered yet.</div>
                         <table x-show="((discovery[activeServer] || {}).channels || []).length" style="width:100%; border-collapse:collapse;">
                             <thead>

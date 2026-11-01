@@ -483,10 +483,12 @@ document.addEventListener('alpine:init', () => {
         // --- Channel discovery ---
 
         async loadDiscovery(serverId) {
-            const r = await api.getDiscovery(serverId);
-            this.discovery = Object.assign({}, this.discovery, {
-                [serverId]: { channels: r.channels || [], scan: r.scan || {} }
-            });
+            try {
+                const r = await api.getDiscovery(serverId);
+                this.discovery = Object.assign({}, this.discovery, {
+                    [serverId]: { channels: r.channels || [], scan: r.scan || {} }
+                });
+            } catch (e) { console.error('loadDiscovery', e); }
         },
 
         async loadDiscoveryUnseen() {
@@ -2849,7 +2851,7 @@ document.addEventListener('alpine:init', () => {
                 discovery: {
                     keywords: ((s.discovery || {}).keywords || []).join(', '),
                     normal_stay_seconds: (s.discovery || {}).normal_stay_seconds ?? 0,
-                    aggressive_stay_minutes: Math.round(((s.discovery || {}).aggressive_stay_seconds ?? 1800) / 60),
+                    aggressive_stay_minutes: ((s.discovery || {}).aggressive_stay_seconds ?? 1800) / 60,
                 },
             };
         },
