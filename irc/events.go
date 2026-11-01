@@ -18,6 +18,7 @@ const (
 	EventRealmUpdated      EventType = "realm_updated"
 	EventCapabilities      EventType = "capabilities"
 	EventFileExtract       EventType = "file_extract"
+	EventDiscovery         EventType = "discovery"
 )
 
 // ErrorEvent is the payload for EventError bus events.
