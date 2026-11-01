@@ -295,6 +295,7 @@ func (s *Scanner) offer(sc *scan, e ListEntry) {
 	if kw == "" && !aggressive {
 		return
 	}
+	sc.skip[name] = true // de-dup repeated 322 lines
 	c := &cand{name: name, users: e.Users, keyword: kw}
 	clue(c, e.Topic)
 	if !aggressive {
@@ -411,7 +412,13 @@ func settle(sc *scan, x *cand, final bool) []*db.DiscoveredChannel {
 	case y.written:
 		// y already has its own row: pair onto it rather than add a second.
 		x.written = true
-		if y.partner != "" && y.partner != x.name || reason(x)+reason(y) == "" {
+		if y.partner != "" && y.partner != x.name { // y is paired elsewhere: x gets its own row
+			if reason(x) == "" {
+				return nil
+			}
+			return []*db.DiscoveredChannel{row(sc, x, x.partner, Classify(x.name, x.partner, x.ads, 0), reason(x))}
+		}
+		if reason(x)+reason(y) == "" {
 			return nil
 		}
 		return []*db.DiscoveredChannel{row(sc, y, x.name, Classify(y.name, x.name, y.ads, x.ads), firstNonEmpty(reason(y), reason(x)))}

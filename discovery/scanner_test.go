@@ -172,7 +172,7 @@ func contains(xs []string, x string) bool {
 func TestScanner_NormalFindsKeywordChannelAndPartner(t *testing.T) {
 	e := newEnv(t, "normal", config.DiscoveryConfig{})
 	sub := e.bus.Subscribe()
-	e.list("#example 42 :XDCC – chat in #example-chat", "#random 10 :hello")
+	e.list("#example 42 :XDCC – chat in #example-chat", "#random 10 :hello", "#example 42 :XDCC – chat in #example-chat")
 	e.waitState("done")
 
 	_, joins, parts := e.fc.snapshot()
@@ -403,5 +403,24 @@ func TestScanner_OneRowPerPair(t *testing.T) {
 	}
 	if st := e.sc.Status(e.sid); st.Found != 1 {
 		t.Fatalf("status=%+v", st)
+	}
+}
+
+func TestScanner_ChainKeepsEveryKeywordChannel(t *testing.T) {
+	e := newEnv(t, "normal", config.DiscoveryConfig{})
+	e.list("#xdcca 3 :xdcc see #xdccb", "#xdccb 2 :xdcc see #xdccc", "#xdccc 1 :xdcc")
+	e.waitState("done")
+	rows := e.rows()
+	if _, ok := rows["#xdcca"]; !ok {
+		t.Fatalf("#xdcca has no row: %v", rows)
+	}
+	covered := map[string]bool{}
+	for _, r := range rows {
+		covered[r.Channel], covered[r.Partner] = true, true
+	}
+	for _, ch := range []string{"#xdcca", "#xdccb", "#xdccc"} {
+		if !covered[ch] {
+			t.Fatalf("%s lost: %v", ch, rows)
+		}
 	}
 }
