@@ -86,6 +86,16 @@ type Config struct {
 	Maintenance MaintenanceConfig `yaml:"maintenance"`
 	Auth        AuthConfig        `yaml:"auth"`
 	UI          UIConfig          `yaml:"ui"`
+	Discovery   DiscoveryConfig   `yaml:"discovery"`
+}
+
+// DiscoveryConfig tunes channel discovery (scanning a server's channel list
+// for xdcc channels). Stay seconds: how long to remain in a channel to
+// observe it; 0 means only the list data is used.
+type DiscoveryConfig struct {
+	Keywords              []string `yaml:"keywords" json:"keywords"`
+	NormalStaySeconds     int      `yaml:"normal_stay_seconds" json:"normal_stay_seconds"`
+	AggressiveStaySeconds int      `yaml:"aggressive_stay_seconds" json:"aggressive_stay_seconds"`
 }
 
 // EditableStorage is the part of storage the admin UI may change at runtime.
@@ -103,6 +113,7 @@ type Editable struct {
 	Maintenance MaintenanceConfig `yaml:"maintenance" json:"maintenance"`
 	Auth        AuthConfig        `yaml:"auth" json:"auth"`
 	UI          UIConfig          `yaml:"ui" json:"ui"`
+	Discovery   DiscoveryConfig   `yaml:"discovery" json:"discovery"`
 }
 
 func (c *Config) Editable() Editable {
@@ -112,8 +123,9 @@ func (c *Config) Editable() Editable {
 		Maintenance: c.Maintenance,
 		// Cloned so decoding a request onto the result can't write into the
 		// live config's backing arrays.
-		Auth: AuthConfig{slices.Clone(c.Auth.TrustedNetworks), c.Auth.TrustedRole, slices.Clone(c.Auth.TrustedProxies)},
-		UI:   c.UI,
+		Auth:      AuthConfig{slices.Clone(c.Auth.TrustedNetworks), c.Auth.TrustedRole, slices.Clone(c.Auth.TrustedProxies)},
+		UI:        c.UI,
+		Discovery: DiscoveryConfig{slices.Clone(c.Discovery.Keywords), c.Discovery.NormalStaySeconds, c.Discovery.AggressiveStaySeconds},
 	}
 }
 
@@ -121,6 +133,7 @@ func (c *Config) ApplyEditable(e Editable) {
 	c.Storage.DownloadsDir, c.Storage.TempDir, c.Storage.MinFreeSpace = e.Storage.DownloadsDir, e.Storage.TempDir, e.Storage.MinFreeSpace
 	c.Downloads, c.Maintenance, c.Auth = e.Downloads, e.Maintenance, e.Auth
 	c.UI = e.UI
+	c.Discovery = e.Discovery
 }
 
 // EnvLockedKeys lists the dotted yaml keys of Editable whose XIRC_* override
@@ -170,7 +183,8 @@ func defaults() Config {
 			TrustedRole:    "admin",
 			TrustedProxies: []string{"127.0.0.1/32", "::1/128"},
 		},
-		UI: UIConfig{HelpDefault: "first_time"},
+		UI:        UIConfig{HelpDefault: "first_time"},
+		Discovery: DiscoveryConfig{AggressiveStaySeconds: 1800},
 	}
 }
 

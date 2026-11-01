@@ -154,6 +154,26 @@ func migrationStatements() []string {
 		`ALTER TABLE downloads ADD COLUMN subdir_depth INTEGER NOT NULL DEFAULT 3`,
 		`ALTER TABLE downloads ADD COLUMN expected_filename TEXT NOT NULL DEFAULT ''`,
 
+		`ALTER TABLE servers ADD COLUMN discovery_mode TEXT NOT NULL DEFAULT 'normal'`,
+		`ALTER TABLE servers ADD COLUMN discovery_on_connect BOOLEAN NOT NULL DEFAULT FALSE`,
+		`CREATE TABLE IF NOT EXISTS discovered_channels (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			server_id INTEGER NOT NULL,
+			channel TEXT NOT NULL,
+			partner TEXT NOT NULL DEFAULT '',
+			type TEXT NOT NULL DEFAULT 'unknown',
+			users INTEGER NOT NULL DEFAULT 0,
+			reason TEXT NOT NULL DEFAULT '',
+			ad_count INTEGER NOT NULL DEFAULT 0,
+			first_seen DATETIME NOT NULL,
+			last_seen DATETIME NOT NULL,
+			seen BOOLEAN NOT NULL DEFAULT FALSE,
+			dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+			added BOOLEAN NOT NULL DEFAULT FALSE,
+			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
+			UNIQUE (server_id, channel)
+		)`,
+
 		`CREATE TABLE IF NOT EXISTS indexed_files (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			server_id INTEGER NOT NULL,

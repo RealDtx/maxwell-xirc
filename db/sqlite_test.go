@@ -1524,3 +1524,88 @@ func TestSQLiteStore_MigrateMergesChatChannelRows(t *testing.T) {
 		t.Errorf("rows = %d, want 2", n)
 	}
 }
+
+func TestDiscoveredChannels_UpsertKeepsDismissedAndFirstSeen(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+	srv := &Server{Name: "s", Host: "irc.example.org", Port: 6667, Nickname: "n", AuthMethod: "none"}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Now().Add(-time.Hour).Truncate(time.Second)
+	t1 := t0.Add(30 * time.Minute)
+
+	d := &DiscoveredChannel{ServerID: srv.ID, Channel: "#Example", Type: "download", Users: 5, Reason: "keyword: xdcc", FirstSeen: t0, LastSeen: t0}
+	if err := store.UpsertDiscoveredChannel(d); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetDiscoveredChannels(srv.ID)
+	if err != nil || len(got) != 1 || got[0].Channel != "#example" || got[0].Seen {
+		t.Fatalf("got %+v err %v", got, err)
+	}
+	if err := store.SetDiscoveredFlag(got[0].ID, "dismissed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetDiscoveredFlag(got[0].ID, "bogus"); err == nil {
+		t.Error("bogus flag accepted")
+	}
+	d2 := &DiscoveredChannel{ServerID: srv.ID, Channel: "#example", Type: "chat", Users: 9, Reason: "3 bot ads", FirstSeen: t1, LastSeen: t1}
+	if err := store.UpsertDiscoveredChannel(d2); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := store.GetDiscoveredChannels(srv.ID); len(got) != 0 {
+		t.Errorf("dismissed still listed: %+v", got)
+	}
+	if m, _ := store.CountUnseenDiscovered(); m[srv.ID] != 0 {
+		t.Errorf("unseen counts dismissed: %v", m)
+	}
+
+	e := &DiscoveredChannel{ServerID: srv.ID, Channel: "#example-chat", Partner: "#example", Type: "chat", FirstSeen: t0, LastSeen: t0}
+	store.UpsertDiscoveredChannel(e)
+	if m, _ := store.CountUnseenDiscovered(); m[srv.ID] != 1 {
+		t.Errorf("unseen = %v", m)
+	}
+	if err := store.MarkDiscoveredSeen(srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	e2 := &DiscoveredChannel{ServerID: srv.ID, Channel: "#example-chat", Type: "chat", Users: 7, FirstSeen: t1, LastSeen: t1}
+	store.UpsertDiscoveredChannel(e2)
+	got, _ = store.GetDiscoveredChannels(srv.ID)
+	if len(got) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	if !got[0].Seen || !got[0].FirstSeen.Equal(t0) || !got[0].LastSeen.Equal(t1) || got[0].Partner != "#example" || got[0].Users != 7 {
+		t.Errorf("row: %+v", got[0])
+	}
+	if m, _ := store.CountUnseenDiscovered(); m[srv.ID] != 0 {
+		t.Errorf("unseen after seen: %v", m)
+	}
+}
+
+func TestServer_DiscoveryFields(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+	a := &Server{Name: "a", Host: "irc.example.org", Port: 6667, Nickname: "n", AuthMethod: "none", DiscoveryMode: "aggressive", DiscoveryOnConnect: true}
+	b := &Server{Name: "b", Host: "irc.example.org", Port: 6667, Nickname: "n", AuthMethod: "none"}
+	for _, s := range []*Server{a, b} {
+		if err := store.CreateServer(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ga, _ := store.GetServer(a.ID)
+	gb, _ := store.GetServer(b.ID)
+	if ga.DiscoveryMode != "aggressive" || !ga.DiscoveryOnConnect {
+		t.Errorf("a: %+v", ga)
+	}
+	if gb.DiscoveryMode != "normal" || gb.DiscoveryOnConnect {
+		t.Errorf("b: %+v", gb)
+	}
+	b.DiscoveryMode, b.DiscoveryOnConnect = "aggressive", true
+	if err := store.UpdateServer(b); err != nil {
+		t.Fatal(err)
+	}
+	gb, _ = store.GetServer(b.ID)
+	if gb.DiscoveryMode != "aggressive" || !gb.DiscoveryOnConnect {
+		t.Errorf("b updated: %+v", gb)
+	}
+}

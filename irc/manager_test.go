@@ -419,3 +419,11 @@ func TestManager_ConnectAfterDisconnect(t *testing.T) {
 		t.Error("connect loop should be marked running")
 	}
 }
+
+func (m *mockStore) UpsertDiscoveredChannel(d *db.DiscoveredChannel) error { return nil }
+func (m *mockStore) GetDiscoveredChannels(serverID int64) ([]db.DiscoveredChannel, error) {
+	return nil, nil
+}
+func (m *mockStore) SetDiscoveredFlag(id int64, flag string) error { return nil }
+func (m *mockStore) MarkDiscoveredSeen(serverID int64) error       { return nil }
+func (m *mockStore) CountUnseenDiscovered() (map[int64]int, error) { return nil, nil }

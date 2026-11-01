@@ -537,3 +537,27 @@ func TestKeepLocked(t *testing.T) {
 		t.Errorf("unlocked key changed: %q", e.UI.HelpDefault)
 	}
 }
+
+func TestValidateSettings_Discovery(t *testing.T) {
+	_, cfg, _ := newSettingsTestServer(t, 2)
+	cur := cfg.Editable()
+	for _, tc := range []struct {
+		normal, aggr int
+		bad          bool
+	}{{0, 0, false}, {86400, 86400, false}, {-1, 0, true}, {0, 86401, true}} {
+		e := cur
+		e.Discovery = config.DiscoveryConfig{NormalStaySeconds: tc.normal, AggressiveStaySeconds: tc.aggr}
+		errs := validateSettings(cur, e)
+		got := strings.Contains(strings.Join(errs, ";"), "discovery")
+		if got != tc.bad {
+			t.Errorf("%d/%d: errs=%v want bad=%v", tc.normal, tc.aggr, errs, tc.bad)
+		}
+	}
+}
+
+func TestCleanKeywords(t *testing.T) {
+	got := cleanKeywords([]string{" Foo ", "", "  ", "bar"})
+	if len(got) != 2 || got[0] != "foo" || got[1] != "bar" {
+		t.Errorf("got %q", got)
+	}
+}

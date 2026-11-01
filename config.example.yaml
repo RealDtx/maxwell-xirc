@@ -39,3 +39,9 @@ ui:
   # In-app help blocks: first_time (open until closed once, per browser),
   # always (always start open) or never (closed; open via the ⓘ icon).
   help_default: first_time
+
+# Channel discovery: scan a server's channel list for xdcc channels.
+discovery:
+  keywords: []               # extra, besides xdcc/dcc/download
+  normal_stay_seconds: 0
+  aggressive_stay_seconds: 1800

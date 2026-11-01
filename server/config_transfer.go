@@ -38,16 +38,18 @@ type exportRealm struct {
 }
 
 type exportServer struct {
-	Name         string        `json:"name"`
-	Host         string        `json:"host"`
-	Port         int           `json:"port"`
-	SSL          bool          `json:"ssl"`
-	Nickname     string        `json:"nickname"`
-	AltNicknames []string      `json:"alt_nicknames"`
-	AuthMethod   string        `json:"auth_method"`
-	AutoConnect  bool          `json:"auto_connect"`
-	Enabled      bool          `json:"enabled"`
-	Realms       []exportRealm `json:"realms"`
+	Name               string        `json:"name"`
+	Host               string        `json:"host"`
+	Port               int           `json:"port"`
+	SSL                bool          `json:"ssl"`
+	Nickname           string        `json:"nickname"`
+	AltNicknames       []string      `json:"alt_nicknames"`
+	AuthMethod         string        `json:"auth_method"`
+	AutoConnect        bool          `json:"auto_connect"`
+	Enabled            bool          `json:"enabled"`
+	DiscoveryMode      string        `json:"discovery_mode"`
+	DiscoveryOnConnect bool          `json:"discovery_on_connect"`
+	Realms             []exportRealm `json:"realms"`
 }
 
 // exportSettings is config.Editable minus Auth.
@@ -75,6 +77,7 @@ func toExportServer(s db.Server) exportServer {
 	}
 	return exportServer{Name: s.Name, Host: s.Host, Port: s.Port, SSL: s.SSL, Nickname: s.Nickname,
 		AltNicknames: alt, AuthMethod: s.AuthMethod, AutoConnect: s.AutoConnect, Enabled: s.Enabled,
+		DiscoveryMode: s.DiscoveryMode, DiscoveryOnConnect: s.DiscoveryOnConnect,
 		Realms: []exportRealm{}}
 }
 
@@ -83,6 +86,10 @@ func toExportServer(s db.Server) exportServer {
 func (e exportServer) applyTo(dst *db.Server) {
 	dst.Name, dst.Host, dst.Port, dst.SSL, dst.Nickname = e.Name, e.Host, e.Port, e.SSL, e.Nickname
 	dst.AltNicknames, dst.AuthMethod, dst.AutoConnect, dst.Enabled = e.AltNicknames, e.AuthMethod, e.AutoConnect, e.Enabled
+	dst.DiscoveryMode, dst.DiscoveryOnConnect = e.DiscoveryMode, e.DiscoveryOnConnect
+	if dst.DiscoveryMode == "" {
+		dst.DiscoveryMode = "normal"
+	}
 }
 
 func toExportRealm(r db.Realm) exportRealm {
@@ -226,6 +233,8 @@ func validateExportServer(e exportServer) string {
 		return "port must be 1–65535"
 	case strings.TrimSpace(e.Nickname) == "":
 		return "nickname is required"
+	case e.DiscoveryMode != "" && e.DiscoveryMode != "normal" && e.DiscoveryMode != "aggressive":
+		return "discovery_mode must be normal or aggressive"
 	}
 	return ""
 }
@@ -260,6 +269,9 @@ func (s *Server) planImport(f *configFile) ([]plannedItem, error) {
 	seen := map[string]bool{}
 	for i := range f.Servers {
 		es := &f.Servers[i]
+		if es.DiscoveryMode == "" {
+			es.DiscoveryMode = "normal" // files from before discovery
+		}
 		it := plannedItem{importItem: importItem{Kind: "server", Key: es.Name, Changes: []string{}}, srv: es}
 		switch {
 		case strings.TrimSpace(es.Name) == "":

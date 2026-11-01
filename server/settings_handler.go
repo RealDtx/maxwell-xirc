@@ -144,6 +144,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) applySettings(e config.Editable) (warnings, errs []string, err error) {
 	cfg := s.settings.cfg
 	cur := cfg.Editable()
+	e.Discovery.Keywords = cleanKeywords(e.Discovery.Keywords)
 	if errs := validateSettings(cur, e); len(errs) > 0 {
 		return nil, errs, nil
 	}
@@ -239,6 +240,17 @@ func settingsToSave(e config.Editable, locked []string) (any, error) {
 	return m, nil
 }
 
+// cleanKeywords trims, lowercases and drops empty entries (new slice).
+func cleanKeywords(in []string) []string {
+	var out []string
+	for _, k := range in {
+		if k = strings.ToLower(strings.TrimSpace(k)); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 // validateSettings checks e; writability is only checked for dirs that
 // differ from cur, so a currently-broken dir (unmounted disk, env-locked
 // Docker dir) doesn't block saving unrelated settings.
@@ -264,6 +276,11 @@ func validateSettings(cur, e config.Editable) []string {
 	}
 	if p := e.Downloads.OnMismatch; p != "delete" && p != "keep" {
 		errs = append(errs, "downloads.on_mismatch must be delete or keep")
+	}
+	for k, n := range map[string]int{"normal": e.Discovery.NormalStaySeconds, "aggressive": e.Discovery.AggressiveStaySeconds} {
+		if n < 0 || n > 86400 {
+			errs = append(errs, "discovery."+k+"_stay_seconds must be 0–86400")
+		}
 	}
 	m := e.Maintenance
 	if m.SearchResultRetentionDays < 0 || m.IndexMaxFiles < 0 || m.IntervalHours < 0 {

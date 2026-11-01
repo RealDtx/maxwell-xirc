@@ -38,19 +38,40 @@ type DownloadStatsSummary struct {
 }
 
 type Server struct {
-	ID           int64     `json:"id"`
-	Name         string    `json:"name"`
-	Host         string    `json:"host"`
-	Port         int       `json:"port"`
-	SSL          bool      `json:"ssl"`
-	Nickname     string    `json:"nickname"`
-	AltNicknames []string  `json:"alt_nicknames"`
-	AuthMethod   string    `json:"auth_method"`
-	AuthPassword string    `json:"-"`
-	AutoConnect  bool      `json:"auto_connect"`
-	Enabled      bool      `json:"enabled"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           int64    `json:"id"`
+	Name         string   `json:"name"`
+	Host         string   `json:"host"`
+	Port         int      `json:"port"`
+	SSL          bool     `json:"ssl"`
+	Nickname     string   `json:"nickname"`
+	AltNicknames []string `json:"alt_nicknames"`
+	AuthMethod   string   `json:"auth_method"`
+	AuthPassword string   `json:"-"`
+	AutoConnect  bool     `json:"auto_connect"`
+	Enabled      bool     `json:"enabled"`
+	// DiscoveryMode is "normal" or "aggressive".
+	DiscoveryMode      string    `json:"discovery_mode"`
+	DiscoveryOnConnect bool      `json:"discovery_on_connect"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// DiscoveredChannel is a channel found by channel discovery that isn't
+// configured as a realm yet. Channel is stored lowercased.
+type DiscoveredChannel struct {
+	ID        int64     `json:"id"`
+	ServerID  int64     `json:"server_id"`
+	Channel   string    `json:"channel"`
+	Partner   string    `json:"partner"`
+	Type      string    `json:"type"` // chat | download | unknown
+	Users     int       `json:"users"`
+	Reason    string    `json:"reason"` // "keyword: xdcc" | "3 bot ads"
+	AdCount   int       `json:"ad_count"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	Seen      bool      `json:"seen"`
+	Dismissed bool      `json:"dismissed"`
+	Added     bool      `json:"added"`
 }
 
 type Realm struct {

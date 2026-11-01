@@ -161,6 +161,26 @@ func mysqlMigrationStatements() []string {
 		`ALTER TABLE downloads ADD COLUMN subdir_depth INTEGER NOT NULL DEFAULT 3`,
 		`ALTER TABLE downloads ADD COLUMN expected_filename VARCHAR(500) NOT NULL DEFAULT ''`,
 
+		`ALTER TABLE servers ADD COLUMN discovery_mode VARCHAR(20) NOT NULL DEFAULT 'normal'`,
+		`ALTER TABLE servers ADD COLUMN discovery_on_connect BOOLEAN NOT NULL DEFAULT FALSE`,
+		`CREATE TABLE IF NOT EXISTS discovered_channels (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			server_id BIGINT NOT NULL,
+			channel VARCHAR(255) NOT NULL,
+			partner VARCHAR(255) NOT NULL DEFAULT '',
+			type VARCHAR(20) NOT NULL DEFAULT 'unknown',
+			users INT NOT NULL DEFAULT 0,
+			reason VARCHAR(255) NOT NULL DEFAULT '',
+			ad_count INT NOT NULL DEFAULT 0,
+			first_seen DATETIME NOT NULL,
+			last_seen DATETIME NOT NULL,
+			seen BOOLEAN NOT NULL DEFAULT FALSE,
+			dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+			added BOOLEAN NOT NULL DEFAULT FALSE,
+			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
+			UNIQUE KEY uq_discovered (server_id, channel)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
 		`CREATE TABLE IF NOT EXISTS indexed_files (
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
 			server_id BIGINT NOT NULL,
@@ -273,7 +293,7 @@ func (s *MySQLStore) Migrate() error {
 // --- Servers ---
 
 func (s *MySQLStore) GetServers() ([]Server, error) {
-	rows, err := s.db.Query("SELECT id, name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at FROM servers ORDER BY name")
+	rows, err := s.db.Query("SELECT id, name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, discovery_mode, discovery_on_connect, created_at, updated_at FROM servers ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +305,7 @@ func (s *MySQLStore) GetServers() ([]Server, error) {
 		var altJSON string
 		err := rows.Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &srv.SSL, &srv.Nickname,
 			&altJSON, &srv.AuthMethod, &srv.AuthPassword, &srv.AutoConnect, &srv.Enabled,
-			&srv.CreatedAt, &srv.UpdatedAt)
+			&srv.DiscoveryMode, &srv.DiscoveryOnConnect, &srv.CreatedAt, &srv.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -302,10 +322,10 @@ func (s *MySQLStore) GetServer(id int64) (*Server, error) {
 	var srv Server
 	var altJSON string
 	err := s.db.QueryRow(
-		"SELECT id, name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at FROM servers WHERE id=?", id,
+		"SELECT id, name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, discovery_mode, discovery_on_connect, created_at, updated_at FROM servers WHERE id=?", id,
 	).Scan(&srv.ID, &srv.Name, &srv.Host, &srv.Port, &srv.SSL, &srv.Nickname,
 		&altJSON, &srv.AuthMethod, &srv.AuthPassword, &srv.AutoConnect, &srv.Enabled,
-		&srv.CreatedAt, &srv.UpdatedAt)
+		&srv.DiscoveryMode, &srv.DiscoveryOnConnect, &srv.CreatedAt, &srv.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -317,15 +337,18 @@ func (s *MySQLStore) GetServer(id int64) (*Server, error) {
 }
 
 func (s *MySQLStore) CreateServer(srv *Server) error {
+	if srv.DiscoveryMode == "" {
+		srv.DiscoveryMode = "normal"
+	}
 	altJSON, _ := json.Marshal(srv.AltNicknames)
 	if srv.AltNicknames == nil {
 		altJSON = []byte("[]")
 	}
 	now := time.Now()
 	result, err := s.db.Exec(
-		"INSERT INTO servers (name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO servers (name, host, port, `ssl`, nickname, alt_nicknames, auth_method, auth_password, auto_connect, enabled, discovery_mode, discovery_on_connect, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		srv.Name, srv.Host, srv.Port, srv.SSL, srv.Nickname, string(altJSON),
-		srv.AuthMethod, srv.AuthPassword, srv.AutoConnect, srv.Enabled, now, now,
+		srv.AuthMethod, srv.AuthPassword, srv.AutoConnect, srv.Enabled, srv.DiscoveryMode, srv.DiscoveryOnConnect, now, now,
 	)
 	if err != nil {
 		return err
@@ -337,12 +360,15 @@ func (s *MySQLStore) CreateServer(srv *Server) error {
 }
 
 func (s *MySQLStore) UpdateServer(srv *Server) error {
+	if srv.DiscoveryMode == "" {
+		srv.DiscoveryMode = "normal"
+	}
 	altJSON, _ := json.Marshal(srv.AltNicknames)
 	now := time.Now()
 	_, err := s.db.Exec(
-		"UPDATE servers SET name=?, host=?, port=?, `ssl`=?, nickname=?, alt_nicknames=?, auth_method=?, auth_password=?, auto_connect=?, enabled=?, updated_at=? WHERE id=?",
+		"UPDATE servers SET name=?, host=?, port=?, `ssl`=?, nickname=?, alt_nicknames=?, auth_method=?, auth_password=?, auto_connect=?, enabled=?, discovery_mode=?, discovery_on_connect=?, updated_at=? WHERE id=?",
 		srv.Name, srv.Host, srv.Port, srv.SSL, srv.Nickname, string(altJSON),
-		srv.AuthMethod, srv.AuthPassword, srv.AutoConnect, srv.Enabled, now, srv.ID,
+		srv.AuthMethod, srv.AuthPassword, srv.AutoConnect, srv.Enabled, srv.DiscoveryMode, srv.DiscoveryOnConnect, now, srv.ID,
 	)
 	if err == nil {
 		srv.UpdatedAt = now

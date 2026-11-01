@@ -230,3 +230,17 @@ func TestDefaultHelpDefault(t *testing.T) {
 		t.Errorf("HelpDefault = %q", cfg.UI.HelpDefault)
 	}
 }
+
+func TestDefaults_Discovery(t *testing.T) {
+	d := defaults().Discovery
+	if d.AggressiveStaySeconds != 1800 || d.NormalStaySeconds != 0 {
+		t.Errorf("defaults: %+v", d)
+	}
+	cfg, err := Load(filepath.Join("..", "testdata", "config_minimal.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Discovery.AggressiveStaySeconds != 1800 || cfg.Discovery.NormalStaySeconds != 0 {
+		t.Errorf("loaded: %+v", cfg.Discovery)
+	}
+}

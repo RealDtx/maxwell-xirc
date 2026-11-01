@@ -530,3 +530,23 @@ func TestConfigImport_SettingsMissingFieldsKeepCurrent(t *testing.T) {
 		t.Errorf("maintenance %+v (interval before %d), downloads %+v", cfg.Maintenance, before, cfg.Downloads)
 	}
 }
+
+func TestConfigExport_DiscoveryFields(t *testing.T) {
+	srv, _, _ := newSettingsTestServer(t, 2)
+	s := db.Server{Name: "srvD", Host: "irc.example.org", Port: 6667, Nickname: "n", AuthMethod: "none", Enabled: true,
+		DiscoveryMode: "aggressive", DiscoveryOnConnect: true}
+	if err := srv.store.CreateServer(&s); err != nil {
+		t.Fatal(err)
+	}
+	w := adminDo(t, srv, "GET", "/api/config/export", "")
+	if body := w.Body.String(); !strings.Contains(body, `"discovery_mode":"aggressive"`) || !strings.Contains(body, `"discovery_on_connect":true`) {
+		t.Errorf("export lacks discovery fields: %s", body)
+	}
+	file := `{"format":"xirc-config","version":1,"exported_at":"2026-10-03T00:00:00Z","servers":[
+	{"name":"srvE","host":"irc.example.org","port":6667,"ssl":false,"nickname":"n","alt_nicknames":[],
+	 "auth_method":"none","auto_connect":false,"enabled":true,"realms":[]}]}`
+	applyImport(t, srv, file, "skip", "")
+	if e := serverByName(t, srv.store, "srvE"); e == nil || e.DiscoveryMode != "normal" || e.DiscoveryOnConnect {
+		t.Errorf("imported: %+v", e)
+	}
+}

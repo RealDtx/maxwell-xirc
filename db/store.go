@@ -14,6 +14,20 @@ type Store interface {
 	UpdateServer(s *Server) error
 	DeleteServer(id int64) error
 
+	// Channel discovery
+	// UpsertDiscoveredChannel inserts d (channel lowercased) or, if the
+	// server/channel pair exists, refreshes partner (only when non-empty),
+	// type, users, reason, ad_count and last_seen. first_seen, dismissed and
+	// added are never touched; seen is false only for new rows.
+	UpsertDiscoveredChannel(d *DiscoveredChannel) error
+	// GetDiscoveredChannels returns non-dismissed, non-added rows, newest last_seen first.
+	GetDiscoveredChannels(serverID int64) ([]DiscoveredChannel, error)
+	// SetDiscoveredFlag sets flag ("dismissed" or "added") on row id.
+	SetDiscoveredFlag(id int64, flag string) error
+	MarkDiscoveredSeen(serverID int64) error
+	// CountUnseenDiscovered counts unseen, non-dismissed, non-added rows per server.
+	CountUnseenDiscovered() (map[int64]int, error)
+
 	// Realms
 	GetRealms(serverID int64) ([]Realm, error)
 	GetRealm(id int64) (*Realm, error)
