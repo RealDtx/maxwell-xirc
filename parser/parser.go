@@ -16,8 +16,8 @@ import (
 // ircFormattingRe matches IRC color/formatting control codes.
 var ircFormattingRe = regexp.MustCompile(`\x03(?:[0-9]{1,2}(?:,[0-9]{1,2})?)?|[\x02\x0f\x16\x1d\x1e\x1f]`)
 
-// stripIRCFormatting removes IRC color and formatting control codes from a string.
-func stripIRCFormatting(s string) string {
+// StripFormatting removes IRC color and formatting control codes from a string.
+func StripFormatting(s string) string {
 	return ircFormattingRe.ReplaceAllString(s, "")
 }
 
@@ -219,7 +219,7 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	}
 
 	msgType := data["type"]
-	message := stripIRCFormatting(stripCTCP(data["message"]))
+	message := StripFormatting(stripCTCP(data["message"]))
 
 	// Only process privmsg and notice
 	if msgType != "privmsg" && msgType != "notice" {
