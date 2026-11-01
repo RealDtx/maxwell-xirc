@@ -51,6 +51,8 @@ func TestMatchKeyword(t *testing.T) {
 		{"#movies", "Fast XDCC here", nil, "xdcc"},
 		{"#anime-dl", "", []string{"anime"}, "anime"},
 		{"#chat", "hello", nil, ""},
+		{"#files", "get your Download here", nil, "download"},
+		{"#x", "dcc only", nil, "dcc"},
 	}
 	for _, tc := range tests {
 		if got := MatchKeyword(tc.name, tc.topic, tc.extra); got != tc.want {

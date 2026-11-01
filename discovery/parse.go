@@ -16,7 +16,7 @@ type ListEntry struct {
 	Topic   string
 }
 
-var builtinKeywords = []string{"xdcc", "packlist", "fserve"}
+var builtinKeywords = []string{"xdcc", "dcc", "download"}
 
 // numeric splits a raw line ":srv NNN me rest" into its numeric and the text after the own nick.
 func numeric(line string) (num, rest string, ok bool) {
