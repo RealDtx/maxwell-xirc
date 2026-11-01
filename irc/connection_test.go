@@ -485,3 +485,36 @@ func TestSendRaw_SendsEchoesAndMasks(t *testing.T) {
 		t.Error("line breaks must be refused")
 	}
 }
+
+func TestIsInChannel_TracksOwnJoinPartKick(t *testing.T) {
+	srv := &db.Server{ID: 1, Name: "test", Host: "irc.example.org", Port: 6667, Nickname: "testbot", Enabled: true}
+	conn := NewConnection(srv, []db.Realm{}, NewEventBus())
+	conn.client = &testIRCClient{}
+
+	conn.handleRawLine(":testbot!u@h JOIN :#Example")
+	conn.handleRawLine(":alice!u@h JOIN #other")
+	if !conn.IsInChannel("#example") {
+		t.Fatal("own JOIN not tracked")
+	}
+	if conn.IsInChannel("#other") {
+		t.Fatal("other nick's JOIN tracked")
+	}
+	conn.handleRawLine(":TestBot!u@h PART #example :bye")
+	if conn.IsInChannel("#example") {
+		t.Fatal("own PART not tracked")
+	}
+	conn.handleRawLine(":testbot!u@h JOIN #example")
+	conn.handleRawLine(":op!u@h KICK #example alice :out")
+	if !conn.IsInChannel("#example") {
+		t.Fatal("KICK of someone else removed us")
+	}
+	conn.handleRawLine(":op!u@h KICK #Example testbot :out")
+	if conn.IsInChannel("#example") {
+		t.Fatal("KICK of us not tracked")
+	}
+	conn.handleRawLine(":testbot!u@h JOIN #example")
+	conn.setStatus(StatusDisconnected)
+	if conn.IsInChannel("#example") {
+		t.Fatal("joined set not cleared on disconnect")
+	}
+}

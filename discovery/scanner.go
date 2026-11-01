@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"container/heap"
 	"errors"
 	"fmt"
 	"log"
@@ -62,16 +63,36 @@ type cand struct {
 	joinedAt time.Time
 	namesAt  time.Time // 366 received
 	requeued bool
+	finished bool // parted after its stay
+	written  bool // its row (or its pair's row) is settled
+}
+
+// byUsers is a min-heap keeping the aggressive mode's busiest channels.
+type byUsers []*cand
+
+func (h byUsers) Len() int           { return len(h) }
+func (h byUsers) Less(i, j int) bool { return h[i].users < h[j].users }
+func (h byUsers) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *byUsers) Push(x any)        { *h = append(*h, x.(*cand)) }
+func (h *byUsers) Pop() any {
+	old := *h
+	x := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return x
 }
 
 type scan struct {
 	serverID int64
 	conn     Conn
 	st       ScanStatus
-	list     []ListEntry
-	listEnd  chan struct{} // closed on 323
+	skip     map[string]bool // realm channels
+	entries  int             // 322 lines consumed
+	top      byUsers         // aggressive candidates while listing
+	listEnd  chan struct{}   // closed on 323
 	queue    []*cand
+	cands    map[string]*cand // every queued candidate, for pairing
 	held     map[string]*cand
+	found    map[string]bool // channels upserted
 	cap      int
 	lastPub  time.Time
 	stop     chan struct{} // closed on cancel/abort
@@ -80,6 +101,7 @@ type scan struct {
 func (sc *scan) running() bool { return sc.st.State == "listing" || sc.st.State == "joining" }
 
 // Scanner runs LIST-based channel discovery scans, one per server.
+// DB I/O never runs under mu, so the bus loop keeps draining events.
 type Scanner struct {
 	store  db.Store
 	bus    *irc.EventBus
@@ -137,6 +159,13 @@ func (s *Scanner) Scan(serverID int64) error {
 	if srv.DiscoveryMode == "aggressive" {
 		mode = "aggressive"
 	}
+	skip := map[string]bool{}
+	realms, rerr := s.store.GetRealms(serverID)
+	for _, r := range realms {
+		skip[strings.ToLower(r.Name)] = true
+		skip[strings.ToLower(r.DownloadChannel)] = true
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sc := s.scans[serverID]; sc != nil && sc.running() {
@@ -144,15 +173,20 @@ func (s *Scanner) Scan(serverID int64) error {
 	}
 	now := time.Now()
 	sc := &scan{
-		serverID: serverID, conn: c, cap: maxHeld,
+		serverID: serverID, conn: c, cap: maxHeld, skip: skip,
 		st:      ScanStatus{State: "listing", Mode: mode, StartedAt: &now},
-		listEnd: make(chan struct{}), held: map[string]*cand{}, stop: make(chan struct{}),
+		listEnd: make(chan struct{}), held: map[string]*cand{}, found: map[string]bool{},
+		stop: make(chan struct{}),
 	}
 	s.scans[serverID] = sc
-	if err := c.SendRaw("LIST"); err != nil {
+	if rerr == nil {
+		rerr = c.SendRaw("LIST")
+	}
+	if rerr != nil {
+		log.Printf("discovery: scan of server %d aborted: %v", serverID, rerr)
 		sc.st.State = "aborted"
 		s.publish(sc)
-		return err
+		return rerr
 	}
 	s.publish(sc)
 	s.wg.Add(1)
@@ -199,74 +233,85 @@ func (s *Scanner) run(sc *scan) {
 		return
 	}
 	s.mu.Lock()
-	ok := s.prepare(sc)
+	q := s.prepare(sc)
 	s.mu.Unlock()
-	if !ok {
-		return
+	// Patterns are only read once a candidate is held, which happens under mu after this.
+	for _, c := range q {
+		var err error
+		if c.patterns, err = s.store.GetParsePatternsForChannel(sc.serverID, c.name); err != nil {
+			log.Printf("discovery: patterns for %s: %v", c.name, err)
+		}
 	}
 	t := time.NewTicker(joinInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-sc.stop:
+			s.finish(sc, "")
 			return
 		case <-s.stopCh:
 			return
 		case <-t.C:
 		}
 		s.mu.Lock()
-		finished := s.tick(sc)
+		rows, empty := s.tick(sc)
 		s.mu.Unlock()
-		if finished {
+		s.write(sc, rows)
+		if empty {
+			s.finish(sc, "done")
 			return
 		}
 	}
 }
 
-// prepare turns the LIST result into the join queue. Caller holds mu.
-func (s *Scanner) prepare(sc *scan) bool {
+// prepare turns the collected candidates into the join queue. Caller holds mu.
+func (s *Scanner) prepare(sc *scan) []*cand {
 	if sc.st.State != "listing" {
-		return false
+		return nil
 	}
-	skip := map[string]bool{}
-	realms, _ := s.store.GetRealms(sc.serverID)
-	for _, r := range realms {
-		skip[strings.ToLower(r.Name)] = true
-		skip[strings.ToLower(r.DownloadChannel)] = true
+	if sc.st.Mode == "aggressive" {
+		sc.queue = append([]*cand{}, sc.top...)
+		sort.SliceStable(sc.queue, func(i, j int) bool { return sc.queue[i].users > sc.queue[j].users })
+		sc.top = nil
+	}
+	sc.cands = map[string]*cand{}
+	for _, c := range sc.queue {
+		sc.cands[c.name] = c
+	}
+	sc.st.Total, sc.st.State = len(sc.queue), "joining"
+	s.publish(sc)
+	return append([]*cand{}, sc.queue...)
+}
+
+// offer filters one LIST entry into the candidates as it arrives. Caller holds mu.
+func (s *Scanner) offer(sc *scan, e ListEntry) {
+	sc.entries++
+	name := strings.ToLower(e.Channel)
+	if sc.skip[name] || sc.conn.IsInChannel(name) {
+		return
 	}
 	aggressive := sc.st.Mode == "aggressive"
-	var q []*cand
-	for _, e := range sc.list {
-		name := strings.ToLower(e.Channel)
-		if skip[name] || sc.conn.IsInChannel(name) {
-			continue
-		}
-		skip[name] = true
-		kw := MatchKeyword(name, e.Topic, s.cfg.Keywords)
-		if kw == "" && !aggressive {
-			continue
-		}
-		c := &cand{name: name, users: e.Users, keyword: kw}
-		clue(c, e.Topic)
-		q = append(q, c)
+	kw := MatchKeyword(name, e.Topic, s.cfg.Keywords)
+	if kw == "" && !aggressive {
+		return
 	}
-	if aggressive {
-		sort.SliceStable(q, func(i, j int) bool { return q[i].users > q[j].users })
-		if len(q) > maxAggressiveChannels {
-			q = q[:maxAggressiveChannels]
-		}
+	c := &cand{name: name, users: e.Users, keyword: kw}
+	clue(c, e.Topic)
+	if !aggressive {
+		sc.queue = append(sc.queue, c)
+		return
 	}
-	sc.list, sc.queue = nil, q
-	sc.st.Total, sc.st.State = len(q), "joining"
-	s.publish(sc)
-	return true
+	heap.Push(&sc.top, c)
+	if sc.top.Len() > maxAggressiveChannels {
+		heap.Pop(&sc.top)
+	}
 }
 
 // tick parts finished channels and joins the next one. Caller holds mu.
-// Returns true when the scan goroutine should exit.
-func (s *Scanner) tick(sc *scan) bool {
+// Returns the rows to write and whether nothing is queued or held.
+func (s *Scanner) tick(sc *scan) (rows []*db.DiscoveredChannel, empty bool) {
 	if !sc.running() {
-		return true
+		return nil, false
 	}
 	now := time.Now()
 	stay := s.cfg.NormalStaySeconds
@@ -281,12 +326,12 @@ func (s *Scanner) tick(sc *scan) bool {
 		}
 		sc.conn.PartChannel(c.name)
 		delete(sc.held, key)
-		s.record(sc, c)
+		c.finished = true
+		rows = append(rows, settle(sc, c, false)...)
 	}
 	if len(sc.held) < sc.cap && len(sc.queue) > 0 {
 		c := sc.queue[0]
 		sc.queue = sc.queue[1:]
-		c.patterns, _ = s.store.GetParsePatternsForChannel(sc.serverID, c.name)
 		c.joinedAt, c.namesAt = now, time.Time{}
 		sc.held[c.name] = c
 		sc.st.Joined++
@@ -295,32 +340,114 @@ func (s *Scanner) tick(sc *scan) bool {
 			s.publish(sc)
 		}
 	}
-	if len(sc.queue) == 0 && len(sc.held) == 0 {
-		sc.st.State = "done"
-		s.publish(sc)
-		return true
-	}
-	return false
+	return rows, len(sc.queue) == 0 && len(sc.held) == 0
 }
 
-// record upserts the channel's row if it qualifies. Caller holds mu.
-func (s *Scanner) record(sc *scan, c *cand) {
-	if c.keyword == "" && c.ads == 0 {
-		return // only reachable in aggressive mode
+// finish writes the rows still pending at the end of a scan and, for a
+// normal end, sets state. Runs on the scan goroutine.
+func (s *Scanner) finish(sc *scan, state string) {
+	s.mu.Lock()
+	var rows []*db.DiscoveredChannel
+	for _, c := range sc.cands {
+		if c.finished && !c.written {
+			rows = append(rows, settle(sc, c, true)...)
+		}
 	}
-	reason := fmt.Sprintf("%d bot ads", c.ads)
-	if c.keyword != "" {
-		reason = "keyword: " + c.keyword
+	s.mu.Unlock()
+	s.write(sc, rows)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if state != "" && sc.running() {
+		sc.st.State = state
+		s.publish(sc)
+	} else if len(rows) > 0 {
+		s.publish(sc)
 	}
-	d := &db.DiscoveredChannel{
-		ServerID: sc.serverID, Channel: c.name, Partner: c.partner, Users: c.users,
-		Type: Classify(c.name, c.partner, c.ads, 0), Reason: reason, AdCount: c.ads,
+}
+
+// write upserts rows (outside mu) and updates Found.
+func (s *Scanner) write(sc *scan, rows []*db.DiscoveredChannel) {
+	var ok []string
+	for _, d := range rows {
+		if err := s.store.UpsertDiscoveredChannel(d); err != nil {
+			log.Printf("discovery: upsert %s: %v", d.Channel, err)
+			continue
+		}
+		ok = append(ok, d.Channel)
 	}
-	if err := s.store.UpsertDiscoveredChannel(d); err != nil {
-		log.Printf("discovery: upsert %s: %v", c.name, err)
+	if len(ok) == 0 {
 		return
 	}
-	sc.st.Found++
+	s.mu.Lock()
+	for _, ch := range ok {
+		sc.found[ch] = true
+	}
+	sc.st.Found = len(sc.found)
+	s.mu.Unlock()
+}
+
+// settle decides x's row once it is finished. When both halves of a pair are
+// candidates of this scan they share one row: download side, partner = chat.
+// x waits while its pair half is still queued or held, unless final. Caller holds mu.
+func settle(sc *scan, x *cand, final bool) []*db.DiscoveredChannel {
+	y := sc.cands[x.partner]
+	if y == nil {
+		for _, c := range sc.cands {
+			if c != x && c.partner == x.name {
+				y = c
+				break
+			}
+		}
+	}
+	switch {
+	case y == nil || !y.finished && final:
+		x.written = true
+		if reason(x) == "" {
+			return nil
+		}
+		return []*db.DiscoveredChannel{row(sc, x, x.partner, Classify(x.name, x.partner, x.ads, 0), reason(x))}
+	case !y.finished:
+		return nil // wait for y
+	case y.written:
+		// y already has its own row: pair onto it rather than add a second.
+		x.written = true
+		if y.partner != "" && y.partner != x.name || reason(x)+reason(y) == "" {
+			return nil
+		}
+		return []*db.DiscoveredChannel{row(sc, y, x.name, Classify(y.name, x.name, y.ads, x.ads), firstNonEmpty(reason(y), reason(x)))}
+	}
+	x.written, y.written = true, true
+	d, c := x, y
+	if Classify(x.name, y.name, x.ads, y.ads) != "download" {
+		d, c = y, x
+	}
+	r := firstNonEmpty(reason(d), reason(c))
+	if r == "" {
+		return nil
+	}
+	return []*db.DiscoveredChannel{row(sc, d, c.name, "download", r)}
+}
+
+func row(sc *scan, c *cand, partner, typ, reason string) *db.DiscoveredChannel {
+	return &db.DiscoveredChannel{ServerID: sc.serverID, Channel: c.name, Partner: partner, Users: c.users, Type: typ, Reason: reason, AdCount: c.ads}
+}
+
+// reason is why c qualifies for a row, or "" (aggressive channel without keyword or ads).
+func reason(c *cand) string {
+	switch {
+	case c.keyword != "":
+		return "keyword: " + c.keyword
+	case c.ads > 0:
+		return fmt.Sprintf("%d bot ads", c.ads)
+	}
+	return ""
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // clue sets c's partner from the first other channel mentioned in text.
@@ -384,20 +511,21 @@ func (s *Scanner) handle(ev irc.Event) {
 	}
 }
 
+// onConnect schedules a scan-on-connect; the server is read after the delay.
 func (s *Scanner) onConnect(serverID int64) {
-	srv, err := s.store.GetServer(serverID)
-	if err != nil || !srv.DiscoveryOnConnect {
-		return
-	}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		select {
 		case <-time.After(connectDelay):
-			if err := s.Scan(serverID); err != nil {
-				log.Printf("discovery: scan on connect for server %d: %v", serverID, err)
-			}
 		case <-s.stopCh:
+			return
+		}
+		if srv, err := s.store.GetServer(serverID); err != nil || !srv.DiscoveryOnConnect {
+			return
+		}
+		if err := s.Scan(serverID); err != nil {
+			log.Printf("discovery: scan on connect for server %d: %v", serverID, err)
 		}
 	}()
 }
@@ -407,7 +535,7 @@ func (s *Scanner) onRaw(sc *scan, line string) {
 	if sc.st.State == "listing" {
 		if e, end, ok := ParseListLine(line); ok {
 			if !end {
-				sc.list = append(sc.list, e)
+				s.offer(sc, e)
 			} else if !isClosed(sc.listEnd) {
 				close(sc.listEnd)
 			}

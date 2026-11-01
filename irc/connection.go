@@ -52,6 +52,7 @@ type Connection struct {
 	identWait                 chan struct{} // closed on NickServ identification; nil when nobody waits
 	identSeen                 bool          // an identification signal arrived during this connection
 	onDownloadChannelDetected func(channel, detected string)
+	joined                    map[string]bool // lowercased channels we are in, from our own JOIN/PART/KICK
 }
 
 // ConnectionStatusEvent is the Data payload for EventConnectionStatus events.
@@ -115,6 +116,9 @@ func (c *Connection) Status() ConnectionStatus {
 func (c *Connection) setStatus(s ConnectionStatus) {
 	c.mu.Lock()
 	c.status = s
+	if s != StatusConnected {
+		c.joined = nil // membership starts over with each connection
+	}
 	connectedAt := c.connectedAt
 	reconnectCount := c.reconnectCount
 	lagMs := c.lagMs
@@ -581,16 +585,34 @@ func maskSecrets(line string) string {
 	return line
 }
 
+// IsInChannel reports whether we are currently in channel name.
 func (c *Connection) IsInChannel(name string) bool {
-	// Without girc's channel tracking, we maintain our own joined-channel set
-	// via the auto-join list. For now, check if name is among our channel list.
-	target := strings.ToLower(name)
-	for _, ch := range c.AllChannelNames() {
-		if strings.ToLower(ch) == target {
-			return true
-		}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.joined[strings.ToLower(name)]
+}
+
+// trackMembership updates the joined set from our own JOIN/PART and KICKs of us.
+func (c *Connection) trackMembership(line, me string) {
+	f := strings.Fields(line)
+	if len(f) < 3 || !strings.HasPrefix(f[0], ":") {
+		return
 	}
-	return false
+	src, _, _ := strings.Cut(f[0][1:], "!")
+	ch := strings.ToLower(strings.TrimPrefix(f[2], ":"))
+	cmd := strings.ToUpper(f[1])
+	self := strings.EqualFold(src, me)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	switch {
+	case cmd == "JOIN" && self:
+		if c.joined == nil {
+			c.joined = map[string]bool{}
+		}
+		c.joined[ch] = true
+	case cmd == "PART" && self, cmd == "KICK" && len(f) > 3 && strings.EqualFold(f[3], me):
+		delete(c.joined, ch)
+	}
 }
 
 func (c *Connection) Search(searchChannel, command, query string) error {
@@ -761,6 +783,9 @@ func (c *Connection) handleRawLine(line string) {
 	c.mu.RUnlock()
 	if client != nil && isIdentifiedSignal(line, client.Nick()) {
 		c.onIdentified()
+	}
+	if client != nil {
+		c.trackMembership(line, client.Nick())
 	}
 
 	// Skip user PRIVMSG and NOTICE raw lines — they are already handled by

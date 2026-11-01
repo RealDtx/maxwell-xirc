@@ -382,9 +382,26 @@ func TestScanner_RejectsConcurrentScan(t *testing.T) {
 	e.sc.Cancel(e.sid)
 }
 
-// listed reports how many LIST entries the running scan has collected.
+// listed reports how many LIST entries the running scan has consumed.
 func (s *Scanner) listed(serverID int64) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.scans[serverID].list)
+	return s.scans[serverID].entries
+}
+
+func TestScanner_OneRowPerPair(t *testing.T) {
+	e := newEnv(t, "normal", config.DiscoveryConfig{})
+	e.list("#example 9 :xdcc, chat in #example-chat", "#example-chat 9 :xdcc packs, main #example")
+	e.waitState("done")
+	rows := e.rows()
+	r, ok := rows["#example-chat"]
+	if !ok || len(rows) != 1 {
+		t.Fatalf("rows=%v", rows)
+	}
+	if r.Partner != "#example" || r.Type != "download" {
+		t.Fatalf("row=%+v", r)
+	}
+	if st := e.sc.Status(e.sid); st.Found != 1 {
+		t.Fatalf("status=%+v", st)
+	}
 }
