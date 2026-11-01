@@ -119,6 +119,12 @@
         <!-- Bottom nav -->
         <nav class="sidebar-nav">
             <a
+                :class="{ active: activeView === 'home' }"
+                @click="setView('home'); sidebarOpen = false"
+            >Overview<span x-show="isAdmin && discoveryUnseenTotal() > 0"
+                  style="margin-left:8px; background:var(--accent); color:#fff; font-size:11px; border-radius:9999px; padding:1px 6px;"
+                  x-text="discoveryUnseenTotal()"></span></a>
+            <a
                 :class="{ active: activeView === 'channel' }"
                 @click="activeChannel = null; activeView = 'channel'; sidebarOpen = false"
             >Search</a>
@@ -1100,6 +1106,20 @@
                                         </label>
                                     </div>
                                     <div class="form-group">
+                                        <label>Discovery mode</label>
+                                        <select x-model="serverForm.discovery_mode" @change="onDiscoveryModeChange()">
+                                            <option value="normal">Normal</option>
+                                            <option value="aggressive">Aggressive</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Scan on connect</label>
+                                        <label class="toggle">
+                                            <input type="checkbox" x-model="serverForm.discovery_on_connect">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="form-group">
                                         <label>Authentication</label>
                                         <select x-model="serverForm.auth_method">
                                             <option value="none">None</option>
@@ -1274,7 +1294,7 @@
 
                                     <div style="margin-top:12px; display:flex; gap:8px;">
                                         <button class="btn btn-primary btn-sm" @click="saveRealm()">Save</button>
-                                        <button class="btn btn-sm" @click="showRealmForm = false">Cancel</button>
+                                        <button class="btn btn-sm" @click="showRealmForm = false; pendingDiscoveredId = null">Cancel</button>
                                     </div>
                                 </div>
                             </template>
@@ -1565,6 +1585,28 @@
                                                 <option value="delete">Don't download it</option>
                                                 <option value="keep">Download, leave unsorted in downloads folder</option>
                                             </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="settings-card" style="margin-bottom:16px;">
+                                        <h3 style="margin-bottom:12px;">Channel discovery</h3>
+                                        <div class="form-group">
+                                            <label>Extra keywords (comma-separated; built in: xdcc, dcc, download)</label>
+                                            <input type="text" x-model="systemForm.discovery.keywords" placeholder="e.g. anime, ebooks"
+                                                   :disabled="systemLocked('discovery.keywords')"
+                                                   :title="systemLocked('discovery.keywords') ? 'Set by environment variable ' + systemEnvVar('discovery.keywords') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Stay in each channel (normal, seconds)</label>
+                                            <input type="number" min="0" max="86400" x-model.number="systemForm.discovery.normal_stay_seconds"
+                                                   :disabled="systemLocked('discovery.normal_stay_seconds')"
+                                                   :title="systemLocked('discovery.normal_stay_seconds') ? 'Set by environment variable ' + systemEnvVar('discovery.normal_stay_seconds') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Stay in each channel (aggressive, minutes)</label>
+                                            <input type="number" min="0" max="1440" x-model.number="systemForm.discovery.aggressive_stay_minutes"
+                                                   :disabled="systemLocked('discovery.aggressive_stay_seconds')"
+                                                   :title="systemLocked('discovery.aggressive_stay_seconds') ? 'Set by environment variable ' + systemEnvVar('discovery.aggressive_stay_seconds') : ''">
                                         </div>
                                     </div>
 
@@ -2283,6 +2325,19 @@
                         </template>
                     </div>
 
+                    <!-- New discovered channels (admin only) -->
+                    <template x-if="isAdmin && discoveryUnseenTotal() > 0">
+                        <div style="background:var(--bg-secondary); border-radius:6px; padding:16px; margin-bottom:16px;">
+                            <div style="font-weight:500; margin-bottom:8px;">Channel discovery</div>
+                            <template x-for="srv in servers.filter(s => (discoveryUnseen[s.id] || 0) > 0)" :key="srv.id">
+                                <div style="font-size:13px; padding:4px 0;">
+                                    <a href="#" @click.prevent="selectServer(srv)"
+                                       x-text="discoveryUnseen[srv.id] + ' new channels found on ' + srv.name"></a>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
                     <!-- Error overview (admin only: /api/errors is admin-only) -->
                     <div x-show="isAdmin" style="background:var(--bg-secondary); border-radius:6px; padding:16px;">
                         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
@@ -2341,6 +2396,49 @@
                         <div x-text="ircStatus[activeServer] && ircStatus[activeServer].lag_ms ? ircStatus[activeServer].lag_ms + ' ms' : '—'"></div>
                     </div>
                 </div>
+
+                <!-- Discovered channels (admin only) -->
+                <template x-if="isAdmin">
+                    <div style="padding:12px 16px; border-bottom:1px solid var(--border); font-size:13px; max-height:40%; overflow-y:auto;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                            <span style="font-weight:500;">Discovered channels</span>
+                            <span style="font-size:11px; color:var(--text-muted);"
+                                  x-text="'Mode: ' + ((activeServerObj && activeServerObj.discovery_mode) === 'aggressive' ? 'Aggressive' : 'Normal')"></span>
+                            <button class="btn btn-primary btn-sm" style="margin-left:auto;"
+                                    :disabled="serverStatus(activeServer) !== 'connected' || discoveryRunning(activeServer)"
+                                    @click="scanDiscovery(activeServer)">Scan now</button>
+                            <button class="btn btn-danger btn-sm" x-show="discoveryRunning(activeServer)"
+                                    @click="cancelDiscovery(activeServer)">Stop</button>
+                        </div>
+                        <div x-show="discoveryRunning(activeServer)" style="color:var(--text-muted); margin-bottom:8px;"
+                             x-text="((discovery[activeServer] || {}).scan || {}).state === 'listing' ? 'Listing channels...' : 'Joined ' + ((discovery[activeServer] || {}).scan.joined || 0) + ' / ' + ((discovery[activeServer] || {}).scan.total || 0)"></div>
+                        <div x-show="!((discovery[activeServer] || {}).channels || []).length" style="color:var(--text-muted);">No channels discovered yet.</div>
+                        <table x-show="((discovery[activeServer] || {}).channels || []).length" style="width:100%; border-collapse:collapse;">
+                            <thead>
+                                <tr style="text-align:left; color:var(--text-muted); font-size:11px;">
+                                    <th>Channel</th><th>Type</th><th>Partner</th><th>Users</th><th>Reason</th><th>First seen</th><th>Last seen</th><th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="row in ((discovery[activeServer] || {}).channels || [])" :key="row.id">
+                                    <tr>
+                                        <td x-text="row.channel"></td>
+                                        <td x-text="row.type"></td>
+                                        <td x-text="row.partner || ''"></td>
+                                        <td x-text="row.users"></td>
+                                        <td x-text="row.reason"></td>
+                                        <td x-text="formatDate(row.first_seen)"></td>
+                                        <td x-text="formatDate(row.last_seen)"></td>
+                                        <td style="white-space:nowrap;">
+                                            <button class="btn btn-sm" @click="addDiscoveredAsRealm(row)">Add as realm</button>
+                                            <button class="btn btn-sm" @click="dismissDiscovered(row)">Dismiss</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
 
                 <!-- Raw IRC log -->
                 <div style="flex:1; overflow-y:auto; font-family:monospace; font-size:12px; padding:10px; display:flex; flex-direction:column; gap:2px;"

@@ -88,6 +88,11 @@ The chat/download channel pairs for each server (see [Concepts](#concepts) for w
 
 Good to know: leaving the download channel blank isn't final — xirc fills it in the first time it reads that channel's topic after joining, if the topic names one.
 
+## Channel discovery {#discovery}
+Finds channels on a network that look like XDCC channels (admin-only).
+
+**How to use it:** open a server (click its name in the sidebar) and press **Scan now** in the Discovered channels card. maXwell lists the network's channels and keeps those whose name or topic contains `xdcc`, `dcc`, `download` or one of your extra keywords (Settings → System → Channel discovery). **Add as realm** opens a prefilled realm form; **Dismiss** hides a channel for good. The Overview entry in the sidebar shows a badge for new finds. Each server has a discovery mode and an optional **Scan on connect** (Settings → Servers). **Normal** mode only looks at the channel list; **Aggressive** joins every channel and stays for the configured time, which network operators may treat as spam and which can get you throttled or banned.
+
 ## Settings: Library {#settings-library}
 Where finished downloads are organized (see [Routing](#routing) for the mechanics).
 

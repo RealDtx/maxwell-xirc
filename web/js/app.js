@@ -164,7 +164,7 @@ document.addEventListener('alpine:init', () => {
         settingsServers: [],
         settingsChannels: [],
         settingsServerId: null,
-        serverForm: { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true },
+        serverForm: { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true, discovery_mode: 'normal', discovery_on_connect: false },
         authPwVisible: false,
         nickReg: { open: false, email: '', busy: false, msg: '', ok: false },
         channelForm: { id: null, server_id: null, name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
@@ -204,6 +204,9 @@ document.addEventListener('alpine:init', () => {
                   def: 'skip', decisions: {}, results: null, open: {}, error: '', busy: false },
         realmForm: { id: null, server_id: null, name: '', display_name: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: false, enabled: true },
         showRealmForm: false,
+        pendingDiscoveredId: null,
+        discovery: {},        // { [serverId]: { channels: [], scan: {} } }
+        discoveryUnseen: {},  // { [serverId]: count }
 
         // Active server (for server view)
         activeServerObj: null,
@@ -477,6 +480,82 @@ document.addEventListener('alpine:init', () => {
             localStorage.setItem('mxirc_mode', mode);
         },
 
+        // --- Channel discovery ---
+
+        async loadDiscovery(serverId) {
+            const r = await api.getDiscovery(serverId);
+            this.discovery = Object.assign({}, this.discovery, {
+                [serverId]: { channels: r.channels || [], scan: r.scan || {} }
+            });
+        },
+
+        async loadDiscoveryUnseen() {
+            if (!this.isAdmin) return;
+            try {
+                const r = await api.getDiscoveryUnseen();
+                this.discoveryUnseen = r || {};
+            } catch (e) { console.error('loadDiscoveryUnseen', e); }
+        },
+
+        discoveryUnseenTotal() {
+            return Object.values(this.discoveryUnseen).reduce((a, n) => a + n, 0);
+        },
+
+        discoveryRunning(serverId) {
+            const st = ((this.discovery[serverId] || {}).scan || {}).state;
+            return st === 'listing' || st === 'joining';
+        },
+
+        async scanDiscovery(serverId) {
+            try {
+                const scan = await api.startDiscovery(serverId);
+                const cur = this.discovery[serverId] || { channels: [] };
+                this.discovery = Object.assign({}, this.discovery, { [serverId]: { channels: cur.channels, scan } });
+            } catch (e) { alert(e.message || 'Scan failed'); }
+        },
+
+        async cancelDiscovery(serverId) {
+            try { await api.cancelDiscovery(serverId); } catch (e) { alert(e.message || 'Stop failed'); }
+        },
+
+        async dismissDiscovered(row) {
+            try {
+                await api.dismissDiscovered(row.id);
+                const d = this.discovery[row.server_id];
+                if (d) d.channels = d.channels.filter(c => c.id !== row.id);
+            } catch (e) { alert(e.message || 'Dismiss failed'); }
+        },
+
+        async addDiscoveredAsRealm(row) {
+            // Same rule as discovery.RealmPrefill.
+            const [name, dl] = row.type === 'download' ? [row.partner, row.channel] : [row.channel, row.partner];
+            this.settingsTab = 'realms';
+            this.setView('settings');
+            await this.loadSettingsRealms(row.server_id);
+            const low = s => (s || '').toLowerCase();
+            const want = [low(name), low(dl)].filter(Boolean);
+            const existing = this.settingsRealms.find(r =>
+                want.includes(low(r.name)) || want.includes(low(r.download_channel)));
+            if (existing) {
+                this.openRealmForm(existing);
+                if (!this.realmForm.name) this.realmForm.name = name;
+                if (!this.realmForm.download_channel) this.realmForm.download_channel = dl;
+            } else {
+                this.openRealmForm(null);
+                this.realmForm.name = name;
+                this.realmForm.download_channel = dl;
+            }
+            this.pendingDiscoveredId = row.id;
+        },
+
+        // Aggressive mode joins every channel on the network: confirm first.
+        onDiscoveryModeChange() {
+            if (this.serverForm.discovery_mode !== 'aggressive') return;
+            if (!confirm('Aggressive discovery joins every channel on this network and stays in each for the configured time. Network operators may treat this as spam, and it can get you throttled or banned. It also adds traffic and load on this machine. Enable it?')) {
+                this.serverForm.discovery_mode = 'normal';
+            }
+        },
+
         // --- Server view ---
 
         async selectServer(server) {
@@ -484,6 +563,10 @@ document.addEventListener('alpine:init', () => {
             this.activeServer = server.id;
             this.activeChannel = null;
             this.activeView = 'server';
+            if (this.isAdmin) {
+                this.loadDiscovery(server.id).then(() => api.markDiscoverySeen(server.id))
+                    .then(() => this.loadDiscoveryUnseen()).catch(console.error);
+            }
             await this.loadServerMessages(server.id);
         },
 
@@ -1937,6 +2020,22 @@ document.addEventListener('alpine:init', () => {
                     // Download started before our list was loaded — reload to pick it up
                     this.loadDownloads();
                 }
+            } else if (type === 'discovery') {
+                const sid = data.server_id;
+                if (sid in this.discovery) {
+                    const cur = this.discovery[sid];
+                    this.discovery = Object.assign({}, this.discovery, { [sid]: { channels: cur.channels, scan: data.data || {} } });
+                }
+                if (data.data && data.data.state === 'done') {
+                    this.loadDiscoveryUnseen();
+                    if (sid in this.discovery) {
+                        this.loadDiscovery(sid).then(() => {
+                            if (this.activeView === 'server' && this.activeServer === sid) {
+                                return api.markDiscoverySeen(sid).then(() => this.loadDiscoveryUnseen());
+                            }
+                        }).catch(console.error);
+                    }
+                }
             } else if (type === 'download_status') {
                 const sd = data.data || {};
                 if (sd.status === 'processing') {
@@ -2540,8 +2639,8 @@ document.addEventListener('alpine:init', () => {
         openServerForm(server) {
             // auth_password is write-only: blank keeps the stored password.
             this.serverForm = server
-                ? Object.assign({ auth_method: 'none' }, server, { auth_password: '' })
-                : { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true, auth_method: 'none', auth_password: '' };
+                ? Object.assign({ auth_method: 'none', discovery_mode: 'normal', discovery_on_connect: false }, server, { auth_password: '' })
+                : { id: null, name: '', host: '', port: 6667, nickname: '', ssl: false, auto_connect: false, enabled: true, auth_method: 'none', auth_password: '', discovery_mode: 'normal', discovery_on_connect: false };
             this.authPwVisible = false;
             this.nickReg = { open: false, email: '', busy: false, msg: '', ok: false };
             this.showServerForm = true;
@@ -2639,6 +2738,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         openRealmForm(realm) {
+            this.pendingDiscoveredId = null;
             this.realmForm = realm
                 ? Object.assign({}, realm)
                 : { id: null, server_id: this.settingsServerId, name: '', display_name: '', key: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true };
@@ -2665,8 +2765,13 @@ document.addEventListener('alpine:init', () => {
             const p = this.realmForm.id
                 ? api.updateRealm(this.realmForm.id, this.realmForm)
                 : api.createRealm(this.realmForm);
+            const discId = this.pendingDiscoveredId;
             return p.then(async () => {
                 this.showRealmForm = false;
+                this.pendingDiscoveredId = null;
+                if (discId) {
+                    api.markDiscoveredAdded(discId).then(() => this.loadDiscovery(this.settingsServerId)).catch(console.error);
+                }
                 await this.loadSettingsRealms(this.settingsServerId);
                 // Re-load realm configs
                 const realms = await api.getRealms(this.settingsServerId).catch(() => []);
@@ -2741,6 +2846,11 @@ document.addEventListener('alpine:init', () => {
                     trusted_proxies: (s.auth.trusted_proxies || []).join(', '),
                 },
                 ui: { ...(s.ui || { help_default: 'first_time' }) },
+                discovery: {
+                    keywords: ((s.discovery || {}).keywords || []).join(', '),
+                    normal_stay_seconds: (s.discovery || {}).normal_stay_seconds ?? 0,
+                    aggressive_stay_minutes: Math.round(((s.discovery || {}).aggressive_stay_seconds ?? 1800) / 60),
+                },
             };
         },
         _systemSplit(text) {
@@ -2826,7 +2936,8 @@ document.addEventListener('alpine:init', () => {
             this.systemError = '';
             // x-model.number leaves an emptied/invalid field as a string.
             for (const [sec, key] of [['downloads', 'max_concurrent'], ['maintenance', 'search_result_retention_days'],
-                ['maintenance', 'index_max_files'], ['maintenance', 'interval_hours']]) {
+                ['maintenance', 'index_max_files'], ['maintenance', 'interval_hours'],
+                ['discovery', 'normal_stay_seconds'], ['discovery', 'aggressive_stay_minutes']]) {
                 if (typeof this.systemForm[sec][key] !== 'number') {
                     this.systemError = sec + '.' + key + ' must be a number';
                     return;
@@ -2853,6 +2964,11 @@ document.addEventListener('alpine:init', () => {
                     trusted_proxies: proxies,
                 },
                 ui: { ...this.systemForm.ui },
+                discovery: {
+                    keywords: this._systemSplit(this.systemForm.discovery.keywords),
+                    normal_stay_seconds: this.systemForm.discovery.normal_stay_seconds,
+                    aggressive_stay_seconds: Math.round(this.systemForm.discovery.aggressive_stay_minutes * 60),
+                },
             };
             try {
                 this.systemSettings = await api.saveSettings(payload);
@@ -3546,6 +3662,7 @@ document.addEventListener('alpine:init', () => {
 
             // Load errors
             if (this.isAdmin) await this.loadErrors();
+            this.loadDiscoveryUnseen();
 
             // Start WebSocket
             this.wsConnect();
