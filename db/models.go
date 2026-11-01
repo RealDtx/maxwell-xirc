@@ -88,6 +88,9 @@ type Download struct {
 	AutoExtract     bool       `json:"auto_extract"`
 	TargetDir       string     `json:"target_dir"`
 	AutoSubdir      bool       `json:"auto_subdir"`
+	// ExpectedFilename is set when the bot sent a different file than the
+	// pack list promised (pack swapped/renumbered); Filename holds what was sent.
+	ExpectedFilename string `json:"expected_filename"`
 }
 
 type SearchResult struct {

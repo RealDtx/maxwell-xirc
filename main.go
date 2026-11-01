@@ -336,6 +336,7 @@ func main() {
 	libMgr := loadLibrary(*configPath, cfg)
 
 	eng := queue.NewEngine(store, bus, ircMgr, &cfg.Storage, cfg.Downloads.MaxConcurrent)
+	eng.SetMismatchPolicy(cfg.Downloads.OnMismatch)
 	eng.SetLibrary(libMgr)
 	eng.Start()
 

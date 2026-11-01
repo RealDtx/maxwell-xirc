@@ -929,6 +929,8 @@
                                                         :class="'badge-' + dl.status"
                                                         x-text="dl.status"
                                                     ></span>
+                                                    <span x-show="dl.expected_filename" class="badge badge-needs_action"
+                                                          :title="'Pack list was outdated — expected ' + dl.expected_filename + ', bot sent ' + dl.filename">⚠ mismatch</span>
                                                 </span>
                                             </td>
                                             <td class="dl-filename-cell" x-text="dl.filename || '-'"></td>
@@ -1554,6 +1556,15 @@
                                             <input type="number" min="1" max="20" x-model.number="systemForm.downloads.max_concurrent"
                                                    :disabled="systemLocked('downloads.max_concurrent')"
                                                    :title="systemLocked('downloads.max_concurrent') ? 'Set by environment variable ' + systemEnvVar('downloads.max_concurrent') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>When a bot sends a different file than the pack list promised</label>
+                                            <select x-model="systemForm.downloads.on_mismatch"
+                                                    :disabled="systemLocked('downloads.on_mismatch')"
+                                                    :title="systemLocked('downloads.on_mismatch') ? 'Set by environment variable ' + systemEnvVar('downloads.on_mismatch') : ''">
+                                                <option value="delete">Don't download it</option>
+                                                <option value="keep">Download, leave unsorted in downloads folder</option>
+                                            </select>
                                         </div>
                                     </div>
 

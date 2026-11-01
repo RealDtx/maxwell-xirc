@@ -265,7 +265,7 @@ func (s *SQLiteStore) UpdateRealmSearchBot(id int64, botNick string) error {
 func (s *SQLiteStore) GetDownloads(status string) ([]Download, error) {
 	var rows *sql.Rows
 	var err error
-	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir FROM downloads"
+	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir, expected_filename FROM downloads"
 	if status != "" {
 		rows, err = s.db.Query(query+" WHERE status=? ORDER BY created_at DESC", status)
 	} else {
@@ -285,7 +285,7 @@ func (s *SQLiteStore) GetDownloads(status string) ([]Download, error) {
 		if err := rows.Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 			&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 			&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-			&dl.CreatedAt, &statsOnly, &autoExtract, &dl.TargetDir, &autoSubdir); err != nil {
+			&dl.CreatedAt, &statsOnly, &autoExtract, &dl.TargetDir, &autoSubdir, &dl.ExpectedFilename); err != nil {
 			return nil, err
 		}
 		dl.StatsOnly = statsOnly == 1
@@ -302,11 +302,11 @@ func (s *SQLiteStore) GetDownload(id int64) (*Download, error) {
 	var autoExtract int
 	var autoSubdir int
 	err := s.db.QueryRow(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir FROM downloads WHERE id=?", id,
+		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir, expected_filename FROM downloads WHERE id=?", id,
 	).Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 		&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 		&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-		&dl.CreatedAt, &statsOnly, &autoExtract, &dl.TargetDir, &autoSubdir)
+		&dl.CreatedAt, &statsOnly, &autoExtract, &dl.TargetDir, &autoSubdir, &dl.ExpectedFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -336,11 +336,11 @@ func (s *SQLiteStore) CreateDownload(dl *Download) error {
 
 func (s *SQLiteStore) UpdateDownload(dl *Download) error {
 	_, err := s.db.Exec(
-		`UPDATE downloads SET channel=?, bot_nick=?, pack_number=?, filename=?, filesize=?, downloaded_bytes=?, status=?, destination_path=?, error_message=?, peak_speed=?, average_speed=?, started_at=?, completed_at=?, created_at=?, auto_extract=?, target_dir=?, auto_subdir=? WHERE id=?`,
+		`UPDATE downloads SET channel=?, bot_nick=?, pack_number=?, filename=?, filesize=?, downloaded_bytes=?, status=?, destination_path=?, error_message=?, peak_speed=?, average_speed=?, started_at=?, completed_at=?, created_at=?, auto_extract=?, target_dir=?, auto_subdir=?, expected_filename=? WHERE id=?`,
 		dl.Channel, dl.BotNick, dl.PackNumber, dl.Filename, dl.Filesize,
 		dl.DownloadedBytes, dl.Status, dl.DestinationPath, dl.ErrorMessage,
 		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, dl.CreatedAt, boolToInt(dl.AutoExtract),
-		dl.TargetDir, boolToInt(dl.AutoSubdir), dl.ID,
+		dl.TargetDir, boolToInt(dl.AutoSubdir), dl.ExpectedFilename, dl.ID,
 	)
 	return err
 }

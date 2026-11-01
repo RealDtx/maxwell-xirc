@@ -114,6 +114,9 @@ func (q *Queue) Retry(id int64) error {
 	}
 	dl.Status = "queued"
 	dl.ErrorMessage = ""
+	if dl.ExpectedFilename != "" { // re-check the offer against what we wanted
+		dl.Filename, dl.ExpectedFilename = dl.ExpectedFilename, ""
+	}
 	dl.DownloadedBytes = 0
 	dl.StartedAt = nil
 	dl.CompletedAt = nil

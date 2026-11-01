@@ -211,6 +211,7 @@ func TestEngine_HandleMessage_MarksDownloadingBeforeTransfer(t *testing.T) {
 		MinFreeSpace: "1000TB",
 	}
 	engine := NewEngine(recStore, bus, ircMgr, storageCfg, 2)
+	engine.SetMismatchPolicy("keep") // the offer renames the download; default would skip it
 
 	dl, err := engine.queue.Add(1, "#channel", "BotNick", 5, "queued-name.mkv", 1, false, false, true)
 	if err != nil {
@@ -470,5 +471,44 @@ func TestEngine_RoutesOfferToMatchingDownload(t *testing.T) {
 	engine.CancelTransfer(cur.ID)
 	if p := engine.GetPendingRequest(1, "BotNick"); p != nil {
 		t.Fatalf("expected pending cleared on cancel, got %+v", p)
+	}
+}
+
+func TestEngine_MismatchPolicy(t *testing.T) {
+	base, cleanup := newTestStore(t)
+	defer cleanup()
+	store := &recordingStore{Store: base}
+	dir := t.TempDir()
+	bus := irc.NewEventBus()
+	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{
+		DownloadsDir: filepath.Join(dir, "downloads"),
+		TempDir:      filepath.Join(dir, "temp"),
+		MinFreeSpace: "1000TB", // never actually transfer
+	}, 2)
+	offerSwapped := func() *db.Download {
+		dl, _ := engine.queue.Add(1, "#c", "BotNick", 7, "Wanted.mkv", 1, false, false, true)
+		engine.RegisterPendingRequest(dl.ID, 1, "BotNick")
+		engine.handleMessage(irc.Event{Type: irc.EventIRCMessage, ServerID: 1, Nick: "BotNick",
+			Data: map[string]string{"type": "ctcp", "message": `DCC SEND "Swapped.mkv" 3232235777 4500 2048`}})
+		got, _ := store.GetDownload(dl.ID)
+		return got
+	}
+
+	// Default (delete): never starts, flagged, failed.
+	got := offerSwapped()
+	if store.sawDownloading || got.Status != "failed" || got.ExpectedFilename != "Wanted.mkv" || got.Filename != "Swapped.mkv" {
+		t.Fatalf("delete policy: downloading=%v, got %+v", store.sawDownloading, got)
+	}
+	// Retry asks for the wanted file again, not the swapped one.
+	engine.queue.Retry(got.ID)
+	if r, _ := store.GetDownload(got.ID); r.Filename != "Wanted.mkv" || r.ExpectedFilename != "" {
+		t.Fatalf("retry did not restore expected name: %+v", r)
+	}
+
+	// Keep: transfer starts, still flagged.
+	engine.SetMismatchPolicy("keep")
+	got = offerSwapped()
+	if !store.sawDownloading || got.ExpectedFilename != "Wanted.mkv" {
+		t.Fatalf("keep policy: downloading=%v, got %+v", store.sawDownloading, got)
 	}
 }

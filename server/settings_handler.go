@@ -169,6 +169,7 @@ func (s *Server) applySettings(e config.Editable) (warnings, errs []string, err 
 
 	if s.engine != nil {
 		s.engine.SetRuntime(e.Storage.DownloadsDir, e.Storage.TempDir, e.Storage.MinFreeSpace, e.Downloads.MaxConcurrent)
+		s.engine.SetMismatchPolicy(e.Downloads.OnMismatch)
 	}
 	s.setStorageDirs(e.Storage.DownloadsDir, e.Storage.TempDir)
 	if s.auth != nil {
@@ -260,6 +261,9 @@ func validateSettings(cur, e config.Editable) []string {
 	}
 	if n := e.Downloads.MaxConcurrent; n < 1 || n > 20 {
 		errs = append(errs, "downloads.max_concurrent must be 1–20")
+	}
+	if p := e.Downloads.OnMismatch; p != "delete" && p != "keep" {
+		errs = append(errs, "downloads.on_mismatch must be delete or keep")
 	}
 	m := e.Maintenance
 	if m.SearchResultRetentionDays < 0 || m.IndexMaxFiles < 0 || m.IntervalHours < 0 {

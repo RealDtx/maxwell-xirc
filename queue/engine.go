@@ -47,6 +47,7 @@ type Engine struct {
 	stopCh             chan struct{}
 	pendingByBot       map[string]*PendingRequest // key: "serverID:botNick"
 	maxConcurrent      int
+	keepMismatch       bool // downloads.on_mismatch == "keep"
 	pumpMu             sync.Mutex // serializes TryDispatchQueued
 	transferMu         sync.Mutex
 	activeTransfers    map[int64]*dcc.Transfer
@@ -91,6 +92,14 @@ func (e *Engine) SetRuntime(downloadsDir, tempDir, minFreeSpace string, maxConcu
 	e.maxConcurrent = maxConcurrent
 	e.mu.Unlock()
 	go e.TryDispatchQueued() // a raised limit may free slots for waiting downloads
+}
+
+// SetMismatchPolicy sets what happens to a pack whose offered filename differs
+// from the expected one: "keep" downloads it unsorted, anything else skips it.
+func (e *Engine) SetMismatchPolicy(policy string) {
+	e.mu.Lock()
+	e.keepMismatch = policy == "keep"
+	e.mu.Unlock()
 }
 
 // CancelTransfer interrupts an active TCP transfer for the given download ID, if one
@@ -421,6 +430,12 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		}
 	}
 
+	// A genuine mismatch (no other download wants this file): remember what
+	// we expected so the row can be flagged, then either skip or keep it.
+	if dl.Filename != "" && !sameFilename(dl.Filename, offer.Filename) {
+		dl.ExpectedFilename = dl.Filename
+	}
+
 	// Reconcile the file index with reality: the bot's offer is authoritative
 	// for what this pack actually contains. The upsert also evicts any stale
 	// entry that mapped this bot+pack to a different (expected) filename.
@@ -440,6 +455,25 @@ func (e *Engine) handleMessage(ev irc.Event) {
 
 	dl.Filename = offer.Filename
 	dl.Filesize = offer.Size
+	e.mu.RLock()
+	keepMismatch := e.keepMismatch
+	e.mu.RUnlock()
+	if dl.ExpectedFilename != "" && !keepMismatch {
+		// The transfer never starts, so there's nothing to delete; the bot's
+		// offer simply times out.
+		msg := fmt.Sprintf("Filename mismatch — expected %q, bot sent %q; not downloaded", dl.ExpectedFilename, offer.Filename)
+		dl.Status = "failed"
+		dl.ErrorMessage = msg
+		if err := e.store.UpdateDownload(dl); err != nil {
+			log.Printf("failed to mark download %d mismatched: %v", dl.ID, err)
+		}
+		e.bus.Publish(irc.Event{
+			Type: irc.EventDownloadStatus,
+			Data: map[string]interface{}{"download_id": dl.ID, "status": "failed", "error": msg},
+		})
+		e.TryDispatchQueued()
+		return
+	}
 	dl.Status = "downloading"
 	dl.ErrorMessage = ""
 	startedAt := time.Now()
@@ -646,7 +680,10 @@ func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath str
 	// it drops flat into downloads_dir, unmatched.
 	destDir := ""
 	var matchedCat *library.Category
-	if dlErr == nil && dl != nil && dl.TargetDir != "" {
+	if dlErr == nil && dl != nil && dl.ExpectedFilename != "" {
+		// Kept mismatch: leave it unsorted in downloads_dir for inspection,
+		// never filed into the library or extracted (matchedCat stays nil).
+	} else if dlErr == nil && dl != nil && dl.TargetDir != "" {
 		destDir = dl.TargetDir
 	} else if e.library != nil && dlErr == nil && dl != nil && dl.AutoSubdir {
 		libCfg := e.library.Get()

@@ -17,6 +17,9 @@ storage:
 
 downloads:
   max_concurrent: 3
+  # Bot sent a different file than the pack list promised (pack swapped):
+  # delete = do not download it, keep = download into downloads_dir unsorted.
+  on_mismatch: delete
 
 # Background job that prunes stale search_results rows and caps the
 # self-collected file index so both stay bounded over time.

@@ -38,6 +38,10 @@ type StorageConfig struct {
 
 type DownloadsConfig struct {
 	MaxConcurrent int `yaml:"max_concurrent" json:"max_concurrent"`
+	// OnMismatch decides what happens when a bot sends a different file than
+	// the pack list promised: "delete" (don't download it) | "keep" (download,
+	// leave it in downloads_dir unsorted).
+	OnMismatch string `yaml:"on_mismatch" json:"on_mismatch"`
 }
 
 type PatternConfig struct {
@@ -155,6 +159,7 @@ func defaults() Config {
 		},
 		Downloads: DownloadsConfig{
 			MaxConcurrent: 3,
+			OnMismatch:    "delete",
 		},
 		Maintenance: MaintenanceConfig{
 			SearchResultRetentionDays: 14,
