@@ -22,6 +22,7 @@ import (
 
 	"github.com/RealDtx/maxwell-irc/config"
 	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/discovery"
 	"github.com/RealDtx/maxwell-irc/fscheck"
 	"github.com/RealDtx/maxwell-irc/internal/debug"
 	"github.com/RealDtx/maxwell-irc/internal/exitcodes"
@@ -330,6 +331,13 @@ func main() {
 		log.Printf("warning: failed to load IRC servers: %v", err)
 	}
 
+	disc := discovery.New(store, bus, func(id int64) discovery.Conn {
+		if c := ircMgr.GetConnection(id); c != nil {
+			return c
+		}
+		return nil
+	}, cfg.Discovery)
+	disc.Start()
 	p := parser.New(store, bus)
 	p.Start()
 
@@ -356,6 +364,7 @@ func main() {
 	srv := server.New(store, ircMgr, p, eng, hub, msgBuf, errBuf, setupState, cfg.Server.Prefix, webFS)
 	srv.SetGuide(guideMD)
 	srv.SetLibrary(libMgr)
+	srv.SetDiscovery(disc)
 	srv.SetDownloadsDir(cfg.Storage.DownloadsDir)
 	srv.SetAuth(auth)
 	srv.SetSettings(*configPath, cfg, maint)
@@ -387,6 +396,7 @@ func main() {
 		close(capStop)
 		p.Stop() // before httpServer.Close: main exits once ListenAndServe returns
 		httpServer.Close()
+		disc.Stop()
 		ircMgr.Shutdown()
 		hub.Stop()
 		eng.Stop()

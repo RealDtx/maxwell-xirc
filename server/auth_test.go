@@ -137,6 +137,7 @@ func TestAdminOnlyTable(t *testing.T) {
 		{"POST", "/api/files"}, {"GET", "/api/browse"}, {"POST", "/api/downloads/delete"}, {"POST", "/api/downloads/clear"},
 		{"POST", "/api/downloads/set-target"}, {"POST", "/api/downloads/move"},
 		{"GET", "/api/index/export"}, {"POST", "/api/index/import"},
+		{"GET", "/api/discovery"}, {"POST", "/api/discovery/scan"},
 	}
 	for _, c := range admin {
 		if !adminOnly(c.m, c.p) {

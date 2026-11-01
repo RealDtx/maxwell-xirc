@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/RealDtx/maxwell-irc/db"
+	"github.com/RealDtx/maxwell-irc/discovery"
 	ircpkg "github.com/RealDtx/maxwell-irc/irc"
 	"github.com/RealDtx/maxwell-irc/library"
 	"github.com/RealDtx/maxwell-irc/parser"
@@ -15,22 +16,23 @@ import (
 )
 
 type Server struct {
-	store    db.Store
-	ircMgr   *ircpkg.Manager
-	parser   *parser.Parser
-	engine   *queue.Engine
-	wsHub    *ws.Hub
-	msgBuf   *ircpkg.MessageBuffer
-	errBuf   *ircpkg.ErrorBuffer
-	setup    *SetupState
-	mux      *http.ServeMux
-	prefix   string
-	webFS    fs.FS
-	library  *library.Manager
-	auth     *Auth
-	setupMu  sync.Mutex // serialises /api/auth/setup and last-admin checks
-	caps     capState
-	settings settingsState
+	store     db.Store
+	ircMgr    *ircpkg.Manager
+	parser    *parser.Parser
+	engine    *queue.Engine
+	wsHub     *ws.Hub
+	msgBuf    *ircpkg.MessageBuffer
+	errBuf    *ircpkg.ErrorBuffer
+	setup     *SetupState
+	mux       *http.ServeMux
+	prefix    string
+	webFS     fs.FS
+	library   *library.Manager
+	discovery *discovery.Scanner
+	auth      *Auth
+	setupMu   sync.Mutex // serialises /api/auth/setup and last-admin checks
+	caps      capState
+	settings  settingsState
 
 	extracting sync.Map // target dir → struct{}; guards concurrent extracts
 	guide      []byte   // embedded docs/guide.md
@@ -87,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/api/health", s.handleHealth)
+	s.registerDiscoveryRoutes()
 	s.mux.HandleFunc("/guide.md", s.handleGuide)
 
 	// Auth & users (handlers require SetAuth; only registered routes reached via the middleware)

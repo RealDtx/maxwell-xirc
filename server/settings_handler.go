@@ -172,6 +172,9 @@ func (s *Server) applySettings(e config.Editable) (warnings, errs []string, err 
 		s.engine.SetRuntime(e.Storage.DownloadsDir, e.Storage.TempDir, e.Storage.MinFreeSpace, e.Downloads.MaxConcurrent)
 		s.engine.SetMismatchPolicy(e.Downloads.OnMismatch)
 	}
+	if s.discovery != nil {
+		s.discovery.SetConfig(e.Discovery)
+	}
 	s.setStorageDirs(e.Storage.DownloadsDir, e.Storage.TempDir)
 	if s.auth != nil {
 		if err := s.auth.Update(e.Auth); err != nil {
