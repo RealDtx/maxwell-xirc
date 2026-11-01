@@ -90,8 +90,9 @@ type Config struct {
 }
 
 // DiscoveryConfig tunes channel discovery (scanning a server's channel list
-// for xdcc channels). Stay seconds: how long to remain in a channel to
-// observe it; 0 means only the list data is used.
+// for xdcc channels). Stay seconds: how long to remain in each joined
+// channel to observe it; 0 means part as soon as the join burst (topic,
+// NAMES, join notices) is over — the channel is still joined.
 type DiscoveryConfig struct {
 	Keywords              []string `yaml:"keywords" json:"keywords"`
 	NormalStaySeconds     int      `yaml:"normal_stay_seconds" json:"normal_stay_seconds"`

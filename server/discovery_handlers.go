@@ -6,6 +6,7 @@ import (
 	"github.com/RealDtx/maxwell-irc/db"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/RealDtx/maxwell-irc/discovery"
 )
@@ -49,10 +50,24 @@ func (s *Server) handleDiscoveryList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if chans == nil {
-		chans = []db.DiscoveredChannel{}
+	realms, err := s.store.GetRealms(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"channels": chans, "scan": s.discovery.Status(id)})
+	realm := map[string]bool{}
+	for _, r := range realms {
+		realm[strings.ToLower(r.Name)] = true
+		realm[strings.ToLower(r.DownloadChannel)] = true
+	}
+	// Channels already configured as realms (e.g. by hand) are not listed.
+	out := []db.DiscoveredChannel{}
+	for _, d := range chans {
+		if !realm[d.Channel] && (d.Partner == "" || !realm[strings.ToLower(d.Partner)]) {
+			out = append(out, d)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"channels": out, "scan": s.discovery.Status(id)})
 }
 
 func (s *Server) handleDiscoveryUnseen(w http.ResponseWriter, r *http.Request) {

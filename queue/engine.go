@@ -47,7 +47,7 @@ type Engine struct {
 	stopCh             chan struct{}
 	pendingByBot       map[string]*PendingRequest // key: "serverID:botNick"
 	maxConcurrent      int
-	keepMismatch       bool // downloads.on_mismatch == "keep"
+	keepMismatch       bool       // downloads.on_mismatch == "keep"
 	pumpMu             sync.Mutex // serializes TryDispatchQueued
 	transferMu         sync.Mutex
 	activeTransfers    map[int64]*dcc.Transfer

@@ -280,10 +280,11 @@ func validateSettings(cur, e config.Editable) []string {
 	if p := e.Downloads.OnMismatch; p != "delete" && p != "keep" {
 		errs = append(errs, "downloads.on_mismatch must be delete or keep")
 	}
-	for k, n := range map[string]int{"normal": e.Discovery.NormalStaySeconds, "aggressive": e.Discovery.AggressiveStaySeconds} {
-		if n < 0 || n > 86400 {
-			errs = append(errs, "discovery."+k+"_stay_seconds must be 0–86400")
-		}
+	if n := e.Discovery.NormalStaySeconds; n < 0 || n > 86400 {
+		errs = append(errs, "discovery.normal_stay_seconds must be 0–86400")
+	}
+	if n := e.Discovery.AggressiveStaySeconds; n < 0 || n > 86400 {
+		errs = append(errs, "discovery.aggressive_stay_seconds must be 0–86400")
 	}
 	m := e.Maintenance
 	if m.SearchResultRetentionDays < 0 || m.IndexMaxFiles < 0 || m.IntervalHours < 0 {

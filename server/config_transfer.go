@@ -58,6 +58,7 @@ type exportSettings struct {
 	Downloads   config.DownloadsConfig   `json:"downloads"`
 	Maintenance config.MaintenanceConfig `json:"maintenance"`
 	UI          config.UIConfig          `json:"ui"`
+	Discovery   config.DiscoveryConfig   `json:"discovery"`
 }
 
 type configFile struct {
@@ -106,7 +107,7 @@ func (e exportRealm) applyTo(dst *db.Realm) {
 }
 
 func settingsFromEditable(e config.Editable) *exportSettings {
-	return &exportSettings{Storage: e.Storage, Downloads: e.Downloads, Maintenance: e.Maintenance, UI: e.UI}
+	return &exportSettings{Storage: e.Storage, Downloads: e.Downloads, Maintenance: e.Maintenance, UI: e.UI, Discovery: e.Discovery}
 }
 
 func parseIDList(s string) (map[int64]bool, error) {
@@ -245,7 +246,7 @@ func settingsCandidate(cur config.Editable, raw json.RawMessage) config.Editable
 	e := cur
 	fs := settingsFromEditable(cur)
 	_ = json.Unmarshal(raw, fs) // fields missing from the file keep their current values
-	e.Storage, e.Downloads, e.Maintenance, e.UI = fs.Storage, fs.Downloads, fs.Maintenance, fs.UI
+	e.Storage, e.Downloads, e.Maintenance, e.UI, e.Discovery = fs.Storage, fs.Downloads, fs.Maintenance, fs.UI, fs.Discovery
 	keepLocked(cur, &e, config.EnvLockedKeys())
 	return e
 }

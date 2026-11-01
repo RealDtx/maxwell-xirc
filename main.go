@@ -310,6 +310,19 @@ func main() {
 	browserNotifier := notify.NewBrowserNotifier(bus)
 	_ = browserNotifier // Used by engine for explicit notifications
 
+	errBuf := ircpkg.NewErrorBuffer(bus, 200)
+	errBuf.Start()
+	defer errBuf.Stop()
+
+	ircMgr := ircpkg.NewManager(store, bus)
+
+	disc := discovery.New(store, bus, func(id int64) discovery.Conn {
+		if c := ircMgr.GetConnection(id); c != nil {
+			return c
+		}
+		return nil
+	}, cfg.Discovery)
+
 	msgBuf := ircpkg.NewMessageBuffer(bus, 1000)
 	logDir := filepath.Join(filepath.Dir(cfg.Database.Path), "logs")
 	os.MkdirAll(logDir, 0o755)
@@ -318,27 +331,27 @@ func main() {
 	} else {
 		log.Printf("warning: channel logging disabled: %s", st.Reason)
 	}
+	// Discovery traffic (held channels, the LIST burst) stays out of buffers and logs.
+	msgBuf.SetSkip(func(serverID int64, channel, line string) bool {
+		if disc.Holding(serverID, channel) {
+			return true
+		}
+		if channel != "" || !disc.Listing(serverID) {
+			return false
+		}
+		_, _, ok := discovery.ParseListLine(line)
+		return ok
+	})
 	msgBuf.Start()
 	defer msgBuf.Stop()
-
-	errBuf := ircpkg.NewErrorBuffer(bus, 200)
-	errBuf.Start()
-	defer errBuf.Stop()
-
-	ircMgr := ircpkg.NewManager(store, bus)
 
 	if err := ircMgr.LoadFromStore(); err != nil {
 		log.Printf("warning: failed to load IRC servers: %v", err)
 	}
 
-	disc := discovery.New(store, bus, func(id int64) discovery.Conn {
-		if c := ircMgr.GetConnection(id); c != nil {
-			return c
-		}
-		return nil
-	}, cfg.Discovery)
 	disc.Start()
 	p := parser.New(store, bus)
+	p.SetDiscoveryHeld(disc.Holding)
 	p.Start()
 
 	libMgr := loadLibrary(*configPath, cfg)

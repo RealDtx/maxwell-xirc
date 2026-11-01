@@ -1609,3 +1609,28 @@ func TestServer_DiscoveryFields(t *testing.T) {
 		t.Errorf("b updated: %+v", gb)
 	}
 }
+
+func TestDiscoveredChannels_UpsertDefaultsTimes(t *testing.T) {
+	store, cleanup := newTestSQLiteStore(t)
+	defer cleanup()
+	srv := &Server{Name: "s", Host: "irc.example.org", Port: 6667, Nickname: "n", AuthMethod: "none"}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertDiscoveredChannel(&DiscoveredChannel{ServerID: srv.ID, Channel: "#example", Type: "chat"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.GetDiscoveredChannels(srv.ID)
+	if len(got) != 1 || got[0].FirstSeen.Year() < 2000 || got[0].LastSeen.Year() < 2000 {
+		t.Fatalf("zero times: %+v", got)
+	}
+	first, last := got[0].FirstSeen, got[0].LastSeen
+	time.Sleep(1100 * time.Millisecond) // DATETIME has second resolution
+	if err := store.UpsertDiscoveredChannel(&DiscoveredChannel{ServerID: srv.ID, Channel: "#example", Type: "chat"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = store.GetDiscoveredChannels(srv.ID)
+	if !got[0].LastSeen.After(last) || !got[0].FirstSeen.Equal(first) {
+		t.Fatalf("first %v→%v last %v→%v", first, got[0].FirstSeen, last, got[0].LastSeen)
+	}
+}

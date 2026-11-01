@@ -530,7 +530,7 @@ document.addEventListener('alpine:init', () => {
 
         async addDiscoveredAsRealm(row) {
             // Same rule as discovery.RealmPrefill.
-            const [name, dl] = row.type === 'download' ? [row.partner, row.channel] : [row.channel, row.partner];
+            const [name, dl] = row.type === 'download' && row.partner ? [row.partner, row.channel] : [row.channel, row.partner || ''];
             this.settingsTab = 'realms';
             this.setView('settings');
             await this.loadSettingsRealms(row.server_id);
@@ -2028,7 +2028,7 @@ document.addEventListener('alpine:init', () => {
                     const cur = this.discovery[sid];
                     this.discovery = Object.assign({}, this.discovery, { [sid]: { channels: cur.channels, scan: data.data || {} } });
                 }
-                if (data.data && data.data.state === 'done') {
+                if (data.data && ['done', 'cancelled', 'aborted'].includes(data.data.state)) {
                     this.loadDiscoveryUnseen();
                     if (sid in this.discovery) {
                         this.loadDiscovery(sid).then(() => {

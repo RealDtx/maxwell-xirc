@@ -32,6 +32,7 @@ type fakeConn struct {
 	joins     []string
 	parts     []string
 	prejoined map[string]bool
+	realms    []string // AllChannelNames
 	held      map[string]bool
 	reject    map[string]bool // reply 405 once
 	autoNames bool            // reply 366 to every join
@@ -72,7 +73,17 @@ func (f *fakeConn) PartChannel(name string) {
 	delete(f.held, name)
 }
 
-func (f *fakeConn) IsInChannel(name string) bool { return f.prejoined[strings.ToLower(name)] }
+func (f *fakeConn) IsInChannel(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.prejoined[strings.ToLower(name)]
+}
+
+func (f *fakeConn) AllChannelNames() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string{}, f.realms...)
+}
 
 func (f *fakeConn) snapshot() (raws, joins, parts []string) {
 	f.mu.Lock()
@@ -185,6 +196,9 @@ func TestScanner_NormalFindsKeywordChannelAndPartner(t *testing.T) {
 	}
 	if r.Partner != "#example-chat" || r.Type != "chat" || r.Reason != "keyword: xdcc" || r.Users != 42 {
 		t.Fatalf("row=%+v", r)
+	}
+	if r.LastSeen.Year() < 2000 || r.FirstSeen.Year() < 2000 {
+		t.Fatalf("zero seen times: %+v", r)
 	}
 	if st := e.sc.Status(e.sid); st.Found != 1 || st.Mode != "normal" || st.StartedAt == nil {
 		t.Fatalf("status=%+v", st)
@@ -422,5 +436,78 @@ func TestScanner_ChainKeepsEveryKeywordChannel(t *testing.T) {
 		if !covered[ch] {
 			t.Fatalf("%s lost: %v", ch, rows)
 		}
+	}
+}
+
+func TestScanner_SkipsQueuedChannelJoinedMidScan(t *testing.T) {
+	old := maxHeld
+	maxHeld = 1
+	defer func() { maxHeld = old }()
+	e := newEnv(t, "normal", config.DiscoveryConfig{})
+	e.fc.autoNames = false
+	e.list("#xdcc1 1 :", "#xdcc2 1 :")
+	waitFor(t, "first join", func() bool { _, j, _ := e.fc.snapshot(); return len(j) == 1 })
+	e.fc.mu.Lock()
+	e.fc.prejoined["#xdcc2"] = true
+	e.fc.mu.Unlock()
+	raw(e.bus, e.sid, ":irc.example.org 366 me #xdcc1 :End of /NAMES list.")
+	e.waitState("done")
+	_, joins, parts := e.fc.snapshot()
+	if contains(joins, "#xdcc2") || contains(parts, "#xdcc2") {
+		t.Fatalf("joins=%v parts=%v", joins, parts)
+	}
+}
+
+func TestScanner_NeverPartsChannelThatBecameRealm(t *testing.T) {
+	e := newEnv(t, "normal", config.DiscoveryConfig{})
+	e.fc.autoNames = false
+	e.list("#xdcc1 1 :")
+	waitFor(t, "join", func() bool { _, j, _ := e.fc.snapshot(); return len(j) == 1 })
+	e.fc.mu.Lock()
+	e.fc.realms = []string{"#XDCC1"}
+	e.fc.mu.Unlock()
+	raw(e.bus, e.sid, ":irc.example.org 366 me #xdcc1 :End of /NAMES list.")
+	e.waitState("done")
+	if _, _, parts := e.fc.snapshot(); len(parts) != 0 {
+		t.Fatalf("parts=%v", parts)
+	}
+}
+
+func TestScanner_CancelKeepsChannelThatBecameRealm(t *testing.T) {
+	e := newEnv(t, "normal", config.DiscoveryConfig{})
+	e.fc.autoNames = false
+	e.list("#xdcc1 1 :", "#xdcc2 1 :")
+	waitFor(t, "two joins", func() bool { _, j, _ := e.fc.snapshot(); return len(j) == 2 })
+	e.fc.mu.Lock()
+	e.fc.realms = []string{"#xdcc1"}
+	e.fc.mu.Unlock()
+	e.sc.Cancel(e.sid)
+	if _, _, parts := e.fc.snapshot(); len(parts) != 1 || parts[0] != "#xdcc2" {
+		t.Fatalf("parts=%v", parts)
+	}
+}
+
+func TestScanner_HoldingAndListing(t *testing.T) {
+	e := newEnv(t, "normal", config.DiscoveryConfig{})
+	e.fc.autoNames = false
+	if err := e.sc.Scan(e.sid); err != nil {
+		t.Fatal(err)
+	}
+	if !e.sc.Listing(e.sid) || e.sc.Listing(e.sid+1) {
+		t.Fatal("Listing wrong while listing")
+	}
+	raw(e.bus, e.sid, ":irc.example.org 322 me #xdcc1 1 :")
+	raw(e.bus, e.sid, ":irc.example.org 323 me :End of /LIST")
+	waitFor(t, "join", func() bool { _, j, _ := e.fc.snapshot(); return len(j) == 1 })
+	if e.sc.Listing(e.sid) {
+		t.Fatal("Listing after LIST end")
+	}
+	if !e.sc.Holding(e.sid, "#XDCC1") || e.sc.Holding(e.sid, "#other") || e.sc.Holding(e.sid+1, "#xdcc1") {
+		t.Fatal("Holding wrong while held")
+	}
+	raw(e.bus, e.sid, ":irc.example.org 366 me #xdcc1 :End of /NAMES list.")
+	e.waitState("done")
+	if e.sc.Holding(e.sid, "#xdcc1") {
+		t.Fatal("Holding after part")
 	}
 }

@@ -561,3 +561,17 @@ func TestCleanKeywords(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestValidateSettings_DiscoveryStayErrorOrder(t *testing.T) {
+	var e config.Editable
+	e.Discovery.NormalStaySeconds, e.Discovery.AggressiveStaySeconds = -1, 90000
+	var got []string
+	for _, msg := range validateSettings(e, e) {
+		if strings.HasPrefix(msg, "discovery.") {
+			got = append(got, msg)
+		}
+	}
+	if len(got) != 2 || !strings.HasPrefix(got[0], "discovery.normal") || !strings.HasPrefix(got[1], "discovery.aggressive") {
+		t.Fatalf("got %v", got)
+	}
+}

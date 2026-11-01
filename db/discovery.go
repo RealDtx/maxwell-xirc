@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Shared discovered_channels SQL — identical for SQLite and MySQL except the
@@ -22,6 +23,13 @@ const (
 
 func upsertDiscovered(db *sql.DB, conflict string, d *DiscoveredChannel) error {
 	d.Channel = strings.ToLower(d.Channel)
+	now := time.Now()
+	if d.FirstSeen.IsZero() {
+		d.FirstSeen = now
+	}
+	if d.LastSeen.IsZero() {
+		d.LastSeen = now
+	}
 	_, err := db.Exec(`INSERT INTO discovered_channels
 		(server_id, channel, partner, type, users, reason, ad_count, first_seen, last_seen)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) `+conflict,

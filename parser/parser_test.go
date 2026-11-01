@@ -810,3 +810,31 @@ func TestParser_PassiveIndexingOnDownloadChannel(t *testing.T) {
 		}
 	}
 }
+
+func TestParser_FallbackIgnoresDiscoveryHeldChannel(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	SeedPatterns(store)
+	bus := irc.NewEventBus()
+	p := New(store, bus)
+	p.SetDiscoveryHeld(func(serverID int64, channel string) bool { return channel == "#example-scan" })
+	p.Start()
+	defer p.Stop()
+	srv := &db.Server{Name: "test", Host: "irc.example.org", Port: 6667, Nickname: "bot", Enabled: true}
+	store.CreateServer(srv)
+	p.StartSearch(srv.ID, "#example-chat", "movie", "", 0)
+	ad := func(ch, text string) {
+		bus.Publish(irc.Event{Type: irc.EventIRCMessage, ServerID: srv.ID, Channel: ch, Nick: "BotA",
+			Data: map[string]string{"type": "privmsg", "message": text}})
+	}
+	ad("#example-scan", "#5    34x [1.4G] Held.Movie.2024.1080p.mkv")
+	ad("#example-dl", "#6    34x [1.4G] Some.Movie.2024.1080p.mkv")
+	time.Sleep(200 * time.Millisecond)
+	results, err := store.GetSearchResults("movie", srv.ID, "#example-chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Filename == nil || *results[0].Filename != "Some.Movie.2024.1080p.mkv" {
+		t.Fatalf("results=%+v", results)
+	}
+}

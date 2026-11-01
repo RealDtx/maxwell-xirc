@@ -148,3 +148,21 @@ func TestMessageBuffer_WritesLogFile(t *testing.T) {
 		t.Fatalf("expected timestamp prefix, got %q", line)
 	}
 }
+
+func TestMessageBuffer_SkipPredicate(t *testing.T) {
+	bus := NewEventBus()
+	buf := NewMessageBuffer(bus, 10)
+	buf.SetSkip(func(serverID int64, channel, line string) bool { return channel == "#example" })
+	buf.Start()
+	defer buf.Stop()
+	for _, ch := range []string{"#example", "#example-chat"} {
+		bus.Publish(Event{Type: EventIRCMessage, ServerID: 1, Channel: ch, Nick: "BotA", Data: map[string]string{"message": "hi", "type": "privmsg"}})
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := len(buf.GetMessages(1, "#example", time.Time{}, 10)); n != 0 {
+		t.Fatalf("skipped channel buffered %d", n)
+	}
+	if n := len(buf.GetMessages(1, "#example-chat", time.Time{}, 10)); n != 1 {
+		t.Fatalf("other channel buffered %d", n)
+	}
+}

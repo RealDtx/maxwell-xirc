@@ -121,8 +121,9 @@ func Classify(channel, partner string, channelAds, partnerAds int) string {
 }
 
 // RealmPrefill returns the (name, downloadChannel) to prefill a new realm with.
+// Keep identical to addDiscoveredAsRealm in web/js/app.js.
 func RealmPrefill(channel, partner, typ string) (name, downloadChannel string) {
-	if typ == "download" {
+	if typ == "download" && partner != "" {
 		return partner, channel
 	}
 	return channel, partner

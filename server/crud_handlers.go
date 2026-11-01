@@ -137,10 +137,23 @@ func (req serverRequest) authPassword(current string) string {
 	return current
 }
 
+// validDiscoveryMode defaults an empty discovery_mode to normal and
+// reports whether it is normal or aggressive.
+func (req *serverRequest) validDiscoveryMode() bool {
+	if req.DiscoveryMode == "" {
+		req.DiscoveryMode = "normal"
+	}
+	return req.DiscoveryMode == "normal" || req.DiscoveryMode == "aggressive"
+}
+
 func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 	var req serverRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if !req.validDiscoveryMode() {
+		writeError(w, http.StatusBadRequest, "discovery_mode must be normal or aggressive")
 		return
 	}
 	srv := req.Server
@@ -169,6 +182,10 @@ func (s *Server) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 	var req serverRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if !req.validDiscoveryMode() {
+		writeError(w, http.StatusBadRequest, "discovery_mode must be normal or aggressive")
 		return
 	}
 	srv := req.Server

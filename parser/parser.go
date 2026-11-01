@@ -71,7 +71,14 @@ type Parser struct {
 	// matchCounts accumulates per-pattern hits (searches + passive indexing)
 	// between flushes, so the hot path never writes a counter row per line.
 	matchCounts map[int64]int
+
+	// discoveryHeld reports channels the discovery scanner holds; their
+	// traffic never reaches a search session via the server-wide fallback.
+	discoveryHeld func(serverID int64, channel string) bool
 }
+
+// SetDiscoveryHeld sets the discovery-held predicate. Call before Start.
+func (p *Parser) SetDiscoveryHeld(fn func(serverID int64, channel string) bool) { p.discoveryHeld = fn }
 
 // statsFlushInterval is how often batched pattern match counts hit the DB.
 const statsFlushInterval = time.Minute
@@ -241,6 +248,9 @@ func (p *Parser) handleMessage(ev irc.Event) {
 	session, hasSession := p.activeSessions[key]
 	p.mu.RUnlock()
 
+	if !hasSession && p.discoveryHeld != nil && p.discoveryHeld(ev.ServerID, ev.Channel) {
+		return // discovery scan traffic, not a search reply
+	}
 	if !hasSession {
 		// Fall back to the most recently created session on the same server,
 		// but only if it was created within the fallback window.  This covers

@@ -97,4 +97,7 @@ func TestRealmPrefill(t *testing.T) {
 	if n, d := RealmPrefill("#example", "#example-chat", "chat"); n != "#example" || d != "#example-chat" {
 		t.Errorf("got %q %q", n, d)
 	}
+	if n, d := RealmPrefill("#example", "", "download"); n != "#example" || d != "" {
+		t.Errorf("download without partner: got %q %q", n, d)
+	}
 }

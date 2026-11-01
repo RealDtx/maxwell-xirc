@@ -41,6 +41,7 @@ type Conn interface {
 	JoinChannel(name, key string)
 	PartChannel(name string)
 	IsInChannel(name string) bool
+	AllChannelNames() []string // channels of the server's enabled realms
 }
 
 // ScanStatus is the per-server scan state, also the EventDiscovery payload.
@@ -106,7 +107,7 @@ type Scanner struct {
 	store  db.Store
 	bus    *irc.EventBus
 	conn   func(serverID int64) Conn // must return an untyped nil when not connected
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	cfg    config.DiscoveryConfig
 	scans  map[int64]*scan
 	events <-chan irc.Event
@@ -137,12 +138,29 @@ func (s *Scanner) SetConfig(cfg config.DiscoveryConfig) {
 }
 
 func (s *Scanner) Status(serverID int64) ScanStatus {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if sc := s.scans[serverID]; sc != nil {
 		return sc.st
 	}
 	return ScanStatus{State: "idle"}
+}
+
+// Holding reports whether a running scan of serverID currently holds channel
+// joined. Cheap: it runs per IRC line (message buffer, parser).
+func (s *Scanner) Holding(serverID int64, channel string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sc := s.scans[serverID]
+	return sc != nil && sc.running() && sc.held[strings.ToLower(channel)] != nil
+}
+
+// Listing reports whether a scan of serverID is waiting for LIST replies.
+func (s *Scanner) Listing(serverID int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sc := s.scans[serverID]
+	return sc != nil && sc.st.State == "listing"
 }
 
 // Scan starts a scan of serverID in the server's configured mode.
@@ -202,8 +220,11 @@ func (s *Scanner) Cancel(serverID int64) {
 	if sc == nil || !sc.running() {
 		return
 	}
+	realms := realmChannels(sc.conn)
 	for _, c := range sc.held {
-		sc.conn.PartChannel(c.name)
+		if !realms[c.name] {
+			sc.conn.PartChannel(c.name)
+		}
 	}
 	sc.held = map[string]*cand{}
 	s.end(sc, "cancelled")
@@ -319,16 +340,27 @@ func (s *Scanner) tick(sc *scan) (rows []*db.DiscoveredChannel, empty bool) {
 	if sc.st.Mode == "aggressive" {
 		stay = s.cfg.AggressiveStaySeconds
 	}
+	var realms map[string]bool // channels that became realms mid-scan stay joined
 	for key, c := range sc.held {
 		// ponytail: no 366 within listTimeout (ban/invite-only/key) counts as entered, so the slot frees.
 		entered := !c.namesAt.IsZero() && now.After(c.namesAt.Add(entryGrace)) || now.After(c.joinedAt.Add(listTimeout))
 		if !entered || now.Before(c.joinedAt.Add(time.Duration(stay)*stayUnit)) {
 			continue
 		}
-		sc.conn.PartChannel(c.name)
+		if realms == nil {
+			realms = realmChannels(sc.conn)
+		}
+		if !realms[c.name] {
+			sc.conn.PartChannel(c.name)
+		}
 		delete(sc.held, key)
 		c.finished = true
 		rows = append(rows, settle(sc, c, false)...)
+	}
+	// A queued channel the user joined meanwhile is skipped: never joined, never parted.
+	for len(sc.queue) > 0 && sc.conn.IsInChannel(sc.queue[0].name) {
+		sc.queue = sc.queue[1:]
+		sc.st.Total--
 	}
 	if len(sc.held) < sc.cap && len(sc.queue) > 0 {
 		c := sc.queue[0]
@@ -433,6 +465,15 @@ func settle(sc *scan, x *cand, final bool) []*db.DiscoveredChannel {
 		return nil
 	}
 	return []*db.DiscoveredChannel{row(sc, d, c.name, "download", r)}
+}
+
+// realmChannels is the lowercased set of the connection's realm channels.
+func realmChannels(c Conn) map[string]bool {
+	m := map[string]bool{}
+	for _, n := range c.AllChannelNames() {
+		m[strings.ToLower(n)] = true
+	}
+	return m
 }
 
 func row(sc *scan, c *cand, partner, typ, reason string) *db.DiscoveredChannel {

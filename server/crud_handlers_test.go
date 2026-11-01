@@ -469,3 +469,32 @@ func TestServerAuthPassword_Reveal(t *testing.T) {
 		t.Error("auth-password must be admin-only on GET")
 	}
 }
+
+func TestServerDiscoveryModeValidated(t *testing.T) {
+	srv, store, cleanup := newTestServerWithStore(t)
+	defer cleanup()
+	do := func(method, path, mode string) *httptest.ResponseRecorder {
+		body := `{"name":"s","host":"irc.example.org","port":6667,"nickname":"bot"` + mode + `}`
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
+		return w
+	}
+	if w := do("POST", "/api/servers", `,"discovery_mode":"turbo"`); w.Code != http.StatusBadRequest {
+		t.Fatalf("POST turbo: %d", w.Code)
+	}
+	w := do("POST", "/api/servers", "")
+	var created db.Server
+	if w.Code != http.StatusCreated || json.NewDecoder(w.Body).Decode(&created) != nil || created.DiscoveryMode != "normal" {
+		t.Fatalf("POST empty: %d %+v", w.Code, created)
+	}
+	path := fmt.Sprintf("/api/servers/%d", created.ID)
+	if w := do("PUT", path, `,"discovery_mode":"turbo"`); w.Code != http.StatusBadRequest {
+		t.Fatalf("PUT turbo: %d", w.Code)
+	}
+	if w := do("PUT", path, `,"discovery_mode":"aggressive"`); w.Code != http.StatusOK {
+		t.Fatalf("PUT aggressive: %d", w.Code)
+	}
+	if got, _ := store.GetServer(created.ID); got.DiscoveryMode != "aggressive" {
+		t.Fatalf("mode %q", got.DiscoveryMode)
+	}
+}

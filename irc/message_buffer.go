@@ -32,6 +32,7 @@ type MessageBuffer struct {
 	logDir   string
 	logFiles map[string]*os.File
 	logMu    sync.Mutex
+	skip     func(serverID int64, channel, line string) bool
 }
 
 // NewMessageBuffer creates a MessageBuffer with the given per-channel capacity.
@@ -51,6 +52,12 @@ func (mb *MessageBuffer) SetLogDir(dir string) {
 	mb.logDir = dir
 }
 
+// SetSkip sets a predicate for lines that are neither buffered nor logged
+// (channel discovery traffic). Call before Start.
+func (mb *MessageBuffer) SetSkip(fn func(serverID int64, channel, line string) bool) {
+	mb.skip = fn
+}
+
 // Start begins consuming events from the bus in a background goroutine.
 func (mb *MessageBuffer) Start() {
 	ch := mb.bus.Subscribe()
@@ -67,6 +74,9 @@ func (mb *MessageBuffer) Start() {
 				}
 				data, ok := ev.Data.(map[string]string)
 				if !ok {
+					continue
+				}
+				if mb.skip != nil && mb.skip(ev.ServerID, ev.Channel, data["message"]) {
 					continue
 				}
 				msg := BufferedMessage{

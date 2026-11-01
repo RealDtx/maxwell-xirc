@@ -550,3 +550,27 @@ func TestConfigExport_DiscoveryFields(t *testing.T) {
 		t.Errorf("imported: %+v", e)
 	}
 }
+
+func TestConfigTransfer_DiscoverySettingsRoundTrip(t *testing.T) {
+	srv, cfg, path := newSettingsTestServer(t, 2)
+	body := adminDo(t, srv, "GET", "/api/config/export?settings=1", "").Body.String()
+	var f map[string]any
+	if err := json.Unmarshal([]byte(body), &f); err != nil {
+		t.Fatal(err)
+	}
+	st := f["settings"].(map[string]any)
+	if _, ok := st["discovery"]; !ok {
+		t.Fatalf("export lacks discovery: %s", body)
+	}
+	st["discovery"] = map[string]any{"keywords": []string{"packs"}, "normal_stay_seconds": 5, "aggressive_stay_seconds": 600}
+	raw, _ := json.Marshal(f)
+	if res := applyImport(t, srv, string(raw), "overwrite", ""); res["settings"].Result != "updated" {
+		t.Fatalf("settings: %+v", res["settings"])
+	}
+	if d := cfg.Discovery; len(d.Keywords) != 1 || d.Keywords[0] != "packs" || d.NormalStaySeconds != 5 || d.AggressiveStaySeconds != 600 {
+		t.Errorf("not applied: %+v", d)
+	}
+	if data, _ := os.ReadFile(path); !strings.Contains(string(data), "aggressive_stay_seconds: 600") {
+		t.Errorf("not persisted:\n%s", data)
+	}
+}

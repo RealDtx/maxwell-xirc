@@ -83,3 +83,29 @@ func TestDiscoveryScanNotConnected(t *testing.T) {
 		t.Fatalf("got %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestDiscoveryListHidesRealmChannels(t *testing.T) {
+	srv, store, sid, cleanup := discoveryFixture(t)
+	defer cleanup()
+	for _, d := range []*db.DiscoveredChannel{
+		{ServerID: sid, Channel: "#example-chat", Partner: "#example-dl", Type: "chat"},
+		{ServerID: sid, Channel: "#other", Type: "unknown"},
+	} {
+		if err := store.UpsertDiscoveredChannel(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.CreateRealm(&db.Realm{ServerID: sid, Name: "#Example", DownloadChannel: "#example-dl", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	w := discDo(srv, "GET", fmt.Sprintf("/api/discovery?server_id=%d", sid), "")
+	var resp struct {
+		Channels []db.DiscoveredChannel `json:"channels"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &resp) != nil {
+		t.Fatalf("list: %d %s", w.Code, w.Body.String())
+	}
+	if len(resp.Channels) != 1 || resp.Channels[0].Channel != "#other" {
+		t.Fatalf("got %+v", resp.Channels)
+	}
+}
