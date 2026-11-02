@@ -858,6 +858,20 @@ func (c *Connection) handleRawLine(line string) {
 		})
 	}
 
+	// A server refusing our message to a nick (bot needs TLS, a registered
+	// nick, …): copy it into that nick's buffer so the bot debug view shows
+	// it, and so the queue engine can fail the request instead of waiting.
+	if target, reason, ok := refusedTarget(parts); ok {
+		c.bus.Publish(Event{
+			Type:      EventIRCMessage,
+			ServerID:  c.server.ID,
+			Channel:   target,
+			Nick:      strings.TrimPrefix(parts[0], ":"),
+			Timestamp: ts,
+			Data:      map[string]string{"type": "refused", "message": reason},
+		})
+	}
+
 	// Handle NAMES (353/366) replies
 	c.handleNamesReply(parts)
 
@@ -893,6 +907,23 @@ func (c *Connection) realmNeedsDownloadChannel(channel string) bool {
 // extractChannelFromRaw returns the channel name from a raw IRC line (JOIN, PART, MODE, KICK,
 // TOPIC, 332) so that those events can also be stored in the channel-specific buffer.
 // parts must be from strings.SplitN(line, " ", 5). Returns "" if no channel found.
+// refusedNumerics are replies meaning "your message to <nick> was not delivered".
+var refusedNumerics = map[string]bool{
+	"401": true, // ERR_NOSUCHNICK
+	"486": true, // ERR_NONONREG: target only accepts messages from registered nicks
+	"531": true, // ERR_CANTSENDTOUSER (e.g. "You must be connected via TLS to message this user")
+	"716": true, // ERR_TARGUMODEG: target is in +g (server-side ignore)
+}
+
+// refusedTarget reports the nick and reason of a refusal numeric:
+// ":server <code> <me> <nick> :<reason>" (parts as split by handleRawLine).
+func refusedTarget(parts []string) (target, reason string, ok bool) {
+	if len(parts) < 5 || !refusedNumerics[parts[1]] || strings.ContainsAny(parts[3][:1], "#&!+") {
+		return "", "", false
+	}
+	return parts[3], strings.TrimPrefix(parts[4], ":"), true
+}
+
 func extractChannelFromRaw(parts []string) string {
 	if len(parts) < 3 {
 		return ""

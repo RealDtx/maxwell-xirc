@@ -512,3 +512,26 @@ func TestEngine_MismatchPolicy(t *testing.T) {
 		t.Fatalf("keep policy: downloading=%v, got %+v", store.sawDownloading, got)
 	}
 }
+
+func TestEngine_RefusedMessageFailsPendingRequest(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	bus := irc.NewEventBus()
+	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{DownloadsDir: "data", TempDir: "data/tmp", MinFreeSpace: "0"}, 2)
+
+	dl, err := engine.queue.Add(1, "#channel", "Bot|A", 1, "file.txt", 1024, false, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.RegisterPendingRequest(dl.ID, 1, "Bot|A")
+	engine.handleMessage(irc.Event{Type: irc.EventIRCMessage, ServerID: 1, Channel: "bot|a",
+		Data: map[string]string{"type": "refused", "message": "You must be connected via TLS to message this user"}})
+
+	got, _ := store.GetDownload(dl.ID)
+	if got.Status != "failed" || !strings.Contains(got.ErrorMessage, "via TLS") {
+		t.Errorf("status=%s err=%q, want failed with the server's reason", got.Status, got.ErrorMessage)
+	}
+	if engine.pendingByBot[pendingKey(1, "Bot|A")] != nil {
+		t.Error("pending request not cleared")
+	}
+}

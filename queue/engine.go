@@ -357,6 +357,10 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		return
 	}
 
+	if data["type"] == "refused" {
+		e.failRefused(ev.ServerID, ev.Channel, data["message"])
+		return
+	}
 	if data["type"] != "ctcp" {
 		// Check for passive DCC hint messages from bots
 		if data["type"] == "notice" || data["type"] == "privmsg" {
@@ -576,6 +580,30 @@ func (e *Engine) uniqueDestPathLocked(filename, tempDir string) string {
 		}
 		return candidate
 	}
+}
+
+// failRefused fails the request waiting on bot when the server refused to
+// deliver our message to it — the bot will never answer.
+func (e *Engine) failRefused(serverID int64, bot, reason string) {
+	key := pendingKey(serverID, bot)
+	e.mu.Lock()
+	pending := e.pendingByBot[key]
+	delete(e.pendingByBot, key)
+	e.mu.Unlock()
+	if pending == nil {
+		return
+	}
+	msg := fmt.Sprintf("Server refused message to %s: %s", bot, reason)
+	log.Printf("download %d: %s", pending.DownloadID, msg)
+	if err := e.queue.MarkFailed(pending.DownloadID, msg); err != nil {
+		log.Printf("failed to mark download %d failed: %v", pending.DownloadID, err)
+	}
+	e.bus.Publish(irc.Event{
+		Type:     irc.EventNotification,
+		ServerID: serverID,
+		Data:     map[string]string{"severity": "warning", "message": msg, "download_id": fmt.Sprintf("%d", pending.DownloadID)},
+	})
+	e.TryDispatchQueued()
 }
 
 // answerPassive opens a listener in the passive port range and tells the bot

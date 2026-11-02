@@ -518,3 +518,20 @@ func TestIsInChannel_TracksOwnJoinPartKick(t *testing.T) {
 		t.Fatal("joined set not cleared on disconnect")
 	}
 }
+
+func TestRefusedTarget(t *testing.T) {
+	split := func(l string) []string { return strings.SplitN(l, " ", 5) }
+	tg, reason, ok := refusedTarget(split(":irc.example.net 531 me Bot|01 :You must be connected via TLS to message this user"))
+	if !ok || tg != "Bot|01" || reason != "You must be connected via TLS to message this user" {
+		t.Errorf("531: %q %q %v", tg, reason, ok)
+	}
+	for _, l := range []string{
+		":irc.example.net 404 me #chan :Cannot send to channel",
+		":irc.example.net 401 me #chan :No such nick/channel",
+		":irc.example.net 372 me :- motd",
+	} {
+		if _, _, ok := refusedTarget(split(l)); ok {
+			t.Errorf("%q: unexpected refusal", l)
+		}
+	}
+}
