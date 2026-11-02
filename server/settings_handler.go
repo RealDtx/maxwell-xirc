@@ -171,6 +171,7 @@ func (s *Server) applySettings(e config.Editable) (warnings, errs []string, err 
 	if s.engine != nil {
 		s.engine.SetRuntime(e.Storage.DownloadsDir, e.Storage.TempDir, e.Storage.MinFreeSpace, e.Downloads.MaxConcurrent)
 		s.engine.SetMismatchPolicy(e.Downloads.OnMismatch)
+		s.engine.SetPassive(e.Downloads.PassivePorts, e.Downloads.PublicIP)
 	}
 	if s.discovery != nil {
 		s.discovery.SetConfig(e.Discovery)
@@ -279,6 +280,12 @@ func validateSettings(cur, e config.Editable) []string {
 	}
 	if p := e.Downloads.OnMismatch; p != "delete" && p != "keep" {
 		errs = append(errs, "downloads.on_mismatch must be delete or keep")
+	}
+	if _, _, err := dcc.ParsePortRange(e.Downloads.PassivePorts); err != nil {
+		errs = append(errs, "downloads.passive_ports: "+err.Error())
+	}
+	if ip := strings.TrimSpace(e.Downloads.PublicIP); ip != "" && net.ParseIP(ip).To4() == nil {
+		errs = append(errs, "downloads.public_ip must be an IPv4 address")
 	}
 	if n := e.Discovery.NormalStaySeconds; n < 0 || n > 86400 {
 		errs = append(errs, "discovery.normal_stay_seconds must be 0–86400")

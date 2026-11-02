@@ -15,6 +15,9 @@ services:
       # `docker exec -it xirc xirc --create-admin <name>`), then set
       # BIND=0.0.0.0 in .env — from then on everyone logs in.
       - "${BIND:-127.0.0.1}:8085:8085"
+      # Passive DCC (Settings → System → Passive DCC ports): publish the same
+      # range here and forward it on your router.
+      # - "50000-50010:50000-50010"
     volumes:
       - ./data:/data
       # Keep downloads and media on the same filesystem so finished files are

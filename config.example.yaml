@@ -20,6 +20,11 @@ downloads:
   # Bot sent a different file than the pack list promised (pack swapped):
   # delete = do not download it, keep = download into downloads_dir unsorted.
   on_mismatch: delete
+  # Passive (reverse) DCC: some bots offer port 0 and connect to us instead.
+  # Forward this TCP range on your router (and publish it in Docker). Empty = off.
+  # passive_ports: 50000-50010
+  # WAN IPv4 sent to bots; empty = detect via api.ipv4.ipify.org.
+  # public_ip: ""
 
 # Background job that prunes stale search_results rows and caps the
 # self-collected file index so both stay bounded over time.

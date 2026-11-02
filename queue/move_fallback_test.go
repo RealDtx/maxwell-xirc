@@ -66,7 +66,7 @@ func TestRunTransfer_UnwritableDestinationFallsBackToDownloads(t *testing.T) {
 		c.Close()
 	}()
 	offer := &dcc.DCCOffer{Filename: "ep.mkv", IP: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port, Size: 4}
-	engine.runTransfer(dl.ID, offer, filepath.Join(temp, "ep.mkv"), 0)
+	engine.runTransfer(dl.ID, offer, filepath.Join(temp, "ep.mkv"), 0, nil)
 
 	got, err := store.GetDownload(dl.ID)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestRunTransfer_UnwritableTargetRecordsDescriptiveReason(t *testing.T) {
 		c.Close()
 	}()
 	offer := &dcc.DCCOffer{Filename: "ep.mkv", IP: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port, Size: 4}
-	engine.runTransfer(dl.ID, offer, filepath.Join(tempDir, "ep.mkv"), 0)
+	engine.runTransfer(dl.ID, offer, filepath.Join(tempDir, "ep.mkv"), 0, nil)
 
 	got, err := store.GetDownload(dl.ID)
 	if err != nil {

@@ -59,7 +59,7 @@ func TestRunTransfer_UnmatchedGoesToDownloadsDir(t *testing.T) {
 
 	port := serveOverTCP(t, []byte("data"))
 	offer := &dcc.DCCOffer{Filename: "random.file.bin", IP: "127.0.0.1", Port: port, Size: 4}
-	engine.runTransfer(dl.ID, offer, filepath.Join(temp, "random.file.bin"), 0)
+	engine.runTransfer(dl.ID, offer, filepath.Join(temp, "random.file.bin"), 0, nil)
 
 	got, err := store.GetDownload(dl.ID)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestRunTransfer_TarSeasonPackExtractedAndArchiveDeleted(t *testing.T) {
 	tarBytes := buildTar(t, "Show.S03E01.1080p.WEB.mkv", []byte("fake-video-bytes"))
 	port := serveOverTCP(t, tarBytes)
 	offer := &dcc.DCCOffer{Filename: "Show.S03.1080p.WEB.tar", IP: "127.0.0.1", Port: port, Size: int64(len(tarBytes))}
-	engine.runTransfer(dl.ID, offer, filepath.Join(temp, "Show.S03.1080p.WEB.tar"), 0)
+	engine.runTransfer(dl.ID, offer, filepath.Join(temp, "Show.S03.1080p.WEB.tar"), 0, nil)
 
 	got, err := store.GetDownload(dl.ID)
 	if err != nil {

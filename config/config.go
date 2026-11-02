@@ -42,6 +42,13 @@ type DownloadsConfig struct {
 	// the pack list promised: "delete" (don't download it) | "keep" (download,
 	// leave it in downloads_dir unsorted).
 	OnMismatch string `yaml:"on_mismatch" json:"on_mismatch"`
+	// PassivePorts enables passive (reverse) DCC: when a bot offers port 0 we
+	// listen on a port from this range ("50000-50010" or "50000") and the bot
+	// connects to us. The range must be forwarded on the router. Empty = off.
+	PassivePorts string `yaml:"passive_ports" json:"passive_ports"`
+	// PublicIP is the address sent to bots for passive DCC (the router's WAN
+	// IPv4). Empty = detect it via api.ipv4.ipify.org.
+	PublicIP string `yaml:"public_ip" json:"public_ip"`
 }
 
 type PatternConfig struct {

@@ -36,18 +36,63 @@ type Transfer struct {
 	startTime     time.Time
 	resumeOffset  int64
 	conn          net.Conn
+	listener      net.Listener // passive DCC: wait for the sender to connect here
 	cancelled     bool
 }
+
+// passiveAcceptTimeout bounds how long a passive transfer waits for the bot
+// to connect back after our reply.
+const passiveAcceptTimeout = 2 * time.Minute
 
 // Cancel interrupts an in-progress transfer by closing the underlying TCP connection.
 func (t *Transfer) Cancel() {
 	t.mu.Lock()
 	t.cancelled = true
-	conn := t.conn
+	conn, l := t.conn, t.listener
 	t.mu.Unlock()
 	if conn != nil {
 		conn.Close()
 	}
+	if l != nil {
+		l.Close()
+	}
+}
+
+// SetListener makes Start accept the sender's connection on l (passive DCC)
+// instead of dialing the offer's address. Start closes l.
+func (t *Transfer) SetListener(l net.Listener) {
+	t.mu.Lock()
+	t.listener = l
+	t.mu.Unlock()
+}
+
+func (t *Transfer) connect() (net.Conn, error) {
+	t.mu.RLock()
+	l := t.listener
+	t.mu.RUnlock()
+	if l == nil {
+		addr := net.JoinHostPort(t.offer.IP, strconv.Itoa(t.offer.Port))
+		conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
+		if err != nil {
+			return nil, fmt.Errorf("connecting to %s: %w", addr, err)
+		}
+		return conn, nil
+	}
+	defer l.Close() // one connection per offer
+	if tl, ok := l.(*net.TCPListener); ok {
+		tl.SetDeadline(time.Now().Add(passiveAcceptTimeout))
+	}
+	conn, err := l.Accept()
+	if err != nil {
+		t.mu.RLock()
+		cancelled := t.cancelled
+		t.mu.RUnlock()
+		if cancelled {
+			return nil, ErrCancelled
+		}
+		return nil, fmt.Errorf("passive DCC: bot did not connect to %s (port forwarded?): %w", l.Addr(), err)
+	}
+	return conn, nil
 }
 
 func NewTransfer(offer *DCCOffer, destPath string, progressCh chan TransferProgress) *Transfer {
@@ -89,10 +134,13 @@ func (t *Transfer) AverageSpeed() int64 {
 }
 
 func (t *Transfer) Start() error {
-	addr := net.JoinHostPort(t.offer.IP, strconv.Itoa(t.offer.Port))
-	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
+	// Closed on every return: runTransfer waits for the progress reader to drain.
+	if t.progressCh != nil {
+		defer close(t.progressCh)
+	}
+	conn, err := t.connect()
 	if err != nil {
-		return fmt.Errorf("connecting to %s: %w", addr, err)
+		return err
 	}
 	t.mu.Lock()
 	t.conn = conn
@@ -111,10 +159,6 @@ func (t *Transfer) Start() error {
 		if err != nil {
 			return fmt.Errorf("creating part file: %w", err)
 		}
-	}
-
-	if t.progressCh != nil {
-		defer close(t.progressCh)
 	}
 
 	t.startTime = time.Now()

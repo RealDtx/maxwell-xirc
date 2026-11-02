@@ -640,6 +640,14 @@ func (c *Connection) RemovePack(botNick string, packNumber int) error {
 	return c.xdcc(botNick, fmt.Sprintf("xdcc remove %d", packNumber))
 }
 
+// SendCTCP sends a CTCP request (e.g. a passive DCC reply) to nick.
+func (c *Connection) SendCTCP(nick, payload string) error {
+	if HasLineBreak(payload) || strings.Contains(payload, "\x01") {
+		return fmt.Errorf("invalid CTCP payload")
+	}
+	return c.xdcc(nick, "\x01"+payload+"\x01")
+}
+
 func (c *Connection) xdcc(botNick, msg string) error {
 	c.mu.RLock()
 	client := c.client

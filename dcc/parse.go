@@ -1,9 +1,12 @@
 package dcc
 
 import (
+	"encoding/binary"
 	"fmt"
+	"net"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 type DCCOffer struct {
@@ -12,11 +15,13 @@ type DCCOffer struct {
 	Port     int
 	Size     int64
 	Passive  bool
+	Token    string // passive (reverse) DCC: echoed back in our reply
 }
 
-// Matches: DCC SEND "filename" ip port size  OR  DCC SEND filename ip port size
-var dccSendQuoted = regexp.MustCompile(`^DCC SEND "([^"]+)"\s+(\d+)\s+(\d+)\s+(\d+)$`)
-var dccSendUnquoted = regexp.MustCompile(`^DCC SEND (\S+)\s+(\d+)\s+(\d+)\s+(\d+)$`)
+// Matches: DCC SEND "filename" ip port size [token]  OR  DCC SEND filename ip port size [token].
+// Passive (reverse) DCC sends port 0 plus a token: DCC SEND file ip 0 size token.
+var dccSendQuoted = regexp.MustCompile(`^DCC SEND "([^"]+)"\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+(\S+))?$`)
+var dccSendUnquoted = regexp.MustCompile(`^DCC SEND (\S+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+(\S+))?$`)
 
 func ParseDCCSend(msg string) (*DCCOffer, error) {
 	var matches []string
@@ -54,7 +59,24 @@ func ParseDCCSend(msg string) (*DCCOffer, error) {
 		Port:     port,
 		Size:     size,
 		Passive:  port == 0,
+		Token:    matches[5],
 	}, nil
+}
+
+// PassiveReply is the receiver's answer to a passive offer: the same SEND
+// with our reachable IPv4 and listening port, echoing the sender's token
+// (https://en.wikipedia.org/wiki/Direct_Client-to-Client, Reverse DCC).
+// The sender then connects to us.
+func PassiveReply(o *DCCOffer, ip net.IP, port int) (string, error) {
+	v4 := ip.To4()
+	if v4 == nil {
+		return "", fmt.Errorf("passive DCC needs an IPv4 address, got %v", ip)
+	}
+	name := o.Filename
+	if strings.ContainsAny(name, " \t") {
+		name = `"` + name + `"`
+	}
+	return fmt.Sprintf("DCC SEND %s %d %d %d %s", name, binary.BigEndian.Uint32(v4), port, o.Size, o.Token), nil
 }
 
 func intToIP(n uint32) string {

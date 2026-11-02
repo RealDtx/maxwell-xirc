@@ -1,6 +1,12 @@
 package dcc
 
-import "testing"
+import (
+	"io"
+	"net"
+	"os"
+	"strconv"
+	"testing"
+)
 
 func TestParseDCCSend_Normal(t *testing.T) {
 	// DCC SEND filename ip port filesize
@@ -90,5 +96,45 @@ func TestIntToIP(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("intToIP(%d) = %s, want %s", tt.input, got, tt.expected)
 		}
+	}
+}
+
+func TestPassiveTokenAndReply(t *testing.T) {
+	o, err := ParseDCCSend(`DCC SEND "My File.mkv" 3232235777 0 700000000 42`)
+	if err != nil || !o.Passive || o.Token != "42" {
+		t.Fatalf("offer=%+v err=%v", o, err)
+	}
+	got, err := PassiveReply(o, net.ParseIP("1.2.3.4"), 50001)
+	if want := `DCC SEND "My File.mkv" 16909060 50001 700000000 42`; err != nil || got != want {
+		t.Errorf("got %q err=%v, want %q", got, err, want)
+	}
+	for in, ok := range map[string]bool{"": true, "50000": true, "50000-50010": true, "80": false, "5-1": false, "x": false, "50010-50000": false} {
+		if _, _, err := ParsePortRange(in); (err == nil) != ok {
+			t.Errorf("ParsePortRange(%q) err=%v", in, err)
+		}
+	}
+}
+
+func TestPassiveTransferAccepts(t *testing.T) {
+	l, port, err := ListenRange(50100, 50120)
+	if err != nil {
+		t.Skip(err)
+	}
+	dest := t.TempDir() + "/f.bin"
+	tr := NewTransfer(&DCCOffer{Filename: "f.bin", Size: 5, Passive: true}, dest, nil)
+	tr.SetListener(l)
+	go func() {
+		c, err := net.Dial("tcp4", "127.0.0.1:"+strconv.Itoa(port))
+		if err == nil {
+			c.Write([]byte("hello"))
+			io.Copy(io.Discard, c) // drain acks until we close
+			c.Close()
+		}
+	}()
+	if err := tr.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(dest); string(b) != "hello" {
+		t.Errorf("got %q", b)
 	}
 }

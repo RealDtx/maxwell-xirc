@@ -358,6 +358,7 @@ func main() {
 
 	eng := queue.NewEngine(store, bus, ircMgr, &cfg.Storage, cfg.Downloads.MaxConcurrent)
 	eng.SetMismatchPolicy(cfg.Downloads.OnMismatch)
+	eng.SetPassive(cfg.Downloads.PassivePorts, cfg.Downloads.PublicIP)
 	eng.SetLibrary(libMgr)
 	eng.Start()
 

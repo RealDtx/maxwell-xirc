@@ -11,7 +11,7 @@ A self-hosted XDCC web client for downloading files via IRC bots, designed to ru
 - Download queue — concurrent DCC file transfers with progress tracking
 - File routing rules — direct downloads to different directories by filename pattern
 - Auto-extract — optionally unpack tar archives after download with automatic routing
-- DCC passive mode — works behind NAT without port forwarding
+- Passive (reverse) DCC for bots that require it — needs a forwarded port range (Settings → System)
 - Multi-server support — connect to multiple IRC servers and channels
 - Multi-user login — session-based auth with admin/user roles; trusted networks can skip login
 - Preconfig + deploy workflow — repeatable deployments via rsync and systemd

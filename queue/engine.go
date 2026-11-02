@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,8 @@ type Engine struct {
 	pendingByBot       map[string]*PendingRequest // key: "serverID:botNick"
 	maxConcurrent      int
 	keepMismatch       bool       // downloads.on_mismatch == "keep"
+	passivePorts       string     // downloads.passive_ports; "" = passive DCC off
+	publicIP           string     // downloads.public_ip; "" = auto-detect
 	pumpMu             sync.Mutex // serializes TryDispatchQueued
 	transferMu         sync.Mutex
 	activeTransfers    map[int64]*dcc.Transfer
@@ -99,6 +102,14 @@ func (e *Engine) SetRuntime(downloadsDir, tempDir, minFreeSpace string, maxConcu
 func (e *Engine) SetMismatchPolicy(policy string) {
 	e.mu.Lock()
 	e.keepMismatch = policy == "keep"
+	e.mu.Unlock()
+}
+
+// SetPassive configures passive (reverse) DCC: the port range we listen on
+// ("" disables it) and the public IP sent to bots ("" = auto-detect).
+func (e *Engine) SetPassive(ports, publicIP string) {
+	e.mu.Lock()
+	e.passivePorts, e.publicIP = ports, publicIP
 	e.mu.Unlock()
 }
 
@@ -374,16 +385,19 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		return
 	}
 
-	// Handle passive DCC
-	if offer.Passive {
+	// Passive DCC needs a forwarded port range; without one, ask the user.
+	e.mu.RLock()
+	passivePorts := e.passivePorts
+	e.mu.RUnlock()
+	if offer.Passive && passivePorts == "" {
 		log.Printf("passive DCC from %s — marking needs_action", ev.Nick)
-		e.queue.MarkNeedsAction(pending.DownloadID, "Bot requires passive DCC. Configure passive DCC port range in settings.")
+		e.queue.MarkNeedsAction(pending.DownloadID, "Bot requires passive DCC. Set a passive DCC port range in Settings → System and forward it on your router.")
 		e.bus.Publish(irc.Event{
 			Type:     irc.EventNotification,
 			ServerID: ev.ServerID,
 			Data: map[string]string{
 				"severity":    "action",
-				"message":     fmt.Sprintf("Bot %s requires passive DCC — configure port range in settings", ev.Nick),
+				"message":     fmt.Sprintf("Bot %s requires passive DCC — set a passive port range in Settings → System", ev.Nick),
 				"download_id": fmt.Sprintf("%d", pending.DownloadID),
 			},
 		})
@@ -513,11 +527,26 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		resumeOffset = info.Size()
 	}
 
+	var listener net.Listener
+	if offer.Passive {
+		resumeOffset = 0 // no RESUME negotiation: start the .part afresh
+		l, err := e.answerPassive(dl.ServerID, ev.Nick, offer, passivePorts)
+		if err != nil {
+			e.transferMu.Lock()
+			delete(e.activeDestPaths, filepath.Base(destPath))
+			e.transferMu.Unlock()
+			e.queue.MarkFailed(dl.ID, err.Error())
+			e.TryDispatchQueued()
+			return
+		}
+		listener = l
+	}
+
 	// Start transfer in goroutine
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
-		e.runTransfer(dl.ID, offer, destPath, resumeOffset)
+		e.runTransfer(dl.ID, offer, destPath, resumeOffset, listener)
 	}()
 }
 
@@ -549,9 +578,49 @@ func (e *Engine) uniqueDestPathLocked(filename, tempDir string) string {
 	}
 }
 
-func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath string, resumeOffset int64) {
+// answerPassive opens a listener in the passive port range and tells the bot
+// where to connect: DCC SEND <file> <our ip> <port> <size> <token>.
+func (e *Engine) answerPassive(serverID int64, bot string, offer *dcc.DCCOffer, ports string) (net.Listener, error) {
+	e.mu.RLock()
+	override := e.publicIP
+	e.mu.RUnlock()
+	lo, hi, err := dcc.ParsePortRange(ports)
+	if err != nil {
+		return nil, fmt.Errorf("passive DCC port range: %w", err)
+	}
+	ip, err := dcc.PublicIPv4(override)
+	if err != nil {
+		return nil, err
+	}
+	l, port, err := dcc.ListenRange(lo, hi)
+	if err != nil {
+		return nil, fmt.Errorf("passive DCC: %w", err)
+	}
+	reply, err := dcc.PassiveReply(offer, ip, port)
+	var conn *irc.Connection
+	if err == nil && e.ircMgr != nil {
+		conn = e.ircMgr.GetConnection(serverID)
+	}
+	if err == nil && conn == nil {
+		err = fmt.Errorf("no IRC connection for server %d", serverID)
+	}
+	if err == nil {
+		err = conn.SendCTCP(bot, reply)
+	}
+	if err != nil {
+		l.Close()
+		return nil, fmt.Errorf("passive DCC: %w", err)
+	}
+	log.Printf("passive DCC: told %s to connect to %s:%d", bot, ip, port)
+	return l, nil
+}
+
+func (e *Engine) runTransfer(downloadID int64, offer *dcc.DCCOffer, destPath string, resumeOffset int64, listener net.Listener) {
 	progressCh := make(chan dcc.TransferProgress, 64)
 	tr := dcc.NewTransfer(offer, destPath, progressCh)
+	if listener != nil {
+		tr.SetListener(listener)
+	}
 	if resumeOffset > 0 {
 		tr.SetResumeOffset(resumeOffset)
 	}
