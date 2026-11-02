@@ -208,6 +208,8 @@ document.addEventListener('alpine:init', () => {
         discovery: {},        // { [serverId]: { channels: [], scan: {} } }
         discoveryUnseen: {},  // { [serverId]: count }
         quickAdd: { open: false, url: '', nick: '', busy: false, error: '' },
+        debugBots: localStorage.getItem('mxirc_debug_bots') === '1', // Settings → General
+        botDebug: null,         // { server_id, bot } shown in the debug drawer
         discoveryPreview: null, // { server_id, channel, partner, role, row_id, busy, error }
 
         // Active server (for server view)
@@ -550,6 +552,44 @@ document.addEventListener('alpine:init', () => {
                 this.realmForm.download_channel = dl;
             }
             this.pendingDiscoveredId = row.id;
+        },
+
+        // --- Bot debug mode: per-bot DM traffic (requests, notices, CTCP) ---
+
+        setDebugBots(on) {
+            this.debugBots = on;
+            try { localStorage.setItem('mxirc_debug_bots', on ? '1' : '0'); } catch (e) {}
+            if (on) this.loadDownloads(); else this.botDebug = null;
+        },
+
+        // Bots we've requested packs from in this realm, plus its search bot.
+        botsForRealm(serverId, realm) {
+            const chans = [realm.name, realm.download_channel].filter(Boolean).map(c => c.toLowerCase());
+            const seen = {}, out = [];
+            const add = n => { if (n && !seen[n.toLowerCase()]) { seen[n.toLowerCase()] = true; out.push(n); } };
+            add(realm.search_bot);
+            for (const d of this.downloads) {
+                if (d.server_id === serverId && chans.includes((d.channel || '').toLowerCase())) add(d.bot_nick);
+            }
+            return out.sort((a, b) => a.toLowerCase() < b.toLowerCase() ? -1 : 1);
+        },
+
+        openBotDebug(serverId, realm, bot) {
+            if (!(this.activeServer === serverId && this.activeChannel === realm.name && this.activeView === 'channel')) {
+                this.selectRealm(serverId, realm.name);
+            }
+            this.botDebug = { server_id: serverId, bot };
+            this.loadChannelMessages(serverId, bot);
+        },
+
+        botDebugMessages() {
+            const b = this.botDebug;
+            if (!b) return [];
+            // Live WS keys keep the server's spelling; match the nick case-insensitively.
+            const want = this.channelKey(b.server_id, b.bot).toLowerCase();
+            const keys = Object.keys(this.ircMessages).filter(k => k.toLowerCase() === want);
+            if (keys.length === 1) return this.ircMessages[keys[0]];
+            return keys.flatMap(k => this.ircMessages[k]).sort((x, y) => (x.timestamp < y.timestamp ? -1 : 1));
         },
 
         // Preview: join the discovered channel (and its partner) and show it in
@@ -3762,6 +3802,7 @@ document.addEventListener('alpine:init', () => {
             }
             if (!(await this.loadMe())) return; // overlay shown; submitAuth() re-runs init()
             this.loadGuide();
+            if (this.debugBots) this.loadDownloads();
             await this.loadCaps();
             if (this.isAdmin) await this.checkSetup();
 

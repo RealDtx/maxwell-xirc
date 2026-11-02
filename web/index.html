@@ -87,6 +87,17 @@
                                                       @click.stop="rejoinChannel(server.id, realm.name)">↵</span>
                                             </template>
                                         </div>
+                                        <template x-if="debugBots">
+                                            <div>
+                                                <template x-for="bot in botsForRealm(server.id, realm)" :key="bot">
+                                                    <div class="channel-item bot-debug-item"
+                                                         :class="{ active: botDebug && botDebug.server_id === server.id && botDebug.bot === bot }"
+                                                         :title="'Debug: messages to and from ' + bot"
+                                                         @click="openBotDebug(server.id, realm, bot); sidebarOpen = false"
+                                                         x-text="bot"></div>
+                                                </template>
+                                            </div>
+                                        </template>
                                     </template>
                                 </div>
                             </template>
@@ -1478,6 +1489,14 @@
                                 <summary>Help</summary>
                                 <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['settings-general'] || ''"></div>
                             </details>
+                            <div class="settings-card" style="max-width:480px; margin-bottom:16px;">
+                                <h3 style="margin-bottom:12px;">Debug mode</h3>
+                                <label style="display:flex; gap:8px; align-items:center;">
+                                    <input type="checkbox" :checked="debugBots" @change="setDebugBots($event.target.checked)">
+                                    Show bot traffic
+                                </label>
+                                <div class="text-xs" style="color:var(--text-muted); margin-top:6px;">Lists the bots of each realm under it in the sidebar (advanced mode). Click a bot to see every message to and from it — pack requests, notices, DCC offers — in a panel over the bot chat.</div>
+                            </div>
                             <div class="settings-card" style="max-width:480px;">
                                 <h3 style="margin-bottom:12px;">Date Format</h3>
                                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
@@ -2724,6 +2743,30 @@
         </div>
     </template>
 </div>
+
+<!-- Bot debug drawer: one bot's DM traffic, over the bot chat -->
+<template x-if="debugBots && botDebug && activeView === 'channel'">
+    <aside class="bot-debug-drawer" role="dialog" aria-modal="false" :aria-label="'Debug: ' + botDebug.bot"
+           @keydown.escape.window="botDebug = null">
+        <div class="bot-debug-header">
+            <strong x-text="botDebug.bot"></strong>
+            <span class="text-xs" style="color:var(--text-muted);" x-text="getServerName(botDebug.server_id) + ' · debug'"></span>
+            <button class="btn btn-sm" style="margin-left:auto;" title="Reload" @click="loadChannelMessages(botDebug.server_id, botDebug.bot)">↺</button>
+            <button class="btn btn-sm" title="Close (Esc)" aria-label="Close" @click="botDebug = null">&times;</button>
+        </div>
+        <div class="bot-debug-log">
+            <template x-for="(m, i) in botDebugMessages()" :key="i">
+                <div class="bot-debug-line" :class="m.msg_type === 'sent' ? 'out' : 'in'">
+                    <span class="time" x-text="formatTime(m.timestamp)"></span>
+                    <span class="dir" x-text="m.msg_type === 'sent' ? '→' : '←'" :title="m.msg_type === 'sent' ? 'sent' : 'received'"></span>
+                    <span class="badge" x-text="m.msg_type === 'sent' ? 'out' : m.msg_type"></span>
+                    <span class="text" x-text="m.message"></span>
+                </div>
+            </template>
+            <div x-show="!botDebugMessages().length" class="text-sm" style="color:var(--text-muted); padding:8px;">No messages with this bot since the last restart.</div>
+        </div>
+    </aside>
+</template>
 
 <!-- Quick add: irc:// link -> server + realm -->
 <div x-show="quickAdd.open" x-cloak @keydown.escape.window="quickAdd.open = false"

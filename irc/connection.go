@@ -662,6 +662,20 @@ func (c *Connection) xdcc(botNick, msg string) error {
 		return fmt.Errorf("invalid bot nick %q", botNick)
 	}
 	client.Privmsg(botNick, msg)
+	// Echo into the bot's query buffer so the bot debug view shows both
+	// directions. Type "sent" keeps the engine from parsing our own CTCP.
+	shown := msg
+	if strings.HasPrefix(msg, "\x01") {
+		shown = "CTCP " + strings.Trim(msg, "\x01")
+	}
+	c.bus.Publish(Event{
+		Type:      EventIRCMessage,
+		ServerID:  c.server.ID,
+		Channel:   botNick,
+		Nick:      client.Nick(),
+		Timestamp: time.Now().Format(time.RFC3339Nano),
+		Data:      map[string]string{"type": "sent", "message": shown},
+	})
 	return nil
 }
 

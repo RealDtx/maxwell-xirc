@@ -111,7 +111,9 @@ func (mb *MessageBuffer) Stop() {
 }
 
 func (mb *MessageBuffer) key(serverID int64, channel string) string {
-	return fmt.Sprintf("%d:%s", serverID, channel)
+	// IRC names are case-insensitive: a bot's nick may differ in case
+	// between its pack list (our requests) and the server (its replies).
+	return fmt.Sprintf("%d:%s", serverID, strings.ToLower(channel))
 }
 
 func (mb *MessageBuffer) append(serverID int64, channel string, msg BufferedMessage) {

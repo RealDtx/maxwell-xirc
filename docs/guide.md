@@ -114,6 +114,8 @@ Personal display preferences — stored only in your browser, not shared with ot
 
 **How to use it:** pick a date format from the presets (DD-MM-YYYY, YYYY-MM-DD, MM/DD/YYYY, each with time) or type your own; the preview below updates live.
 
+**Debug mode** (Show bot traffic): lists each realm's bots — the ones you requested packs from, plus its search bot — under the realm in the sidebar (advanced mode). Click one to open a panel over the bot chat with every message to and from that bot: your `xdcc send` requests and passive-DCC replies (→) and the bot's notices, messages and DCC offers (←). Close it with × or Esc. The buffer holds messages since the last restart.
+
 ## Settings: Users {#settings-users}
 Accounts and roles (admin-only tab). See [Access](#access) for what each role can actually do.
 
