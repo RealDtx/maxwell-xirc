@@ -207,6 +207,7 @@ document.addEventListener('alpine:init', () => {
         pendingDiscoveredId: null,
         discovery: {},        // { [serverId]: { channels: [], scan: {} } }
         discoveryUnseen: {},  // { [serverId]: count }
+        discoveryPreview: null, // { server_id, channel, partner, role, row_id, busy, error }
 
         // Active server (for server view)
         activeServerObj: null,
@@ -548,6 +549,73 @@ document.addEventListener('alpine:init', () => {
                 this.realmForm.download_channel = dl;
             }
             this.pendingDiscoveredId = row.id;
+        },
+
+        // Preview: join the discovered channel (and its partner) and show it in
+        // the channel view, with a bar to save it as a realm from there.
+        previewDiscovered(row) {
+            this.discoveryPreview = { server_id: row.server_id, channel: row.channel, partner: row.partner || '',
+                role: row.type === 'download' ? 'download' : 'chat', row_id: row.id, busy: false, error: '' };
+            this._applyDiscoveryPreview(true);
+        },
+
+        // [realm name, download channel] for the preview — same rule as discovery.RealmPrefill.
+        _previewPair(p) {
+            const partner = (p.partner || '').trim();
+            if (!partner) return [p.channel, ''];
+            return p.role === 'download' ? [partner, p.channel] : [p.channel, partner];
+        },
+
+        _applyDiscoveryPreview(join) {
+            const p = this.discoveryPreview;
+            if (!p) return;
+            const [name, dl] = this._previewPair(p);
+            for (const ch of [p.channel, (p.partner || '').trim()].filter(Boolean)) {
+                const k = this.channelKey(p.server_id, ch);
+                if (!this._realmConfigs[k]) delete this._channelConfigs[k];
+                if (join) api.joinChannel(p.server_id, ch).catch(console.error);
+            }
+            if (dl) this._channelConfigs[this.channelKey(p.server_id, name)] = dl;
+            this.selectChannel(p.server_id, name);
+            if (join) setTimeout(() => {
+                for (const ch of [name, dl].filter(Boolean)) {
+                    this.loadChannelMessages(p.server_id, ch);
+                    this.loadUserList(p.server_id, ch);
+                }
+            }, 1500);
+        },
+
+        previewActive() {
+            const p = this.discoveryPreview;
+            if (!p || !this.isAdmin || this.activeView !== 'channel' || p.server_id !== this.activeServer) return false;
+            return this._previewPair(p)[0] === this.activeChannel && !this._realmConfigs[this.channelKey(p.server_id, this.activeChannel)];
+        },
+
+        async saveDiscoveryPreview() {
+            const p = this.discoveryPreview;
+            const [name, dl] = this._previewPair(p);
+            p.busy = true; p.error = '';
+            try {
+                await api.createRealm({ server_id: p.server_id, name, display_name: '', key: '', search_command: '',
+                    download_channel: dl, search_bot: '', search_timeout: 10, auto_join: true, enabled: true });
+                if (p.row_id) api.markDiscoveredAdded(p.row_id).then(() => this.loadDiscovery(p.server_id)).catch(console.error);
+                this.discoveryPreview = null;
+                await this.loadServersAndRealms();
+                this.selectRealm(p.server_id, name);
+            } catch (e) {
+                p.error = e.message || 'Save failed';
+            } finally {
+                p.busy = false;
+            }
+        },
+
+        leaveDiscoveryPreview() {
+            const p = this.discoveryPreview;
+            for (const ch of [p.channel, (p.partner || '').trim()].filter(Boolean)) {
+                api.sendRaw(p.server_id, 'PART ' + ch).catch(console.error);
+            }
+            this.discoveryPreview = null;
+            this.selectServer(this.servers.find(s => s.id === p.server_id) || { id: p.server_id });
         },
 
         // Aggressive mode joins every channel on the network: confirm first.

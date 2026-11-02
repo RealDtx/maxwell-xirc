@@ -198,6 +198,25 @@
                     <div class="help-body" @click="helpLinkClick($event)" x-html="guide.sections['search'] || ''"></div>
                 </details>
 
+                <!-- Discovery preview: save the joined channel as a realm -->
+                <template x-if="previewActive()">
+                    <div class="settings-card" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0 0 8px;">
+                        <strong>Preview</strong>
+                        <span x-text="discoveryPreview.channel"></span>
+                        <span>is the</span>
+                        <select x-model="discoveryPreview.role" @change="_applyDiscoveryPreview(false)">
+                            <option value="chat">chat channel</option>
+                            <option value="download">download channel</option>
+                        </select>
+                        <input type="text" x-model.lazy="discoveryPreview.partner" @change="_applyDiscoveryPreview(true)"
+                               :placeholder="discoveryPreview.role === 'download' ? 'Chat channel (optional)' : 'Download channel (optional)'"
+                               style="width:200px;">
+                        <button class="btn btn-sm btn-primary" @click="saveDiscoveryPreview()" :disabled="discoveryPreview.busy">Save as realm</button>
+                        <button class="btn btn-sm" @click="leaveDiscoveryPreview()" title="Part the channel(s) and go back">Leave</button>
+                        <span x-show="discoveryPreview.error" style="color:var(--danger);" x-text="discoveryPreview.error"></span>
+                    </div>
+                </template>
+
                 <!-- Header row -->
                 <div class="content-header">
                     <span x-text="activeChannel || 'Search'"></span>
@@ -2430,6 +2449,8 @@
                                         <td x-text="formatDate(row.first_seen)"></td>
                                         <td x-text="formatDate(row.last_seen)"></td>
                                         <td style="white-space:nowrap;">
+                                            <button class="btn btn-sm" @click="previewDiscovered(row)" :disabled="serverStatus(row.server_id) !== 'connected'"
+                                                    title="Join and look around before saving">Preview</button>
                                             <button class="btn btn-sm" @click="addDiscoveredAsRealm(row)">Add as realm</button>
                                             <button class="btn btn-sm" @click="dismissDiscovered(row)">Dismiss</button>
                                         </td>
