@@ -2813,13 +2813,14 @@ document.addEventListener('alpine:init', () => {
                 : api.createServer(this.serverForm);
             return p.then(() => {
                 this.showServerForm = false;
-                return this.loadSettingsData();
+                // Sidebar list comes from loadServersAndRealms, not the settings list.
+                return Promise.all([this.loadSettingsData(), this.loadServersAndRealms()]);
             }).catch(console.error);
         },
 
         deleteServer(id) {
             if (!confirm('Delete server?')) return;
-            return api.deleteServer(id).then(() => this.loadSettingsData()).catch(console.error);
+            return api.deleteServer(id).then(() => Promise.all([this.loadSettingsData(), this.loadServersAndRealms()])).catch(console.error);
         },
 
         openChannelForm(channel) {
@@ -2914,7 +2915,7 @@ document.addEventListener('alpine:init', () => {
 
         deleteRealm(id) {
             if (!confirm('Delete realm?')) return;
-            return api.deleteRealm(id).then(() => this.loadSettingsRealms(this.settingsServerId)).catch(console.error);
+            return api.deleteRealm(id).then(() => Promise.all([this.loadSettingsRealms(this.settingsServerId), this.loadServersAndRealms()])).catch(console.error);
         },
 
         // --- Library (auto-organize) settings ---
@@ -3048,7 +3049,7 @@ document.addEventListener('alpine:init', () => {
             this.servers = servers;
             this.realms = realmList;
             Object.assign(this._channelConfigs, channelConfigs);
-            Object.assign(this._realmConfigs, realmConfigs);
+            this._realmConfigs = realmConfigs; // replace, so deleted realms leave the sidebar
         },
 
         async loadSystemSettings() {
