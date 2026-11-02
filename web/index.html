@@ -146,6 +146,7 @@
                 :class="{ active: activeView === 'settings' }"
                 @click="setView('settings'); sidebarOpen = false"
             >Settings</a>
+            <a x-show="isAdmin" @click="openQuickAdd(); sidebarOpen = false" title="Paste an irc:// link to add a server and channel">＋ Quick add</a>
             <a :class="{ active: activeView === 'help' }" @click="setView('help'); sidebarOpen = false">Help</a>
             <a x-show="me && me.via === 'session'" @click="logout()" :title="'Signed in as ' + (me && me.username)">Log out</a>
             <a x-show="me && me.via === 'network'" @click="authMode = 'login'">Log in</a>
@@ -2708,6 +2709,25 @@
             <div style="display:flex; justify-content:flex-end;"><button class="btn btn-sm" @click="linksCopyText = null">Close</button></div>
         </div>
     </template>
+</div>
+
+<!-- Quick add: irc:// link -> server + realm -->
+<div x-show="quickAdd.open" x-cloak @keydown.escape.window="quickAdd.open = false"
+     style="position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; width:520px; max-width:95vw; padding:16px; display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; justify-content:space-between;"><strong>Quick add</strong>
+            <button class="btn btn-sm" @click="quickAdd.open = false">&times;</button></div>
+        <input type="text" x-model="quickAdd.url" placeholder="irc://irc.example.net/#channel" @keydown.enter="quickAddIrc()">
+        <template x-if="parseIrcUrl(quickAdd.url) && !servers.some(s => (s.host || '').toLowerCase() === parseIrcUrl(quickAdd.url).host)">
+            <div style="display:flex; gap:8px; align-items:center;">
+                <span class="text-sm">New server — nickname:</span>
+                <input type="text" x-model="quickAdd.nick" style="flex:1;">
+            </div>
+        </template>
+        <div class="text-xs" style="color:var(--text-muted);">Adds the server if it isn't configured yet, connects, and saves each channel as a realm. ircs:// uses TLS.</div>
+        <div><button class="btn btn-sm btn-primary" @click="quickAddIrc()" :disabled="quickAdd.busy || !quickAdd.url.trim()">Add</button></div>
+        <div x-show="quickAdd.error" class="text-sm" style="color:var(--danger);" x-text="quickAdd.error"></div>
+    </div>
 </div>
 
 <!-- Add links: paste/preview/queue + direct download -->

@@ -207,6 +207,7 @@ document.addEventListener('alpine:init', () => {
         pendingDiscoveredId: null,
         discovery: {},        // { [serverId]: { channels: [], scan: {} } }
         discoveryUnseen: {},  // { [serverId]: count }
+        quickAdd: { open: false, url: '', nick: '', busy: false, error: '' },
         discoveryPreview: null, // { server_id, channel, partner, role, row_id, busy, error }
 
         // Active server (for server view)
@@ -616,6 +617,47 @@ document.addEventListener('alpine:init', () => {
             }
             this.discoveryPreview = null;
             this.selectServer(this.servers.find(s => s.id === p.server_id) || { id: p.server_id });
+        },
+
+        openQuickAdd() {
+            const nick = (this.servers.find(s => s.nickname) || {}).nickname || '';
+            this.quickAdd = { open: true, url: '', nick: nick, busy: false, error: '' };
+        },
+
+        // Quick add: irc://host[:port]/#channel → server (created if unknown) + realm per channel.
+        async quickAddIrc() {
+            const q = this.quickAdd;
+            const u = parseIrcUrl(q.url);
+            if (!u) { q.error = 'Expected irc://irc.example.net/#channel'; return; }
+            q.busy = true; q.error = '';
+            try {
+                let srv = this.servers.find(s => (s.host || '').toLowerCase() === u.host);
+                const created = !srv;
+                if (created) {
+                    if (!q.nick.trim()) throw new Error('Enter a nickname for the new server');
+                    srv = await api.createServer({ name: u.host, host: u.host, port: u.port, ssl: u.ssl, nickname: q.nick.trim(),
+                        auto_connect: true, enabled: true, auth_method: 'none', auth_password: '',
+                        discovery_mode: 'normal', discovery_on_connect: false });
+                }
+                const existing = ((await api.getRealms(srv.id)) || []).map(r => (r.name || '').toLowerCase());
+                for (const ch of u.channels) {
+                    if (existing.includes(ch.toLowerCase())) continue;
+                    await api.createRealm({ server_id: srv.id, name: ch, display_name: '', key: '', search_command: '',
+                        download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true });
+                }
+                if (created || this.serverStatus(srv.id) !== 'connected') {
+                    await api.connectServer(srv.id); // auto_join realms are joined on connect
+                }
+                await this.loadServersAndRealms();
+                q.open = false;
+                const s2 = this.servers.find(s => s.id === srv.id) || srv;
+                if (u.channels.length) this.selectRealm(s2.id, u.channels[0]);
+                else this.selectServer(s2);
+            } catch (e) {
+                q.error = e.message || 'Quick add failed';
+            } finally {
+                q.busy = false;
+            }
         },
 
         // Aggressive mode joins every channel on the network: confirm first.

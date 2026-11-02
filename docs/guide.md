@@ -81,6 +81,8 @@ The IRC networks maXwell IRC connects to (admin-only).
 
 A server needs at least one realm before it's useful for searching or downloading — see [Settings → Realms](#settings-realms).
 
+**Quick add** (sidebar): paste a link like `irc://irc.example.net/#channel` (`ircs://` for TLS, `:port` optional, several channels comma-separated). An unknown network is added as a new server (you pick the nickname) and connected; each channel becomes a realm and is joined.
+
 ## Settings: Realms {#settings-realms}
 The chat/download channel pairs for each server (see [Concepts](#concepts) for what a realm is).
 

@@ -82,6 +82,22 @@ function parsePackSpec(spec) {
     return packs.length ? { packs: packs, error: '' } : { packs: [], error: 'Enter a pack number' };
 }
 
+// parseIrcUrl parses irc://host[:port]/channel[,channel] (ircs:// = TLS).
+// A bare "#" in the path is taken literally, as people paste it unencoded.
+function parseIrcUrl(text) {
+    var m = /^(ircs?):\/\/([^\/:\s]+)(?::(\d+))?\/?([^\s?]*)/i.exec(String(text || '').trim());
+    if (!m) return null;
+    var ssl = m[1].toLowerCase() === 'ircs';
+    var chans = [];
+    decodeURIComponent(m[4]).split(',').forEach(function(c) {
+        c = c.trim();
+        if (!c || /^(isnick|isserver|needpass|needkey)$/i.test(c)) return;
+        if (!/^[#&+!]/.test(c)) c = '#' + c;
+        if (chans.indexOf(c) < 0) chans.push(c);
+    });
+    return { host: m[2].toLowerCase(), port: m[3] ? +m[3] : (ssl ? 6697 : 6667), ssl: ssl, channels: chans };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { formatBytesForSearch, toSizeDisplay, normalizeSearchRow, sizeToBytes, searchSortValue, rowFirstSeen, rowLastSeen, formatXircLink, parsePackSpec };
+    module.exports = { formatBytesForSearch, toSizeDisplay, normalizeSearchRow, sizeToBytes, searchSortValue, rowFirstSeen, rowLastSeen, formatXircLink, parsePackSpec, parseIrcUrl };
 }
