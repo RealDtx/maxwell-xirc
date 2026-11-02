@@ -2469,11 +2469,11 @@
                         <table x-show="((discovery[activeServer] || {}).channels || []).length" style="width:100%; border-collapse:collapse;">
                             <thead>
                                 <tr style="text-align:left; color:var(--text-muted); font-size:11px;">
-                                    <th>Channel</th><th>Type</th><th>Partner</th><th>Users</th><th>Reason</th><th>First seen</th><th>Last seen</th><th></th>
+                                    <th style="cursor:pointer;" @click="discSortBy('channel')" x-text="'Channel' + discSortIndicator('channel')"></th><th style="cursor:pointer;" @click="discSortBy('type')" x-text="'Type' + discSortIndicator('type')"></th><th style="cursor:pointer;" @click="discSortBy('partner')" x-text="'Partner' + discSortIndicator('partner')"></th><th style="cursor:pointer;" @click="discSortBy('users')" x-text="'Users' + discSortIndicator('users')"></th><th style="cursor:pointer;" @click="discSortBy('reason')" x-text="'Reason' + discSortIndicator('reason')"></th><th style="cursor:pointer;" @click="discSortBy('first_seen')" x-text="'First seen' + discSortIndicator('first_seen')"></th><th style="cursor:pointer;" @click="discSortBy('last_seen')" x-text="'Last seen' + discSortIndicator('last_seen')"></th><th></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <template x-for="row in ((discovery[activeServer] || {}).channels || [])" :key="row.id">
+                                <template x-for="row in sortedDiscovery(activeServer)" :key="row.id">
                                     <tr>
                                         <td x-text="row.channel"></td>
                                         <td x-text="row.type"></td>

@@ -208,6 +208,7 @@ document.addEventListener('alpine:init', () => {
         discovery: {},        // { [serverId]: { channels: [], scan: {} } }
         discoveryUnseen: {},  // { [serverId]: count }
         quickAdd: { open: false, url: '', nick: '', busy: false, error: '' },
+        discSort: { col: 'users', dir: 'desc' },
         debugBots: localStorage.getItem('mxirc_debug_bots') === '1', // Settings → General
         botDebug: null,         // { server_id, bot } shown in the debug drawer
         discoveryPreview: null, // { server_id, channel, partner, role, row_id, busy, error }
@@ -590,6 +591,23 @@ document.addEventListener('alpine:init', () => {
             const keys = Object.keys(this.ircMessages).filter(k => k.toLowerCase() === want);
             if (keys.length === 1) return this.ircMessages[keys[0]];
             return keys.flatMap(k => this.ircMessages[k]).sort((x, y) => (x.timestamp < y.timestamp ? -1 : 1));
+        },
+
+        // Numbers and dates sort biggest/newest first on the first click.
+        discSortBy(col) {
+            const s = this.discSort;
+            if (s.col !== col && ['users', 'first_seen', 'last_seen'].includes(col)) { s.col = col; s.dir = 'desc'; }
+            else this._sortToggle(s, col);
+        },
+        discSortIndicator(col) { return this._sortArrow(this.discSort, col); },
+        sortedDiscovery(serverId) {
+            const { col, dir } = this.discSort;
+            const rows = ((this.discovery[serverId] || {}).channels || []).slice();
+            const key = r => col === 'users' ? (r.users || 0)
+                : col.endsWith('_seen') ? (Date.parse(r[col]) || 0)
+                : String(r[col] || '').toLowerCase();
+            rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * (dir === 'asc' ? 1 : -1); });
+            return rows;
         },
 
         // Preview: join the discovered channel (and its partner) and show it in
