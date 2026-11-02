@@ -128,6 +128,10 @@
         </div>
 
         <!-- Bottom nav -->
+        <div class="sidebar-quick-add" x-show="isAdmin">
+            <button type="button" @click="openQuickAdd(); sidebarOpen = false"
+                    title="Quick add: paste an irc:// link to add a server and channel" aria-label="Quick add">➕</button>
+        </div>
         <nav class="sidebar-nav">
             <a
                 :class="{ active: activeView === 'home' }"
@@ -157,7 +161,6 @@
                 :class="{ active: activeView === 'settings' }"
                 @click="setView('settings'); sidebarOpen = false"
             >Settings</a>
-            <a x-show="isAdmin" @click="openQuickAdd(); sidebarOpen = false" title="Paste an irc:// link to add a server and channel">＋ Quick add</a>
             <a :class="{ active: activeView === 'help' }" @click="setView('help'); sidebarOpen = false">Help</a>
             <a x-show="me && me.via === 'session'" @click="logout()" :title="'Signed in as ' + (me && me.username)">Log out</a>
             <a x-show="me && me.via === 'network'" @click="authMode = 'login'">Log in</a>

@@ -75,6 +75,12 @@ body {
 .status-dot.connecting { background: var(--warning); }
 .status-dot.disconnected { background: var(--danger); }
 
+.sidebar-quick-add { padding: 4px 16px; }
+.sidebar-quick-add button {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 16px; line-height: 1; padding: 4px 8px; cursor: pointer;
+}
+.sidebar-quick-add button:hover { background: var(--bg-tertiary); }
 .sidebar-nav { border-top: 1px solid var(--border); padding: 8px 0; }
 .sidebar-nav a {
     display: block;
