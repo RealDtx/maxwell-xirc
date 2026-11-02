@@ -207,7 +207,7 @@ document.addEventListener('alpine:init', () => {
         pendingDiscoveredId: null,
         discovery: {},        // { [serverId]: { channels: [], scan: {} } }
         discoveryUnseen: {},  // { [serverId]: count }
-        quickAdd: { open: false, url: '', nick: '', busy: false, error: '' },
+        quickAdd: { open: false, url: '', nick: '', realmId: '', busy: false, error: '', result: '' },
         discSort: { col: 'users', dir: 'desc' },
         debugBots: localStorage.getItem('mxirc_debug_bots') === '1', // Settings → General
         botDebug: null,         // { server_id, bot } shown in the debug drawer
@@ -369,6 +369,9 @@ document.addEventListener('alpine:init', () => {
             if (status !== 'connected') {
                 const e = this.errors.find(e => e.server_id === serverId && e.error_type === 'irc_disconnect');
                 if (e) lines.push('Last error (' + formatTime(e.timestamp) + '): ' + e.message);
+                if (e && /first record does not look like a TLS handshake/.test(e.message)) {
+                    lines.push('Hint: TLS is on but this port is plain-text; TLS usually runs on 6697.');
+                }
             }
             return lines.join('\n');
         },
@@ -679,14 +682,42 @@ document.addEventListener('alpine:init', () => {
 
         openQuickAdd() {
             const nick = (this.servers.find(s => s.nickname) || {}).nickname || '';
-            this.quickAdd = { open: true, url: '', nick: nick, busy: false, error: '' };
+            const cur = this.activeChannel && this._realmConfigs[this.channelKey(this.activeServer, this.activeChannel)];
+            this.quickAdd = { open: true, url: '', nick: nick, realmId: cur ? String(cur.id) : '', busy: false, error: '', result: '' };
+        },
+
+        quickAddIsMsg() {
+            const p = parseMsgCommands(this.quickAdd.url);
+            return p.cmds.length > 0 && !p.bad.length;
+        },
+
+        // Quick add of /msg <bot> xdcc send #N: queued in the realm picked in the dialog.
+        async quickAddMsg() {
+            const q = this.quickAdd;
+            const r = this._msgLinks(q.url, q.realmId);
+            if (r.error) { q.error = r.error; return; }
+            q.busy = true; q.error = ''; q.result = '';
+            try {
+                const res = await api.queueLinks(r.text);
+                if (res.skipped && res.skipped.length) {
+                    q.error = res.skipped.map(s => s.reason).join('; ');
+                }
+                q.result = res.queued + ' queued';
+                this.loadDownloads();
+                if (res.queued && !q.error) q.open = false;
+            } catch (e) {
+                q.error = e.message || 'Queue failed';
+            } finally {
+                q.busy = false;
+            }
         },
 
         // Quick add: irc://host[:port]/#channel → server (created if unknown) + realm per channel.
         async quickAddIrc() {
             const q = this.quickAdd;
+            if (this.quickAddIsMsg()) return this.quickAddMsg();
             const u = parseIrcUrl(q.url);
-            if (!u) { q.error = 'Expected irc://irc.example.net/#channel'; return; }
+            if (!u) { q.error = 'Expected irc://irc.example.net/#channel or /msg <bot> xdcc send #<pack>'; return; }
             q.busy = true; q.error = '';
             try {
                 let srv = this.servers.find(s => (s.host || '').toLowerCase() === u.host);
@@ -1479,17 +1510,22 @@ document.addEventListener('alpine:init', () => {
 
         // "/msg <bot> xdcc send #<pack>" lines, queued in the realm picked for direct download.
         async addLinksMsg() {
-            var a = this.addLinks;
-            var realm = this.realms.find(function(r) { return String(r.id) === String(a.realmId); });
+            var r = this._msgLinks(this.addLinks.msg, this.addLinks.realmId);
+            if (r.error) { this.addLinks.error = r.error; return; }
+            await this._addLinksSend(r.text);
+        },
+
+        // _msgLinks turns /msg xdcc lines into xirc:// links for the realm's download channel.
+        _msgLinks(text, realmId) {
+            var realm = this.realms.find(function(r) { return String(r.id) === String(realmId); });
             var srv = realm && this.servers.find(function(s) { return s.id === realm.server_id; });
-            if (!realm || !srv) { a.error = 'Pick a realm'; return; }
-            var p = parseMsgCommands(a.msg);
-            if (p.bad.length) { a.error = 'Not an xdcc send command: ' + p.bad[0]; return; }
-            if (!p.cmds.length) { a.error = 'Paste a /msg <bot> xdcc send #<pack> command'; return; }
-            var lines = p.cmds.map(function(c) {
+            if (!realm || !srv) return { error: 'Pick a realm' };
+            var p = parseMsgCommands(text);
+            if (p.bad.length) return { error: 'Not an xdcc send command: ' + p.bad[0] };
+            if (!p.cmds.length) return { error: 'Paste a /msg <bot> xdcc send #<pack> command' };
+            return { text: p.cmds.map(function(c) {
                 return formatXircLink({ channel: realm.download_channel || realm.name, bot_nick: c.bot, pack_number: c.pack }, srv.host);
-            });
-            await this._addLinksSend(lines.join('\n'));
+            }).join('\n') };
         },
 
         realmSearchCount() {

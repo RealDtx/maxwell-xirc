@@ -83,7 +83,7 @@ The IRC networks maXwell IRC connects to (admin-only).
 
 A server needs at least one realm before it's useful for searching or downloading — see [Settings → Realms](#settings-realms).
 
-**Quick add** (➕ above Overview in the sidebar): paste a link like `irc://irc.example.net/#channel` (`ircs://` for TLS, `:port` optional, several channels comma-separated). An unknown network is added as a new server (you pick the nickname) and connected; each channel becomes a realm and is joined.
+**Quick add** (➕ above Overview in the sidebar): paste a link like `irc://irc.example.net/#channel` (`ircs://` for TLS, `:port` optional, several channels comma-separated). It also takes a `/msg SomeBot xdcc send #12` command and asks which realm the bot is in. An unknown network is added as a new server (you pick the nickname) and connected; each channel becomes a realm and is joined.
 
 ## Settings: Realms {#settings-realms}
 The chat/download channel pairs for each server (see [Concepts](#concepts) for what a realm is).
@@ -114,7 +114,7 @@ Personal display preferences — stored only in your browser, not shared with ot
 
 **How to use it:** pick a date format from the presets (DD-MM-YYYY, YYYY-MM-DD, MM/DD/YYYY, each with time) or type your own; the preview below updates live.
 
-**Debug mode** (Show bot traffic): lists each realm's bots — the ones you requested packs from, plus its search bot — under the realm in the sidebar (advanced mode). Click one to open a panel over the bot chat with every message to and from that bot: your `xdcc send` requests and passive-DCC replies (→) and the bot's notices, messages and DCC offers (←). Close it with × or Esc. The buffer holds messages since the last restart.
+**Debug mode** (Show bot traffic): lists each realm's bots — the ones you requested packs from, plus its search bot — under the realm in the sidebar (advanced mode). Click one to open a panel over the bot chat with every message to and from that bot: your `xdcc send` requests and passive-DCC replies (→) and the bot's notices, messages and DCC offers (←). When the server refuses to deliver a message to the bot (for example "You must be connected via TLS to message this user"), that shows in red, and a download waiting on the bot fails right away with the server's reason. Close it with × or Esc. The buffer holds messages since the last restart.
 
 ## Settings: Users {#settings-users}
 Accounts and roles (admin-only tab). See [Access](#access) for what each role can actually do.

@@ -738,4 +738,5 @@ tr:hover { background: rgba(255,255,255,0.02); }
 .bot-debug-line .dir { flex-shrink: 0; width: 1em; text-align: center; }
 .bot-debug-line.out .dir { color: var(--accent); }
 .bot-debug-line .badge { flex-shrink: 0; font-size: 10px; }
+.bot-debug-line.err .text, .bot-debug-line.err .dir { color: var(--danger); }
 .bot-debug-line .text { word-break: break-word; white-space: pre-wrap; }
