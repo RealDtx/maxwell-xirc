@@ -195,3 +195,23 @@ func TestFormatRelativeTime_Nil(t *testing.T) {
 		t.Errorf("expected '-', got %q", val.String())
 	}
 }
+
+func TestParseMsgCommandsAndIrcUrl(t *testing.T) {
+	vm := loadSearchResultsJS(t)
+	got, err := vm.RunString(`JSON.stringify([
+		parseMsgCommands("/msg Bot|01 xdcc send #12\nMSG other XDCC GET 3\n/msg x xdcc list\n\n"),
+		parseIrcUrl("irc://irc.Example.net/#chan"),
+		parseIrcUrl("ircs://irc.example.net:7000/%23a,b"),
+		parseIrcUrl("irc://irc.example.net"),
+		parseIrcUrl("http://x/y")])`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[{"cmds":[{"bot":"Bot|01","pack":12},{"bot":"other","pack":3}],"bad":["/msg x xdcc list"]},` +
+		`{"host":"irc.example.net","port":6667,"ssl":false,"channels":["#chan"]},` +
+		`{"host":"irc.example.net","port":7000,"ssl":true,"channels":["#a","#b"]},` +
+		`{"host":"irc.example.net","port":6667,"ssl":false,"channels":[]},null]`
+	if got.String() != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}

@@ -82,6 +82,20 @@ function parsePackSpec(spec) {
     return packs.length ? { packs: packs, error: '' } : { packs: [], error: 'Enter a pack number' };
 }
 
+// parseMsgCommands pulls "/msg <bot> xdcc send|get #<pack>" requests out of
+// pasted text, one per line (the leading slash and "#" are optional).
+function parseMsgCommands(text) {
+    var out = [], bad = [];
+    String(text || '').split(/\r?\n/).forEach(function(line) {
+        line = line.trim();
+        if (!line) return;
+        var m = /^\/?msg\s+(\S+)\s+xdcc\s+(?:send|get)\s+#?(\d+)\s*$/i.exec(line);
+        if (m && +m[2] > 0) out.push({ bot: m[1], pack: +m[2] });
+        else bad.push(line);
+    });
+    return { cmds: out, bad: bad };
+}
+
 // parseIrcUrl parses irc://host[:port]/channel[,channel] (ircs:// = TLS).
 // A bare "#" in the path is taken literally, as people paste it unencoded.
 function parseIrcUrl(text) {
@@ -99,5 +113,5 @@ function parseIrcUrl(text) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { formatBytesForSearch, toSizeDisplay, normalizeSearchRow, sizeToBytes, searchSortValue, rowFirstSeen, rowLastSeen, formatXircLink, parsePackSpec, parseIrcUrl };
+    module.exports = { formatBytesForSearch, toSizeDisplay, normalizeSearchRow, sizeToBytes, searchSortValue, rowFirstSeen, rowLastSeen, formatXircLink, parsePackSpec, parseMsgCommands, parseIrcUrl };
 }

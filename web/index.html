@@ -311,8 +311,8 @@
                                     title="Clear results">Clear</button>
                             <button class="btn btn-sm" x-show="searchSelCount() > 0" @click="copySelectedLinks()"
                                     x-text="'Copy links (' + searchSelCount() + ')'"></button>
-                            <button class="btn btn-sm" @click="openAddLinks()" :disabled="caps && !caps.downloads.ok"
-                                    title="Paste xirc:// links or request a pack directly">Add links</button>
+                            <button class="btn btn-sm btn-primary" @click="openAddLinks()" :disabled="caps && !caps.downloads.ok"
+                                    title="Paste xirc:// links, a /msg xdcc command, or request a pack directly">＋ Add links</button>
                             <button class="btn btn-sm" @click="toggleSearchViewMode()" :title="searchViewMode === 'merged' ? 'Switch to grouped view' : 'Switch to merged view'">
                                 <span x-text="searchViewMode === 'merged' ? 'Group' : 'Merge'"></span>
                             </button>
@@ -2785,6 +2785,16 @@
                 <input type="text" x-model="addLinks.packs" placeholder="Pack: 5, 5,7 or 5-8" style="width:140px;">
                 <input type="text" x-model="addLinks.name" placeholder="Filename (optional, single pack)" style="flex:1; min-width:160px;">
                 <button class="btn btn-sm btn-primary" @click="addLinksDirect()" :disabled="addLinks.busy">Queue</button>
+            </div>
+        </div>
+
+        <div class="settings-card">
+            <h3>Paste /msg command</h3>
+            <div class="text-xs" style="color:var(--text-muted); margin-bottom:6px;">Uses the realm picked above. One command per line.</div>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <textarea rows="2" x-model="addLinks.msg" placeholder="/msg BotName xdcc send #123"
+                          style="flex:1; font-family:monospace; font-size:12px;"></textarea>
+                <button class="btn btn-sm btn-primary" @click="addLinksMsg()" :disabled="addLinks.busy || !addLinks.msg.trim()">Queue</button>
             </div>
         </div>
 

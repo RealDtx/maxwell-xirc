@@ -108,7 +108,7 @@ document.addEventListener('alpine:init', () => {
         _searchSel: {},         // searchRowKey -> row, for "Copy links"
         linksCopyText: null,    // fallback textarea when the clipboard API is unavailable
         addLinks: { open: false, text: '', rows: null, errors: [], sel: {}, busy: false, result: '', error: '',
-                    realmId: '', bot: '', packs: '', name: '' },
+                    realmId: '', bot: '', packs: '', name: '', msg: '' },
         patternTrainer: {
             open: false,
             rawLine: '',
@@ -1362,6 +1362,8 @@ document.addEventListener('alpine:init', () => {
 
         openAddLinks() {
             this.addLinks = Object.assign(this.addLinks, { open: true, rows: null, errors: [], sel: {}, result: '', error: '' });
+            const cur = this.activeChannel && this._realmConfigs[this.channelKey(this.activeServer, this.activeChannel)];
+            if (!this.addLinks.realmId && cur) this.addLinks.realmId = String(cur.id);
         },
 
         async addLinksPreview() {
@@ -1413,6 +1415,21 @@ document.addEventListener('alpine:init', () => {
             var lines = spec.packs.map(function(n) {
                 return formatXircLink({ channel: realm.download_channel || realm.name, bot_nick: a.bot.trim(), pack_number: n,
                     filename: spec.packs.length === 1 ? a.name.trim() : '' }, srv.host);
+            });
+            await this._addLinksSend(lines.join('\n'));
+        },
+
+        // "/msg <bot> xdcc send #<pack>" lines, queued in the realm picked for direct download.
+        async addLinksMsg() {
+            var a = this.addLinks;
+            var realm = this.realms.find(function(r) { return String(r.id) === String(a.realmId); });
+            var srv = realm && this.servers.find(function(s) { return s.id === realm.server_id; });
+            if (!realm || !srv) { a.error = 'Pick a realm'; return; }
+            var p = parseMsgCommands(a.msg);
+            if (p.bad.length) { a.error = 'Not an xdcc send command: ' + p.bad[0]; return; }
+            if (!p.cmds.length) { a.error = 'Paste a /msg <bot> xdcc send #<pack> command'; return; }
+            var lines = p.cmds.map(function(c) {
+                return formatXircLink({ channel: realm.download_channel || realm.name, bot_nick: c.bot, pack_number: c.pack }, srv.host);
             });
             await this._addLinksSend(lines.join('\n'));
         },
