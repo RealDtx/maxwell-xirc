@@ -2,7 +2,7 @@
 
 Notable changes per release. Older releases: see the GitHub release pages.
 
-## [Unreleased]
+## [v0.13.0-beta] - 2026-11-03
 
 ### Added
 - **SSL transfers**: packs are requested with `xdcc ssend`, so bots that support it (DCC SSEND) send over TLS — active and passive. Per realm (Settings → Realms → Transfer encryption): *SSL, fall back to plain* (default: plain offer, "unknown command" or no answer within ~8 s → normal `xdcc send`), *SSL only*, or *Plain DCC only*. Each bot's SSL support is remembered in the database (also learnt from "ssl supported" notices), so the fallback wait happens at most once per bot. SSL downloads show 🔒. Bot certificates are self-signed and not verified.
