@@ -1,6 +1,7 @@
 package dcc
 
 import (
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -67,6 +68,31 @@ func (t *Transfer) SetListener(l net.Listener) {
 }
 
 func (t *Transfer) connect() (net.Conn, error) {
+	conn, err := t.connectTCP()
+	if err != nil || !t.offer.SSL {
+		return conn, err
+	}
+	// DCC SSEND: TLS over the DCC socket. We are the TLS client when we
+	// dialed and the server when the bot connected in (passive).
+	t.mu.RLock()
+	passive := t.listener != nil
+	t.mu.RUnlock()
+	var tc *tls.Conn
+	if passive {
+		tc = tls.Server(conn, serverTLSConfig())
+	} else {
+		tc = tls.Client(conn, clientTLSConfig)
+	}
+	tc.SetDeadline(time.Now().Add(30 * time.Second))
+	if err := tc.Handshake(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("SSL handshake with bot failed: %w", err)
+	}
+	tc.SetDeadline(time.Time{})
+	return tc, nil
+}
+
+func (t *Transfer) connectTCP() (net.Conn, error) {
 	t.mu.RLock()
 	l := t.listener
 	t.mu.RUnlock()

@@ -16,12 +16,14 @@ type DCCOffer struct {
 	Size     int64
 	Passive  bool
 	Token    string // passive (reverse) DCC: echoed back in our reply
+	SSL      bool   // DCC SSEND: the transfer runs over TLS
 }
 
 // Matches: DCC SEND "filename" ip port size [token]  OR  DCC SEND filename ip port size [token].
 // Passive (reverse) DCC sends port 0 plus a token: DCC SEND file ip 0 size token.
-var dccSendQuoted = regexp.MustCompile(`^DCC SEND "([^"]+)"\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+(\S+))?$`)
-var dccSendUnquoted = regexp.MustCompile(`^DCC SEND (\S+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+(\S+))?$`)
+// DCC SSEND is the same offer for a TLS transfer (bots answering "xdcc ssend").
+var dccSendQuoted = regexp.MustCompile(`^DCC (S?SEND) "([^"]+)"\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+(\S+))?$`)
+var dccSendUnquoted = regexp.MustCompile(`^DCC (S?SEND) (\S+)\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+(\S+))?$`)
 
 func ParseDCCSend(msg string) (*DCCOffer, error) {
 	var matches []string
@@ -34,32 +36,33 @@ func ParseDCCSend(msg string) (*DCCOffer, error) {
 		return nil, fmt.Errorf("not a valid DCC SEND message: %s", msg)
 	}
 
-	ipInt, err := strconv.ParseUint(matches[2], 10, 32)
+	ipInt, err := strconv.ParseUint(matches[3], 10, 32)
 	if err != nil {
-		return nil, fmt.Errorf("invalid IP integer: %s", matches[2])
+		return nil, fmt.Errorf("invalid IP integer: %s", matches[3])
 	}
 
-	port, err := strconv.Atoi(matches[3])
+	port, err := strconv.Atoi(matches[4])
 	if err != nil {
-		return nil, fmt.Errorf("invalid port: %s", matches[3])
+		return nil, fmt.Errorf("invalid port: %s", matches[4])
 	}
 
 	if port < 0 || port > 65535 {
 		return nil, fmt.Errorf("invalid port %d: out of range", port)
 	}
 
-	size, err := strconv.ParseInt(matches[4], 10, 64)
+	size, err := strconv.ParseInt(matches[5], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid size: %s", matches[4])
+		return nil, fmt.Errorf("invalid size: %s", matches[5])
 	}
 
 	return &DCCOffer{
-		Filename: matches[1],
+		Filename: matches[2],
 		IP:       intToIP(uint32(ipInt)),
 		Port:     port,
 		Size:     size,
 		Passive:  port == 0,
-		Token:    matches[5],
+		Token:    matches[6],
+		SSL:      matches[1] == "SSEND",
 	}, nil
 }
 
@@ -76,7 +79,11 @@ func PassiveReply(o *DCCOffer, ip net.IP, port int) (string, error) {
 	if strings.ContainsAny(name, " \t") {
 		name = `"` + name + `"`
 	}
-	return fmt.Sprintf("DCC SEND %s %d %d %d %s", name, binary.BigEndian.Uint32(v4), port, o.Size, o.Token), nil
+	verb := "SEND"
+	if o.SSL {
+		verb = "SSEND" // we listen with TLS; same reply, S-verb
+	}
+	return fmt.Sprintf("DCC %s %s %d %d %d %s", verb, name, binary.BigEndian.Uint32(v4), port, o.Size, o.Token), nil
 }
 
 func intToIP(n uint32) string {

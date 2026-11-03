@@ -630,8 +630,14 @@ func (c *Connection) Search(searchChannel, command, query string) error {
 	return nil
 }
 
-func (c *Connection) RequestPack(channel, botNick string, packNumber int) error {
-	return c.xdcc(botNick, fmt.Sprintf("xdcc send #%d", packNumber))
+// RequestPack asks botNick for packNumber; ssl requests an SSL transfer
+// ("xdcc ssend", answered with DCC SSEND by bots that support it).
+func (c *Connection) RequestPack(botNick string, packNumber int, ssl bool) error {
+	verb := "send"
+	if ssl {
+		verb = "ssend"
+	}
+	return c.xdcc(botNick, fmt.Sprintf("xdcc %s #%d", verb, packNumber))
 }
 
 // RemovePack withdraws a queued request for packNumber from the bot's queue,

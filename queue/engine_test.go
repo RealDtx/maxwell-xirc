@@ -535,3 +535,54 @@ func TestEngine_RefusedMessageFailsPendingRequest(t *testing.T) {
 		t.Error("pending request not cleared")
 	}
 }
+
+func TestEngine_SSLFallback(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	bus := irc.NewEventBus()
+	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{DownloadsDir: "data", TempDir: "data/tmp", MinFreeSpace: "0"}, 2)
+	notice := func(bot, text string) {
+		engine.handleMessage(irc.Event{Type: irc.EventIRCMessage, ServerID: 1, Nick: bot, Channel: bot,
+			Data: map[string]string{"type": "notice", "message": text}})
+	}
+	pend := func(id int64, bot, mode string) *PendingRequest {
+		engine.RegisterPendingRequest(id, 1, bot)
+		p := engine.pendingByBot[pendingKey(1, bot)]
+		p.SSLMode, p.SSLAsked, p.PackNumber = mode, true, 1
+		return p
+	}
+
+	// Default mode: "unknown command" → plain fallback, bot remembered, request kept.
+	a, _ := engine.queue.Add(1, "#c", "BotA", 1, "a.bin", 1, false, false, true)
+	p := pend(a.ID, "BotA", "")
+	notice("BotA", "** Invalid command, try /msg BotA xdcc help")
+	if p.SSLAsked || !engine.botNoSSL[pendingKey(1, "BotA")] || engine.pendingByBot[pendingKey(1, "BotA")] == nil {
+		t.Errorf("fallback: asked=%v noSSL=%v pending=%v", p.SSLAsked, engine.botNoSSL[pendingKey(1, "BotA")], engine.pendingByBot[pendingKey(1, "BotA")] != nil)
+	}
+
+	// A normal answer doesn't trigger the fallback.
+	b, _ := engine.queue.Add(1, "#c", "BotB", 1, "b.bin", 1, false, false, true)
+	q := pend(b.ID, "BotB", "")
+	notice("BotB", `** Sending you pack #1 ("b.bin"), which is 1MB. (resume+ssl supported)`)
+	if !q.SSLAsked || !q.Answered {
+		t.Errorf("normal reply: asked=%v answered=%v", q.SSLAsked, q.Answered)
+	}
+
+	// require: a plain offer fails the download.
+	c, _ := engine.queue.Add(1, "#c", "BotC", 1, "c.bin", 1, false, false, true)
+	pend(c.ID, "BotC", "require")
+	engine.handleMessage(irc.Event{Type: irc.EventIRCMessage, ServerID: 1, Nick: "BotC", Channel: "BotC",
+		Data: map[string]string{"type": "ctcp", "message": "DCC SEND c.bin 2130706433 4000 1"}})
+	if got, _ := store.GetDownload(c.ID); got.Status != "failed" || !strings.Contains(got.ErrorMessage, "requires SSL") {
+		t.Errorf("require: status=%s err=%q", got.Status, got.ErrorMessage)
+	}
+
+	// Silence: falls back after sslNoAnswerFallback.
+	d, _ := engine.queue.Add(1, "#c", "BotD", 1, "d.bin", 1, false, false, true)
+	r := pend(d.ID, "BotD", "")
+	r.CreatedAt = time.Now().Add(-2 * sslNoAnswerFallback)
+	engine.sslSilentFallback()
+	if r.SSLAsked {
+		t.Error("silent: still waiting for SSL")
+	}
+}

@@ -90,6 +90,8 @@ The chat/download channel pairs for each server (see [Concepts](#concepts) for w
 
 **How to use it:** pick a server, then Add Realm: the chat channel name (e.g. `#example-chat`), a display name, a channel key if the channel is `+k`, the search command (e.g. `!s`), the download channel (e.g. `#example-downloads`), the search bot (leave blank to auto-detect on the first search), a search timeout, and whether to auto-join it on connect. From the same form you can scope existing parse patterns to just this realm.
 
+**Transfer encryption** (per realm): by default xirc requests packs with `xdcc ssend`, so bots that support SSL transfers send over SSL; a bot that answers with a plain offer, says it doesn't know the command, or doesn't answer within about a minute gets a normal `xdcc send` instead (remembered until restart). **SSL only** never accepts an unencrypted transfer — the download fails with the reason; **Plain DCC only** never asks for SSL. Bot certificates are self-signed and aren't checked, so SSL hides transfers from eavesdroppers (ISP, shared networks) but not from an active attacker. Works with passive DCC too.
+
 Good to know: leaving the download channel blank isn't final — xirc fills it in the first time it reads that channel's topic after joining, if the topic names one.
 
 ## Channel discovery {#discovery}

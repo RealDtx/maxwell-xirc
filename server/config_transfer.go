@@ -35,6 +35,7 @@ type exportRealm struct {
 	SearchTimeout   int    `json:"search_timeout"`
 	AutoJoin        bool   `json:"auto_join"`
 	Enabled         bool   `json:"enabled"`
+	DCCSSL          string `json:"dcc_ssl,omitempty"`
 }
 
 type exportServer struct {
@@ -96,7 +97,7 @@ func (e exportServer) applyTo(dst *db.Server) {
 func toExportRealm(r db.Realm) exportRealm {
 	return exportRealm{Name: r.Name, DisplayName: r.DisplayName, SearchCommand: r.SearchCommand,
 		DownloadChannel: r.DownloadChannel, SearchBot: r.SearchBot, SearchTimeout: r.SearchTimeout,
-		AutoJoin: r.AutoJoin, Enabled: r.Enabled}
+		AutoJoin: r.AutoJoin, Enabled: r.Enabled, DCCSSL: r.DCCSSL}
 }
 
 // applyTo copies the exported fields onto dst; ID, ServerID and Key are
@@ -104,6 +105,7 @@ func toExportRealm(r db.Realm) exportRealm {
 func (e exportRealm) applyTo(dst *db.Realm) {
 	dst.Name, dst.DisplayName, dst.SearchCommand, dst.DownloadChannel = e.Name, e.DisplayName, e.SearchCommand, e.DownloadChannel
 	dst.SearchBot, dst.SearchTimeout, dst.AutoJoin, dst.Enabled = e.SearchBot, e.SearchTimeout, e.AutoJoin, e.Enabled
+	dst.DCCSSL = e.DCCSSL
 }
 
 func settingsFromEditable(e config.Editable) *exportSettings {

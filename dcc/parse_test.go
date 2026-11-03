@@ -1,6 +1,7 @@
 package dcc
 
 import (
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -153,5 +154,71 @@ func TestDetectPublicIPv4FallsBack(t *testing.T) {
 	}
 	if _, err := detectPublicIPv4([]string{junk.URL}, ""); err == nil || !strings.Contains(err.Error(), "public_ip") {
 		t.Errorf("want error naming downloads.public_ip, got %v", err)
+	}
+}
+
+func TestParseSSEND(t *testing.T) {
+	o, err := ParseDCCSend(`DCC SSEND file.mkv 2130706433 4000 1000`)
+	if err != nil || !o.SSL || o.Port != 4000 || o.Filename != "file.mkv" {
+		t.Fatalf("offer=%+v err=%v", o, err)
+	}
+	p, err := ParseDCCSend(`DCC SSEND "a b.mkv" 2130706433 0 1000 7`)
+	if err != nil || !p.SSL || !p.Passive || p.Token != "7" {
+		t.Fatalf("passive offer=%+v err=%v", p, err)
+	}
+	if r, _ := PassiveReply(p, net.ParseIP("1.2.3.4"), 50001); r != `DCC SSEND "a b.mkv" 16909060 50001 1000 7` {
+		t.Errorf("reply %q", r)
+	}
+	if o, _ := ParseDCCSend(`DCC SEND f 1 2 3`); o.SSL {
+		t.Error("plain SEND parsed as SSL")
+	}
+}
+
+// fakeBot serves data on c and drains our DCC acks until we hang up.
+func fakeBot(c net.Conn, data string) {
+	c.Write([]byte(data))
+	io.Copy(io.Discard, c)
+	c.Close()
+}
+
+func TestSSLTransferActive(t *testing.T) {
+	l, err := tls.Listen("tcp4", "127.0.0.1:0", serverTLSConfig()) // the bot, as TLS server
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		if c, err := l.Accept(); err == nil {
+			fakeBot(c, "secret")
+		}
+	}()
+	dest := t.TempDir() + "/f.bin"
+	tr := NewTransfer(&DCCOffer{Filename: "f.bin", IP: "127.0.0.1", Port: l.Addr().(*net.TCPAddr).Port, Size: 6, SSL: true}, dest, nil)
+	if err := tr.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(dest); string(b) != "secret" {
+		t.Errorf("got %q", b)
+	}
+}
+
+func TestSSLTransferPassive(t *testing.T) {
+	l, port, err := ListenRange(50130, 50150)
+	if err != nil {
+		t.Skip(err)
+	}
+	dest := t.TempDir() + "/f.bin"
+	tr := NewTransfer(&DCCOffer{Filename: "f.bin", Size: 6, Passive: true, SSL: true}, dest, nil)
+	tr.SetListener(l)
+	go func() { // the bot connects in and is the TLS client
+		if c, err := tls.Dial("tcp4", "127.0.0.1:"+strconv.Itoa(port), &tls.Config{InsecureSkipVerify: true}); err == nil {
+			fakeBot(c, "secret")
+		}
+	}()
+	if err := tr.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(dest); string(b) != "secret" {
+		t.Errorf("got %q", b)
 	}
 }

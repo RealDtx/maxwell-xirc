@@ -86,6 +86,9 @@ type Realm struct {
 	SearchTimeout   int    `json:"search_timeout"`
 	AutoJoin        bool   `json:"auto_join"`
 	Enabled         bool   `json:"enabled"`
+	// DCCSSL: "" = request SSL (xdcc ssend), fall back to plain DCC if the
+	// bot can't; "require" = SSL only; "off" = plain DCC only.
+	DCCSSL string `json:"dcc_ssl"`
 }
 
 type Download struct {

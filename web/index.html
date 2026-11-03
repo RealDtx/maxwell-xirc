@@ -1305,6 +1305,15 @@
                                         <input type="number" x-model.number="realmForm.search_timeout" placeholder="10" min="5" max="120" style="width:100px;">
                                     </div>
                                     <div class="form-group">
+                                        <label>Transfer encryption</label>
+                                        <select x-model="realmForm.dcc_ssl">
+                                            <option value="">SSL, fall back to plain if the bot can't</option>
+                                            <option value="require">SSL only — never unencrypted</option>
+                                            <option value="off">Plain DCC only</option>
+                                        </select>
+                                        <div class="text-xs" style="color:var(--text-muted); margin-top:4px;">Requests packs with <code>xdcc ssend</code> so bots that support it send over SSL. Bot certificates are self-signed and not checked: this hides transfers from eavesdroppers, not from an active attacker.</div>
+                                    </div>
+                                    <div class="form-group">
                                         <label>Auto-join</label>
                                         <label class="toggle">
                                             <input type="checkbox" x-model="realmForm.auto_join">

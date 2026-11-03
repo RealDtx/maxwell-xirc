@@ -237,6 +237,10 @@ func (s *Server) handleCreateRealm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "server_id is required")
 		return
 	}
+	if m := realm.DCCSSL; m != "" && m != "require" && m != "off" {
+		writeError(w, http.StatusBadRequest, `dcc_ssl must be "", "require" or "off"`)
+		return
+	}
 	realm.Enabled = true
 	if err := s.store.CreateRealm(&realm); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -262,6 +266,10 @@ func (s *Server) handleUpdateRealm(w http.ResponseWriter, r *http.Request) {
 	}
 	if realm.ServerID == 0 {
 		writeError(w, http.StatusBadRequest, "server_id is required")
+		return
+	}
+	if m := realm.DCCSSL; m != "" && m != "require" && m != "off" {
+		writeError(w, http.StatusBadRequest, `dcc_ssl must be "", "require" or "off"`)
 		return
 	}
 	realm.ID = id
