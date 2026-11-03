@@ -39,9 +39,14 @@ jobs:
       - name: Build AMD64
         run: GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o xirc-linux-amd64 .
 
+      - name: Release notes from CHANGELOG.md
+        # The "## [<tag>]" section, up to the next "## " heading; empty if missing.
+        run: awk -v tag="[${GITHUB_REF_NAME}]" '/^## /{p = index($0, tag) > 0; next} p' CHANGELOG.md > release-notes.md 2>/dev/null || true
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
+          body_path: release-notes.md
           files: |
             xirc-linux-arm64
             xirc-linux-armv7
