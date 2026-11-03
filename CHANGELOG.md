@@ -6,7 +6,8 @@ Notable changes per release. Older releases: see the GitHub release pages.
 
 ### Added
 - **SSL transfers**: packs are requested with `xdcc ssend`, so bots that support it (DCC SSEND) send over TLS — active and passive. Per realm (Settings → Realms → Transfer encryption): *SSL, fall back to plain* (default: plain offer, "unknown command" or no answer within ~8 s → normal `xdcc send`), *SSL only*, or *Plain DCC only*. Each bot's SSL support is remembered in the database (also learnt from "ssl supported" notices), so the fallback wait happens at most once per bot. SSL downloads show 🔒. Bot certificates are self-signed and not verified.
-- **Index expiry**: each realm has *Forget index entries after N days* (default 14, 0 = never). A daily cleanup at `maintenance.index_cleanup_time` (default 04:00, Settings → System) removes packs its bots haven't re-advertised for that long.
+- **Index expiry**: each realm has *Forget index entries after N days* (default 30, 0 = never); packs its bots haven't re-advertised for that long are removed from the index (default daily at 04:00).
+- **Maintenance schedules**: both jobs — search results & index size, and index expiry — take a start time and "run every N hours" (Settings → System; `maintenance.start_time` / `interval_hours`, `index_expiry_start_time` / `index_expiry_interval_hours`).
 
 ### Changed
 - Replacing a pack's index entry when a bot sends a different file now matches the bot's nick case-insensitively.

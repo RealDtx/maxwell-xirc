@@ -2989,7 +2989,7 @@ document.addEventListener('alpine:init', () => {
             this.pendingDiscoveredId = null;
             this.realmForm = realm
                 ? Object.assign({}, realm)
-                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', key: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true, dcc_ssl: '', index_ttl_days: 14 };
+                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', key: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true, dcc_ssl: '', index_expiry_days: 30 };
             if (this.realmForm.dcc_ssl == null) this.realmForm.dcc_ssl = '';
             this.showRealmForm = true;
             if (!this.patternSettingsList.length) {
@@ -3185,7 +3185,7 @@ document.addEventListener('alpine:init', () => {
             this.systemError = '';
             // x-model.number leaves an emptied/invalid field as a string.
             for (const [sec, key] of [['downloads', 'max_concurrent'], ['maintenance', 'search_result_retention_days'],
-                ['maintenance', 'index_max_files'], ['maintenance', 'interval_hours'],
+                ['maintenance', 'index_max_files'], ['maintenance', 'interval_hours'], ['maintenance', 'index_expiry_interval_hours'],
                 ['discovery', 'normal_stay_seconds'], ['discovery', 'aggressive_stay_minutes']]) {
                 if (typeof this.systemForm[sec][key] !== 'number') {
                     this.systemError = sec + '.' + key + ' must be a number';

@@ -67,9 +67,14 @@ type MaintenanceConfig struct {
 	SearchResultRetentionDays int `yaml:"search_result_retention_days" json:"search_result_retention_days"`
 	IndexMaxFiles             int `yaml:"index_max_files" json:"index_max_files"`
 	IntervalHours             int `yaml:"interval_hours" json:"interval_hours"`
-	// IndexCleanupTime is when (local "HH:MM", daily) index entries older
-	// than their realm's index_ttl_days are removed. Empty = never.
-	IndexCleanupTime string `yaml:"index_cleanup_time" json:"index_cleanup_time"`
+	// StartTime anchors the cleanup schedule: local "HH:MM", then every
+	// IntervalHours until the next day's StartTime. Empty = counted from
+	// server start.
+	StartTime string `yaml:"start_time" json:"start_time"`
+	// Index expiry (entries older than their realm's index_expiry_days):
+	// same schedule model. IntervalHours 0 = never.
+	IndexExpiryStartTime     string `yaml:"index_expiry_start_time" json:"index_expiry_start_time"`
+	IndexExpiryIntervalHours int    `yaml:"index_expiry_interval_hours" json:"index_expiry_interval_hours"`
 }
 
 type AuthConfig struct {
@@ -190,7 +195,8 @@ func defaults() Config {
 			SearchResultRetentionDays: 14,
 			IndexMaxFiles:             200000,
 			IntervalHours:             6,
-			IndexCleanupTime:          "04:00",
+			IndexExpiryStartTime:      "04:00",
+			IndexExpiryIntervalHours:  24,
 		},
 		Auth: AuthConfig{
 			TrustedRole:    "admin",

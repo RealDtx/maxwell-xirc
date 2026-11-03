@@ -1,10 +1,15 @@
-// Package maintenance runs a periodic background job that keeps the
-// database bounded: it prunes stale search_results rows (a time-based
-// safety net — results are normally cleared per-channel on the next search,
-// but channels that stop being searched would otherwise accumulate rows
-// forever), removes index entries a realm's bots haven't re-advertised
-// within the realm's index_ttl_days, and caps the self-collected file index
-// at a configured size, evicting the least-recently-seen entries first.
+// Package maintenance runs two scheduled background jobs that keep the
+// database bounded:
+//
+//   - cleanup: prunes stale search_results rows (a time-based safety net —
+//     results are normally cleared per-channel on the next search), caps the
+//     self-collected file index at a configured size (least-recently-seen
+//     first) and drops expired sessions;
+//   - index expiry: removes index entries a realm's bots haven't
+//     re-advertised within the realm's index_expiry_days.
+//
+// Both use the same schedule: a start time (local "HH:MM", or empty =
+// counted from server start) and "every N hours" (0 = no repeats).
 package maintenance
 
 import (
@@ -17,23 +22,23 @@ import (
 	"github.com/RealDtx/maxwell-irc/db"
 )
 
-// Maintenance runs the periodic prune/eviction job.
+// Maintenance runs the scheduled cleanup and index-expiry jobs.
 type Maintenance struct {
 	store   db.Store
 	mu      sync.Mutex
 	cfg     config.MaintenanceConfig
-	unit    time.Duration // one IntervalHours step; tests shorten it
-	onRun   func()        // test hook, called after each pass
+	unit    time.Duration // one "hours" step; tests shorten it
+	onRun   func()        // test hook, called after each cleanup pass
 	now     func() time.Time
-	resetCh chan struct{}
-	dailyCh chan struct{} // IndexCleanupTime changed
+	resetCh chan struct{} // cleanup schedule changed
+	indexCh chan struct{} // index-expiry schedule changed
 	once    sync.Once
 	stopCh  chan struct{}
 }
 
 func New(store db.Store, cfg config.MaintenanceConfig) *Maintenance {
 	return &Maintenance{store: store, cfg: cfg, unit: time.Hour, now: time.Now,
-		resetCh: make(chan struct{}, 1), dailyCh: make(chan struct{}, 1), stopCh: make(chan struct{})}
+		resetCh: make(chan struct{}, 1), indexCh: make(chan struct{}, 1), stopCh: make(chan struct{})}
 }
 
 func (m *Maintenance) config() config.MaintenanceConfig {
@@ -42,52 +47,52 @@ func (m *Maintenance) config() config.MaintenanceConfig {
 	return m.cfg
 }
 
-// SetConfig swaps the settings. If IntervalHours changes, the periodic
-// timer restarts on the new interval (<= 0 stops periodic runs); if it's
-// unchanged, the running ticker is left alone so a settings save unrelated
-// to the schedule can't keep postponing the next run. No immediate pass.
+// SetConfig swaps the settings. A job whose schedule (start time or
+// interval) changed restarts on the new one; an unchanged schedule is left
+// alone, so saving unrelated settings can't keep postponing the next run.
+// No immediate pass.
 func (m *Maintenance) SetConfig(cfg config.MaintenanceConfig) {
 	m.mu.Lock()
-	intervalChanged := cfg.IntervalHours != m.cfg.IntervalHours
-	dailyChanged := cfg.IndexCleanupTime != m.cfg.IndexCleanupTime
+	cleanupChanged := cfg.IntervalHours != m.cfg.IntervalHours || cfg.StartTime != m.cfg.StartTime
+	indexChanged := cfg.IndexExpiryIntervalHours != m.cfg.IndexExpiryIntervalHours || cfg.IndexExpiryStartTime != m.cfg.IndexExpiryStartTime
 	m.cfg = cfg
 	m.mu.Unlock()
-	if dailyChanged {
-		select {
-		case m.dailyCh <- struct{}{}:
-		default:
+	for ch, changed := range map[chan struct{}]bool{m.resetCh: cleanupChanged, m.indexCh: indexChanged} {
+		if changed {
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
 		}
 	}
-	if !intervalChanged {
-		return
-	}
-	select {
-	case m.resetCh <- struct{}{}:
-	default:
-	}
 }
 
-// Start runs an immediate pass, then repeats at the configured interval.
+// Start runs an immediate cleanup pass, then both jobs on their schedules.
 func (m *Maintenance) Start() {
 	m.runOnce()
-	go m.loop()
-	go m.dailyLoop()
+	go m.scheduleLoop(func(c config.MaintenanceConfig) (string, int) { return c.StartTime, c.IntervalHours }, m.resetCh, m.runOnce)
+	go m.scheduleLoop(func(c config.MaintenanceConfig) (string, int) {
+		return c.IndexExpiryStartTime, c.IndexExpiryIntervalHours
+	}, m.indexCh, m.pruneIndexByRealm)
 }
 
-// dailyLoop removes index entries past their realm's TTL once a day at
-// IndexCleanupTime (local time). The TTL is in days, so daily is enough.
-func (m *Maintenance) dailyLoop() {
+// scheduleLoop runs job on the schedule sched returns; a signal on reset
+// re-reads it (and re-anchors "from server start" schedules to now).
+func (m *Maintenance) scheduleLoop(sched func(config.MaintenanceConfig) (string, int), reset <-chan struct{}, job func()) {
+	anchor := m.now()
 	for {
+		start, hours := sched(m.config())
 		var fire <-chan time.Time
 		var t *time.Timer
-		if h, min, err := ParseClock(m.config().IndexCleanupTime); err == nil && h >= 0 {
-			t = time.NewTimer(time.Until(nextClock(m.now(), h, min)))
+		if next, ok := nextRun(m.now(), anchor, start, time.Duration(hours)*m.unit); ok {
+			t = time.NewTimer(next.Sub(m.now()))
 			fire = t.C
 		}
 		select {
 		case <-fire:
-			m.pruneIndexByRealm()
-		case <-m.dailyCh:
+			job()
+		case <-reset:
+			anchor = m.now()
 		case <-m.stopCh:
 			if t != nil {
 				t.Stop()
@@ -100,49 +105,42 @@ func (m *Maintenance) dailyLoop() {
 	}
 }
 
-// ParseClock parses "HH:MM" (24 h). Empty returns -1, -1: the job is off.
+// ParseClock parses "HH:MM" (24 h). Empty returns -1, -1: no start time.
 func ParseClock(s string) (hour, minute int, err error) {
 	if s == "" {
 		return -1, -1, nil
 	}
 	t, err := time.Parse("15:04", s)
 	if err != nil {
-		return 0, 0, fmt.Errorf("expected a time like 04:00, or empty for never")
+		return 0, 0, fmt.Errorf("expected a time like 04:00, or empty")
 	}
 	return t.Hour(), t.Minute(), nil
 }
 
-// nextClock is the next local hour:minute strictly after now.
-func nextClock(now time.Time, hour, minute int) time.Time {
-	next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
-	if !next.After(now) {
-		next = next.AddDate(0, 0, 1)
+// nextRun is the next run strictly after now. Without a start time the
+// runs are anchor + k·every. With one, the job runs daily at the start
+// time and then every `every` until the next day's start time (04:00 every
+// 6 h → 04, 10, 16, 22; anything ≥ 24 h means once a day). every <= 0:
+// no scheduled runs (ok=false).
+// ponytail: wall-clock arithmetic; a DST switch can shift one run by an hour.
+func nextRun(now, anchor time.Time, start string, every time.Duration) (time.Time, bool) {
+	if every <= 0 {
+		return time.Time{}, false
 	}
-	return next
-}
-
-func (m *Maintenance) loop() {
-	for {
-		var tick <-chan time.Time
-		var t *time.Ticker
-		if iv := time.Duration(m.config().IntervalHours) * m.unit; iv > 0 {
-			t = time.NewTicker(iv)
-			tick = t.C
-		}
-		select {
-		case <-tick:
-			m.runOnce()
-		case <-m.resetCh:
-		case <-m.stopCh:
-			if t != nil {
-				t.Stop()
-			}
-			return
-		}
-		if t != nil {
-			t.Stop()
-		}
+	h, min, err := ParseClock(start)
+	if err != nil || h < 0 {
+		k := now.Sub(anchor)/every + 1
+		return anchor.Add(k * every), true
 	}
+	day := time.Date(now.Year(), now.Month(), now.Day(), h, min, 0, 0, now.Location())
+	if day.After(now) {
+		day = day.AddDate(0, 0, -1) // the most recent start time
+	}
+	next := day.Add((now.Sub(day)/every + 1) * every)
+	if tomorrow := day.AddDate(0, 0, 1); !next.Before(tomorrow) {
+		next = tomorrow
+	}
+	return next, true
 }
 
 func (m *Maintenance) Stop() {
@@ -182,7 +180,7 @@ func (m *Maintenance) runOnce() {
 }
 
 // pruneIndexByRealm removes each realm's index entries not re-advertised
-// within its IndexTTLDays (0 = keep). Channels outside any realm are only
+// within its IndexExpiryDays (0 = keep). Channels outside any realm are only
 // bounded by the index cap.
 func (m *Maintenance) pruneIndexByRealm() {
 	servers, err := m.store.GetServers()
@@ -197,15 +195,15 @@ func (m *Maintenance) pruneIndexByRealm() {
 			continue
 		}
 		for _, r := range realms {
-			if r.IndexTTLDays <= 0 {
+			if r.IndexExpiryDays <= 0 {
 				continue
 			}
-			cutoff := m.now().Add(-time.Duration(r.IndexTTLDays) * 24 * time.Hour)
+			cutoff := m.now().Add(-time.Duration(r.IndexExpiryDays) * 24 * time.Hour)
 			n, err := m.store.PruneIndexedFiles(srv.ID, []string{r.Name, r.DownloadChannel}, cutoff)
 			if err != nil {
 				log.Printf("maintenance: pruning index of realm %s failed: %v", r.Name, err)
 			} else if n > 0 {
-				log.Printf("maintenance: removed %d index entr(ies) of realm %s not seen for %d day(s)", n, r.Name, r.IndexTTLDays)
+				log.Printf("maintenance: removed %d index entr(ies) of realm %s not seen for %d day(s)", n, r.Name, r.IndexExpiryDays)
 			}
 		}
 	}

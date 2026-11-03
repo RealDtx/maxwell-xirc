@@ -89,13 +89,13 @@ type Realm struct {
 	// DCCSSL: "" = request SSL (xdcc ssend), fall back to plain DCC if the
 	// bot can't; "require" = SSL only; "off" = plain DCC only.
 	DCCSSL string `json:"dcc_ssl"`
-	// IndexTTLDays: index entries of this realm not re-advertised for this
+	// IndexExpiryDays: index entries of this realm not re-advertised for this
 	// many days are removed by maintenance. 0 = keep forever.
-	IndexTTLDays int `json:"index_ttl_days"`
+	IndexExpiryDays int `json:"index_expiry_days"`
 }
 
-// DefaultIndexTTLDays is a new realm's index_ttl_days (also the column default).
-const DefaultIndexTTLDays = 14
+// DefaultIndexExpiryDays is a new realm's index_expiry_days (also the column default).
+const DefaultIndexExpiryDays = 30
 
 type Download struct {
 	ID              int64      `json:"id"`

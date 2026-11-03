@@ -1307,7 +1307,7 @@
                                     </div>
                                     <div class="form-group">
                                         <label>Forget index entries after (days)</label>
-                                        <input type="number" min="0" max="3650" x-model.number="realmForm.index_ttl_days" style="width:100px;">
+                                        <input type="number" min="0" max="3650" x-model.number="realmForm.index_expiry_days" style="width:100px;">
                                         <div class="text-xs" style="color:var(--text-muted); margin-top:4px;">Packs this realm's bots haven't advertised for this long are removed from the index by the daily cleanup (Settings → System). 0 = keep forever.</div>
                                     </div>
                                     <div class="form-group">
@@ -1706,19 +1706,38 @@
                                                    :disabled="systemLocked('maintenance.index_max_files')"
                                                    :title="systemLocked('maintenance.index_max_files') ? 'Set by environment variable ' + systemEnvVar('maintenance.index_max_files') : ''">
                                         </div>
-                                        <div class="form-group">
-                                            <label>Run every (hours, 0 = only at start)</label>
-                                            <input type="number" min="0" x-model.number="systemForm.maintenance.interval_hours"
-                                                   :disabled="systemLocked('maintenance.interval_hours')"
-                                                   :title="systemLocked('maintenance.interval_hours') ? 'Set by environment variable ' + systemEnvVar('maintenance.interval_hours') : ''">
+                                        <h4 style="margin:12px 0 6px;">Search results &amp; index size</h4>
+                                        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                                            <div class="form-group" style="margin:0;">
+                                                <label>Start at (empty = from server start)</label>
+                                                <input type="time" style="width:120px;" x-model="systemForm.maintenance.start_time"
+                                                       :disabled="systemLocked('maintenance.start_time')"
+                                                       :title="systemLocked('maintenance.start_time') ? 'Set by environment variable ' + systemEnvVar('maintenance.start_time') : ''">
+                                            </div>
+                                            <div class="form-group" style="margin:0;">
+                                                <label>Run every (hours, 0 = only at server start)</label>
+                                                <input type="number" min="0" x-model.number="systemForm.maintenance.interval_hours"
+                                                       :disabled="systemLocked('maintenance.interval_hours')"
+                                                       :title="systemLocked('maintenance.interval_hours') ? 'Set by environment variable ' + systemEnvVar('maintenance.interval_hours') : ''">
+                                            </div>
                                         </div>
-                                        <div class="form-group">
-                                            <label>Daily index cleanup at</label>
-                                            <input type="time" x-model="systemForm.maintenance.index_cleanup_time" style="width:120px;"
-                                                   :disabled="systemLocked('maintenance.index_cleanup_time')"
-                                                   :title="systemLocked('maintenance.index_cleanup_time') ? 'Set by environment variable ' + systemEnvVar('maintenance.index_cleanup_time') : ''">
-                                            <div class="text-xs" style="color:var(--text-muted); margin-top:4px;">Removes index entries a realm's bots haven't advertised for longer than the realm's "Forget index entries after" days (Settings → Realms). Server's local time; clear the field to turn it off.</div>
+                                        <h4 style="margin:16px 0 6px;">Index expiry</h4>
+                                        <div class="text-xs" style="color:var(--text-muted); margin-bottom:6px;">Removes index entries a realm's bots haven't advertised for longer than the realm's "Forget index entries after" days (Settings → Realms).</div>
+                                        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                                            <div class="form-group" style="margin:0;">
+                                                <label>Start at (empty = from server start)</label>
+                                                <input type="time" style="width:120px;" x-model="systemForm.maintenance.index_expiry_start_time"
+                                                       :disabled="systemLocked('maintenance.index_expiry_start_time')"
+                                                       :title="systemLocked('maintenance.index_expiry_start_time') ? 'Set by environment variable ' + systemEnvVar('maintenance.index_expiry_start_time') : ''">
+                                            </div>
+                                            <div class="form-group" style="margin:0;">
+                                                <label>Run every (hours, 0 = never)</label>
+                                                <input type="number" min="0" x-model.number="systemForm.maintenance.index_expiry_interval_hours"
+                                                       :disabled="systemLocked('maintenance.index_expiry_interval_hours')"
+                                                       :title="systemLocked('maintenance.index_expiry_interval_hours') ? 'Set by environment variable ' + systemEnvVar('maintenance.index_expiry_interval_hours') : ''">
+                                            </div>
                                         </div>
+                                        <div class="text-xs" style="color:var(--text-muted); margin-top:8px;">Times are the server's local time. With a start time a job runs then and every N hours until the next day's start (04:00 every 6 h → 04, 10, 16, 22; 24 = once a day).</div>
                                     </div>
 
                                     <div class="settings-card" style="margin-bottom:16px;">

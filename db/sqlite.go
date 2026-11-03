@@ -206,7 +206,7 @@ func (s *SQLiteStore) DeleteServer(id int64) error {
 
 func (s *SQLiteStore) GetRealms(serverID int64) ([]Realm, error) {
 	rows, err := s.db.Query(
-		"SELECT id, server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days FROM realms WHERE server_id=? ORDER BY name", serverID,
+		"SELECT id, server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_expiry_days FROM realms WHERE server_id=? ORDER BY name", serverID,
 	)
 	if err != nil {
 		return nil, err
@@ -216,7 +216,7 @@ func (s *SQLiteStore) GetRealms(serverID int64) ([]Realm, error) {
 	realms := []Realm{}
 	for rows.Next() {
 		var r Realm
-		if err := rows.Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL, &r.IndexTTLDays); err != nil {
+		if err := rows.Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL, &r.IndexExpiryDays); err != nil {
 			return nil, err
 		}
 		realms = append(realms, r)
@@ -227,8 +227,8 @@ func (s *SQLiteStore) GetRealms(serverID int64) ([]Realm, error) {
 func (s *SQLiteStore) GetRealm(id int64) (*Realm, error) {
 	var r Realm
 	err := s.db.QueryRow(
-		"SELECT id, server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days FROM realms WHERE id=?", id,
-	).Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL, &r.IndexTTLDays)
+		"SELECT id, server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_expiry_days FROM realms WHERE id=?", id,
+	).Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL, &r.IndexExpiryDays)
 	if err != nil {
 		return nil, err
 	}
@@ -237,9 +237,9 @@ func (s *SQLiteStore) GetRealm(id int64) (*Realm, error) {
 
 func (s *SQLiteStore) CreateRealm(r *Realm) error {
 	result, err := s.db.Exec(
-		`INSERT INTO realms (server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days)
+		`INSERT INTO realms (server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_expiry_days)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ServerID, r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.IndexTTLDays,
+		r.ServerID, r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.IndexExpiryDays,
 	)
 	if err != nil {
 		return err
@@ -250,8 +250,8 @@ func (s *SQLiteStore) CreateRealm(r *Realm) error {
 
 func (s *SQLiteStore) UpdateRealm(r *Realm) error {
 	_, err := s.db.Exec(
-		`UPDATE realms SET name=?, display_name=?, key=?, search_command=?, download_channel=?, search_bot=?, search_timeout=?, auto_join=?, enabled=?, dcc_ssl=?, index_ttl_days=? WHERE id=?`,
-		r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.IndexTTLDays, r.ID,
+		`UPDATE realms SET name=?, display_name=?, key=?, search_command=?, download_channel=?, search_bot=?, search_timeout=?, auto_join=?, enabled=?, dcc_ssl=?, index_expiry_days=? WHERE id=?`,
+		r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.IndexExpiryDays, r.ID,
 	)
 	return err
 }

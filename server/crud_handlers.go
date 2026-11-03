@@ -228,7 +228,7 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateRealm(w http.ResponseWriter, r *http.Request) {
-	realm := db.Realm{IndexTTLDays: db.DefaultIndexTTLDays} // fields the client omits keep their defaults
+	realm := db.Realm{IndexExpiryDays: db.DefaultIndexExpiryDays} // fields the client omits keep their defaults
 	if err := json.NewDecoder(r.Body).Decode(&realm); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -241,8 +241,8 @@ func (s *Server) handleCreateRealm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, `dcc_ssl must be "", "require" or "off"`)
 		return
 	}
-	if realm.IndexTTLDays < 0 || realm.IndexTTLDays > 3650 {
-		writeError(w, http.StatusBadRequest, "index_ttl_days must be 0–3650")
+	if realm.IndexExpiryDays < 0 || realm.IndexExpiryDays > 3650 {
+		writeError(w, http.StatusBadRequest, "index_expiry_days must be 0–3650")
 		return
 	}
 	realm.Enabled = true
@@ -282,8 +282,8 @@ func (s *Server) handleUpdateRealm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, `dcc_ssl must be "", "require" or "off"`)
 		return
 	}
-	if realm.IndexTTLDays < 0 || realm.IndexTTLDays > 3650 {
-		writeError(w, http.StatusBadRequest, "index_ttl_days must be 0–3650")
+	if realm.IndexExpiryDays < 0 || realm.IndexExpiryDays > 3650 {
+		writeError(w, http.StatusBadRequest, "index_expiry_days must be 0–3650")
 		return
 	}
 	realm.ID = id

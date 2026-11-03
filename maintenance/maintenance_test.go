@@ -206,8 +206,8 @@ func TestMaintenance_PrunesIndexByRealmTTL(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range []db.Realm{
-		{ServerID: srv.ID, Name: "#Example-Chat", DownloadChannel: "#example-dl", IndexTTLDays: 14},
-		{ServerID: srv.ID, Name: "#keep", IndexTTLDays: 0},
+		{ServerID: srv.ID, Name: "#Example-Chat", DownloadChannel: "#example-dl", IndexExpiryDays: 14},
+		{ServerID: srv.ID, Name: "#keep", IndexExpiryDays: 0},
 	} {
 		r := r
 		if err := store.CreateRealm(&r); err != nil {
@@ -247,14 +247,32 @@ func TestMaintenance_PrunesIndexByRealmTTL(t *testing.T) {
 	}
 }
 
-func TestNextClock(t *testing.T) {
+func TestNextRun(t *testing.T) {
 	loc := time.FixedZone("x", 3600)
-	at := func(h, m int) time.Time { return time.Date(2026, 11, 3, h, m, 0, 0, loc) }
-	if got := nextClock(at(3, 59), 4, 0); !got.Equal(at(4, 0)) {
-		t.Errorf("before: %v", got)
+	at := func(d, h, m int) time.Time { return time.Date(2026, 11, d, h, m, 0, 0, loc) }
+	cases := []struct {
+		name  string
+		now   time.Time
+		start string
+		every time.Duration
+		want  time.Time
+	}{
+		{"before start time", at(3, 3, 59), "04:00", 24 * time.Hour, at(3, 4, 0)},
+		{"at start time → next day", at(3, 4, 0), "04:00", 24 * time.Hour, at(4, 4, 0)},
+		{"every 6h from 04:00", at(3, 11, 0), "04:00", 6 * time.Hour, at(3, 16, 0)},
+		{"after last slot → next day's start", at(3, 23, 0), "04:00", 6 * time.Hour, at(4, 4, 0)},
+		{"5h does not divide 24: restart at start", at(4, 1, 0), "04:00", 5 * time.Hour, at(4, 4, 0)},
+		{"after midnight, before start", at(4, 2, 0), "04:00", 6 * time.Hour, at(4, 4, 0)},
+		{"no start time: from anchor", at(3, 7, 30), "", 6 * time.Hour, at(3, 12, 0)}, // anchor 06:00
 	}
-	if got := nextClock(at(4, 0), 4, 0); !got.Equal(at(4, 0).AddDate(0, 0, 1)) {
-		t.Errorf("at: %v", got)
+	for _, c := range cases {
+		got, ok := nextRun(c.now, at(3, 6, 0), c.start, c.every)
+		if !ok || !got.Equal(c.want) {
+			t.Errorf("%s: got %v ok=%v, want %v", c.name, got, ok, c.want)
+		}
+	}
+	if _, ok := nextRun(at(3, 1, 0), at(3, 0, 0), "04:00", 0); ok {
+		t.Error("every 0 must mean no scheduled runs")
 	}
 	for in, ok := range map[string]bool{"": true, "04:00": true, "23:59": true, "24:00": false, "4am": false} {
 		if _, _, err := ParseClock(in); (err == nil) != ok {

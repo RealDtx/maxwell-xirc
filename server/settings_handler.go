@@ -295,10 +295,12 @@ func validateSettings(cur, e config.Editable) []string {
 		errs = append(errs, "discovery.aggressive_stay_seconds must be 0–86400")
 	}
 	m := e.Maintenance
-	if _, _, err := maintenance.ParseClock(m.IndexCleanupTime); err != nil {
-		errs = append(errs, "maintenance.index_cleanup_time: "+err.Error())
+	for _, c := range []struct{ key, val string }{{"maintenance.start_time", m.StartTime}, {"maintenance.index_expiry_start_time", m.IndexExpiryStartTime}} {
+		if _, _, err := maintenance.ParseClock(c.val); err != nil {
+			errs = append(errs, c.key+": "+err.Error())
+		}
 	}
-	if m.SearchResultRetentionDays < 0 || m.IndexMaxFiles < 0 || m.IntervalHours < 0 {
+	if m.SearchResultRetentionDays < 0 || m.IndexMaxFiles < 0 || m.IntervalHours < 0 || m.IndexExpiryIntervalHours < 0 {
 		errs = append(errs, "maintenance values must be 0 or more")
 	}
 	if err := ParseAuthPolicy(e.Auth); err != nil {
