@@ -197,3 +197,68 @@ func TestSetConfigSameIntervalDoesNotResetTicker(t *testing.T) {
 		t.Fatal("SetConfig with a changed IntervalHours must send a ticker-reset signal")
 	}
 }
+
+func TestMaintenance_PrunesIndexByRealmTTL(t *testing.T) {
+	store, cleanup := newTestStore(t)
+	defer cleanup()
+	srv := &db.Server{Name: "srv", Host: "irc.example.net", Port: 6667, Nickname: "me", Enabled: true}
+	if err := store.CreateServer(srv); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []db.Realm{
+		{ServerID: srv.ID, Name: "#Example-Chat", DownloadChannel: "#example-dl", IndexTTLDays: 14},
+		{ServerID: srv.ID, Name: "#keep", IndexTTLDays: 0},
+	} {
+		r := r
+		if err := store.CreateRealm(&r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []db.IndexedFile{
+		{ServerID: srv.ID, Channel: "#example-dl", BotNick: "B", Filename: "old.mkv", RawLine: "r"},
+		{ServerID: srv.ID, Channel: "#keep", BotNick: "B", Filename: "kept.mkv", RawLine: "r"},
+		{ServerID: srv.ID, Channel: "#other", BotNick: "B", Filename: "norealm.mkv", RawLine: "r"},
+	} {
+		f := f
+		if err := store.UpsertIndexedFile(&f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func(q string) int {
+		r, err := store.SearchIndexedFiles(q, 0, "", 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(r)
+	}
+
+	m := New(store, config.MaintenanceConfig{})
+	m.pruneIndexByRealm() // everything is fresh
+	if count("old") != 1 {
+		t.Fatal("fresh entry pruned")
+	}
+	m.now = func() time.Time { return time.Now().Add(15 * 24 * time.Hour) }
+	m.pruneIndexByRealm()
+	if count("old") != 0 {
+		t.Error("entry older than the realm's TTL kept")
+	}
+	if count("kept") != 1 || count("norealm") != 1 {
+		t.Error("TTL 0 or channel without realm must be kept")
+	}
+}
+
+func TestNextClock(t *testing.T) {
+	loc := time.FixedZone("x", 3600)
+	at := func(h, m int) time.Time { return time.Date(2026, 11, 3, h, m, 0, 0, loc) }
+	if got := nextClock(at(3, 59), 4, 0); !got.Equal(at(4, 0)) {
+		t.Errorf("before: %v", got)
+	}
+	if got := nextClock(at(4, 0), 4, 0); !got.Equal(at(4, 0).AddDate(0, 0, 1)) {
+		t.Errorf("at: %v", got)
+	}
+	for in, ok := range map[string]bool{"": true, "04:00": true, "23:59": true, "24:00": false, "4am": false} {
+		if _, _, err := ParseClock(in); (err == nil) != ok {
+			t.Errorf("ParseClock(%q) err=%v", in, err)
+		}
+	}
+}

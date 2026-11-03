@@ -424,8 +424,9 @@ func (m *mockStore) UpsertDiscoveredChannel(d *db.DiscoveredChannel) error { ret
 func (m *mockStore) GetDiscoveredChannels(serverID int64) ([]db.DiscoveredChannel, error) {
 	return nil, nil
 }
-func (m *mockStore) SetDiscoveredFlag(id int64, flag string) error { return nil }
-func (m *mockStore) MarkDiscoveredSeen(serverID int64) error       { return nil }
-func (m *mockStore) GetBotSSL(int64, string) (bool, bool, error)   { return false, false, nil }
-func (m *mockStore) SetBotSSL(int64, string, bool) error           { return nil }
-func (m *mockStore) CountUnseenDiscovered() (map[int64]int, error) { return nil, nil }
+func (m *mockStore) SetDiscoveredFlag(id int64, flag string) error               { return nil }
+func (m *mockStore) MarkDiscoveredSeen(serverID int64) error                     { return nil }
+func (m *mockStore) GetBotSSL(int64, string) (bool, bool, error)                 { return false, false, nil }
+func (m *mockStore) SetBotSSL(int64, string, bool) error                         { return nil }
+func (m *mockStore) PruneIndexedFiles(int64, []string, time.Time) (int64, error) { return 0, nil }
+func (m *mockStore) CountUnseenDiscovered() (map[int64]int, error)               { return nil, nil }

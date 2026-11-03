@@ -1306,6 +1306,11 @@
                                         <input type="number" x-model.number="realmForm.search_timeout" placeholder="10" min="5" max="120" style="width:100px;">
                                     </div>
                                     <div class="form-group">
+                                        <label>Forget index entries after (days)</label>
+                                        <input type="number" min="0" max="3650" x-model.number="realmForm.index_ttl_days" style="width:100px;">
+                                        <div class="text-xs" style="color:var(--text-muted); margin-top:4px;">Packs this realm's bots haven't advertised for this long are removed from the index by the daily cleanup (Settings → System). 0 = keep forever.</div>
+                                    </div>
+                                    <div class="form-group">
                                         <label>Transfer encryption</label>
                                         <select x-model="realmForm.dcc_ssl">
                                             <option value="">SSL, fall back to plain if the bot can't</option>
@@ -1706,6 +1711,13 @@
                                             <input type="number" min="0" x-model.number="systemForm.maintenance.interval_hours"
                                                    :disabled="systemLocked('maintenance.interval_hours')"
                                                    :title="systemLocked('maintenance.interval_hours') ? 'Set by environment variable ' + systemEnvVar('maintenance.interval_hours') : ''">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Daily index cleanup at</label>
+                                            <input type="time" x-model="systemForm.maintenance.index_cleanup_time" style="width:120px;"
+                                                   :disabled="systemLocked('maintenance.index_cleanup_time')"
+                                                   :title="systemLocked('maintenance.index_cleanup_time') ? 'Set by environment variable ' + systemEnvVar('maintenance.index_cleanup_time') : ''">
+                                            <div class="text-xs" style="color:var(--text-muted); margin-top:4px;">Removes index entries a realm's bots haven't advertised for longer than the realm's "Forget index entries after" days (Settings → Realms). Server's local time; clear the field to turn it off.</div>
                                         </div>
                                     </div>
 

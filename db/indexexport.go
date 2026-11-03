@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"strings"
+	"time"
 )
 
 const indexPageSize = 5000
@@ -59,4 +60,36 @@ func queryIndexedFiles(conn *sql.DB, where string, args ...interface{}) ([]Index
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// pruneIndexedFiles is shared by both stores; seenBefore is the dialect's
+// "last_seen_at < ?" test (SQLite stores two text formats, see below).
+func pruneIndexedFiles(conn *sql.DB, seenBefore string, serverID int64, channels []string, cutoff interface{}) (int64, error) {
+	var lower []interface{}
+	for _, c := range channels {
+		if c != "" {
+			lower = append(lower, strings.ToLower(c))
+		}
+	}
+	if len(lower) == 0 {
+		return 0, nil
+	}
+	args := append([]interface{}{serverID}, lower...)
+	args = append(args, cutoff)
+	res, err := conn.Exec(`DELETE FROM indexed_files WHERE server_id=? AND lower(channel) IN (?`+
+		strings.Repeat(",?", len(lower)-1)+`) AND `+seenBefore, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// SQLite rows carry either rfc3339Fixed text (upserts) or the column
+// default "YYYY-MM-DD HH:MM:SS"; julianday() reads both.
+func (s *SQLiteStore) PruneIndexedFiles(serverID int64, channels []string, olderThan time.Time) (int64, error) {
+	return pruneIndexedFiles(s.db, "julianday(last_seen_at) < julianday(?)", serverID, channels, olderThan.UTC().Format(rfc3339Fixed))
+}
+
+func (s *MySQLStore) PruneIndexedFiles(serverID int64, channels []string, olderThan time.Time) (int64, error) {
+	return pruneIndexedFiles(s.db, "last_seen_at < ?", serverID, channels, olderThan.UTC())
 }

@@ -2989,7 +2989,7 @@ document.addEventListener('alpine:init', () => {
             this.pendingDiscoveredId = null;
             this.realmForm = realm
                 ? Object.assign({}, realm)
-                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', key: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true, dcc_ssl: '' };
+                : { id: null, server_id: this.settingsServerId, name: '', display_name: '', key: '', search_command: '', download_channel: '', search_bot: '', search_timeout: 10, auto_join: true, enabled: true, dcc_ssl: '', index_ttl_days: 14 };
             if (this.realmForm.dcc_ssl == null) this.realmForm.dcc_ssl = '';
             this.showRealmForm = true;
             if (!this.patternSettingsList.length) {

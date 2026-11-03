@@ -228,7 +228,7 @@ func (s *Server) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateRealm(w http.ResponseWriter, r *http.Request) {
-	var realm db.Realm
+	realm := db.Realm{IndexTTLDays: db.DefaultIndexTTLDays} // fields the client omits keep their defaults
 	if err := json.NewDecoder(r.Body).Decode(&realm); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -239,6 +239,10 @@ func (s *Server) handleCreateRealm(w http.ResponseWriter, r *http.Request) {
 	}
 	if m := realm.DCCSSL; m != "" && m != "require" && m != "off" {
 		writeError(w, http.StatusBadRequest, `dcc_ssl must be "", "require" or "off"`)
+		return
+	}
+	if realm.IndexTTLDays < 0 || realm.IndexTTLDays > 3650 {
+		writeError(w, http.StatusBadRequest, "index_ttl_days must be 0–3650")
 		return
 	}
 	realm.Enabled = true
@@ -259,7 +263,13 @@ func (s *Server) handleUpdateRealm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	var realm db.Realm
+	// Decode onto the stored realm so fields the client omits keep their values.
+	existing, err := s.store.GetRealm(id)
+	if err != nil || existing == nil {
+		writeError(w, http.StatusNotFound, "realm not found")
+		return
+	}
+	realm := *existing
 	if err := json.NewDecoder(r.Body).Decode(&realm); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -270,6 +280,10 @@ func (s *Server) handleUpdateRealm(w http.ResponseWriter, r *http.Request) {
 	}
 	if m := realm.DCCSSL; m != "" && m != "require" && m != "off" {
 		writeError(w, http.StatusBadRequest, `dcc_ssl must be "", "require" or "off"`)
+		return
+	}
+	if realm.IndexTTLDays < 0 || realm.IndexTTLDays > 3650 {
+		writeError(w, http.StatusBadRequest, "index_ttl_days must be 0–3650")
 		return
 	}
 	realm.ID = id

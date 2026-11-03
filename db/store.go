@@ -90,6 +90,9 @@ type Store interface {
 	// whose filename differs from keepFilename. keepFilename="" removes the
 	// bot+pack entirely (e.g. after the bot reported an invalid pack number).
 	EvictStaleIndexedFiles(serverID int64, botNick string, packNumber int, keepFilename string) error
+	// PruneIndexedFiles deletes a realm's index entries (channels compared
+	// case-insensitively) last seen before olderThan.
+	PruneIndexedFiles(serverID int64, channels []string, olderThan time.Time) (int64, error)
 	// SearchIndexedFiles performs an offline, case-insensitive AND-of-words
 	// substring search over the persistent file index, ordered by
 	// last_seen_at DESC. serverID=0 searches all servers; channel=""

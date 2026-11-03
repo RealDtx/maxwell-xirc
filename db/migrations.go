@@ -36,6 +36,7 @@ func migrationStatements() []string {
 			auto_join INTEGER NOT NULL DEFAULT 1,
 			enabled INTEGER NOT NULL DEFAULT 1,
 			dcc_ssl TEXT NOT NULL DEFAULT '',
+			index_ttl_days INTEGER NOT NULL DEFAULT 14,
 			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
 		)`,
 
@@ -143,6 +144,7 @@ func migrationStatements() []string {
 		`ALTER TABLE realms ADD COLUMN search_bot TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE realms ADD COLUMN search_timeout INTEGER NOT NULL DEFAULT 10`,
 		`ALTER TABLE realms ADD COLUMN dcc_ssl TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE realms ADD COLUMN index_ttl_days INTEGER NOT NULL DEFAULT 14`,
 
 		`ALTER TABLE parse_patterns ADD COLUMN tags TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE parse_patterns ADD COLUMN server_id INTEGER`,

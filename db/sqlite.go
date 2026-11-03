@@ -206,7 +206,7 @@ func (s *SQLiteStore) DeleteServer(id int64) error {
 
 func (s *SQLiteStore) GetRealms(serverID int64) ([]Realm, error) {
 	rows, err := s.db.Query(
-		"SELECT id, server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl FROM realms WHERE server_id=? ORDER BY name", serverID,
+		"SELECT id, server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days FROM realms WHERE server_id=? ORDER BY name", serverID,
 	)
 	if err != nil {
 		return nil, err
@@ -216,7 +216,7 @@ func (s *SQLiteStore) GetRealms(serverID int64) ([]Realm, error) {
 	realms := []Realm{}
 	for rows.Next() {
 		var r Realm
-		if err := rows.Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL); err != nil {
+		if err := rows.Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL, &r.IndexTTLDays); err != nil {
 			return nil, err
 		}
 		realms = append(realms, r)
@@ -227,8 +227,8 @@ func (s *SQLiteStore) GetRealms(serverID int64) ([]Realm, error) {
 func (s *SQLiteStore) GetRealm(id int64) (*Realm, error) {
 	var r Realm
 	err := s.db.QueryRow(
-		"SELECT id, server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl FROM realms WHERE id=?", id,
-	).Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL)
+		"SELECT id, server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days FROM realms WHERE id=?", id,
+	).Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL, &r.IndexTTLDays)
 	if err != nil {
 		return nil, err
 	}
@@ -237,9 +237,9 @@ func (s *SQLiteStore) GetRealm(id int64) (*Realm, error) {
 
 func (s *SQLiteStore) CreateRealm(r *Realm) error {
 	result, err := s.db.Exec(
-		`INSERT INTO realms (server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ServerID, r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL,
+		`INSERT INTO realms (server_id, name, display_name, key, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ServerID, r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.IndexTTLDays,
 	)
 	if err != nil {
 		return err
@@ -250,8 +250,8 @@ func (s *SQLiteStore) CreateRealm(r *Realm) error {
 
 func (s *SQLiteStore) UpdateRealm(r *Realm) error {
 	_, err := s.db.Exec(
-		`UPDATE realms SET name=?, display_name=?, key=?, search_command=?, download_channel=?, search_bot=?, search_timeout=?, auto_join=?, enabled=?, dcc_ssl=? WHERE id=?`,
-		r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.ID,
+		`UPDATE realms SET name=?, display_name=?, key=?, search_command=?, download_channel=?, search_bot=?, search_timeout=?, auto_join=?, enabled=?, dcc_ssl=?, index_ttl_days=? WHERE id=?`,
+		r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.IndexTTLDays, r.ID,
 	)
 	return err
 }
@@ -562,7 +562,7 @@ func (s *SQLiteStore) MarkSearchResultParsed(id int64, botNick string, packNumbe
 
 func (s *SQLiteStore) EvictStaleIndexedFiles(serverID int64, botNick string, packNumber int, keepFilename string) error {
 	_, err := s.db.Exec(
-		`DELETE FROM indexed_files WHERE server_id=? AND bot_nick=? AND pack_number=? AND filename<>?`,
+		`DELETE FROM indexed_files WHERE server_id=? AND bot_nick=? COLLATE NOCASE AND pack_number=? AND filename<>?`,
 		serverID, botNick, packNumber, keepFilename,
 	)
 	return err

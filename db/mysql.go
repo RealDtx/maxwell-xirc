@@ -45,6 +45,7 @@ func mysqlMigrationStatements() []string {
 			auto_join BOOLEAN NOT NULL DEFAULT TRUE,
 			enabled BOOLEAN NOT NULL DEFAULT TRUE,
 			dcc_ssl VARCHAR(16) NOT NULL DEFAULT '',
+			index_ttl_days INT NOT NULL DEFAULT 14,
 			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
@@ -151,6 +152,7 @@ func mysqlMigrationStatements() []string {
 		`ALTER TABLE realms ADD COLUMN search_bot VARCHAR(255) NOT NULL DEFAULT ''`,
 		`ALTER TABLE realms ADD COLUMN search_timeout INT NOT NULL DEFAULT 10`,
 		`ALTER TABLE realms ADD COLUMN dcc_ssl VARCHAR(16) NOT NULL DEFAULT ''`,
+		`ALTER TABLE realms ADD COLUMN index_ttl_days INT NOT NULL DEFAULT 14`,
 
 		`ALTER TABLE parse_patterns ADD COLUMN tags TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE parse_patterns ADD COLUMN server_id INTEGER`,
@@ -420,7 +422,7 @@ func (s *MySQLStore) DeleteServer(id int64) error {
 
 func (s *MySQLStore) GetRealms(serverID int64) ([]Realm, error) {
 	rows, err := s.db.Query(
-		"SELECT id, server_id, name, display_name, `key`, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl FROM realms WHERE server_id=? ORDER BY name", serverID,
+		"SELECT id, server_id, name, display_name, `key`, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days FROM realms WHERE server_id=? ORDER BY name", serverID,
 	)
 	if err != nil {
 		return nil, err
@@ -430,7 +432,7 @@ func (s *MySQLStore) GetRealms(serverID int64) ([]Realm, error) {
 	realms := []Realm{}
 	for rows.Next() {
 		var r Realm
-		if err := rows.Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL); err != nil {
+		if err := rows.Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL, &r.IndexTTLDays); err != nil {
 			return nil, err
 		}
 		realms = append(realms, r)
@@ -441,8 +443,8 @@ func (s *MySQLStore) GetRealms(serverID int64) ([]Realm, error) {
 func (s *MySQLStore) GetRealm(id int64) (*Realm, error) {
 	var r Realm
 	err := s.db.QueryRow(
-		"SELECT id, server_id, name, display_name, `key`, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl FROM realms WHERE id=?", id,
-	).Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL)
+		"SELECT id, server_id, name, display_name, `key`, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days FROM realms WHERE id=?", id,
+	).Scan(&r.ID, &r.ServerID, &r.Name, &r.DisplayName, &r.Key, &r.SearchCommand, &r.DownloadChannel, &r.SearchBot, &r.SearchTimeout, &r.AutoJoin, &r.Enabled, &r.DCCSSL, &r.IndexTTLDays)
 	if err != nil {
 		return nil, err
 	}
@@ -451,8 +453,8 @@ func (s *MySQLStore) GetRealm(id int64) (*Realm, error) {
 
 func (s *MySQLStore) CreateRealm(r *Realm) error {
 	result, err := s.db.Exec(
-		"INSERT INTO realms (server_id, name, display_name, `key`, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		r.ServerID, r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL,
+		"INSERT INTO realms (server_id, name, display_name, `key`, search_command, download_channel, search_bot, search_timeout, auto_join, enabled, dcc_ssl, index_ttl_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		r.ServerID, r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.IndexTTLDays,
 	)
 	if err != nil {
 		return err
@@ -463,8 +465,8 @@ func (s *MySQLStore) CreateRealm(r *Realm) error {
 
 func (s *MySQLStore) UpdateRealm(r *Realm) error {
 	_, err := s.db.Exec(
-		"UPDATE realms SET name=?, display_name=?, `key`=?, search_command=?, download_channel=?, search_bot=?, search_timeout=?, auto_join=?, enabled=?, dcc_ssl=? WHERE id=?",
-		r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.ID,
+		"UPDATE realms SET name=?, display_name=?, `key`=?, search_command=?, download_channel=?, search_bot=?, search_timeout=?, auto_join=?, enabled=?, dcc_ssl=?, index_ttl_days=? WHERE id=?",
+		r.Name, r.DisplayName, r.Key, r.SearchCommand, r.DownloadChannel, r.SearchBot, r.SearchTimeout, r.AutoJoin, r.Enabled, r.DCCSSL, r.IndexTTLDays, r.ID,
 	)
 	return err
 }
