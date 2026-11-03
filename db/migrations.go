@@ -155,6 +155,16 @@ func migrationStatements() []string {
 		`ALTER TABLE downloads ADD COLUMN auto_subdir BOOLEAN NOT NULL DEFAULT TRUE`,
 		`ALTER TABLE downloads ADD COLUMN subdir_depth INTEGER NOT NULL DEFAULT 3`,
 		`ALTER TABLE downloads ADD COLUMN expected_filename TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE downloads ADD COLUMN via_ssl BOOLEAN NOT NULL DEFAULT FALSE`,
+		// What each bot answered to "xdcc ssend", so the first request after a
+		// restart needn't wait for the fallback.
+		`CREATE TABLE IF NOT EXISTS bot_ssl (
+			server_id INTEGER NOT NULL,
+			bot_nick TEXT NOT NULL,
+			supports_ssl BOOLEAN NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE (server_id, bot_nick)
+		)`,
 
 		`ALTER TABLE servers ADD COLUMN discovery_mode TEXT NOT NULL DEFAULT 'normal'`,
 		`ALTER TABLE servers ADD COLUMN discovery_on_connect BOOLEAN NOT NULL DEFAULT FALSE`,

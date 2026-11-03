@@ -115,6 +115,8 @@ type Download struct {
 	// ExpectedFilename is set when the bot sent a different file than the
 	// pack list promised (pack swapped/renumbered); Filename holds what was sent.
 	ExpectedFilename string `json:"expected_filename"`
+	// SSL is set when the transfer ran over TLS (DCC SSEND).
+	SSL bool `json:"ssl"`
 }
 
 type SearchResult struct {

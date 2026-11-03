@@ -540,7 +540,8 @@ func TestEngine_SSLFallback(t *testing.T) {
 	store, cleanup := newTestStore(t)
 	defer cleanup()
 	bus := irc.NewEventBus()
-	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{DownloadsDir: "data", TempDir: "data/tmp", MinFreeSpace: "0"}, 2)
+	dir := t.TempDir()
+	engine := NewEngine(store, bus, irc.NewManager(store, bus), &config.StorageConfig{DownloadsDir: dir, TempDir: dir, MinFreeSpace: "0"}, 2)
 	notice := func(bot, text string) {
 		engine.handleMessage(irc.Event{Type: irc.EventIRCMessage, ServerID: 1, Nick: bot, Channel: bot,
 			Data: map[string]string{"type": "notice", "message": text}})
@@ -556,8 +557,9 @@ func TestEngine_SSLFallback(t *testing.T) {
 	a, _ := engine.queue.Add(1, "#c", "BotA", 1, "a.bin", 1, false, false, true)
 	p := pend(a.ID, "BotA", "")
 	notice("BotA", "** Invalid command, try /msg BotA xdcc help")
-	if p.SSLAsked || !engine.botNoSSL[pendingKey(1, "BotA")] || engine.pendingByBot[pendingKey(1, "BotA")] == nil {
-		t.Errorf("fallback: asked=%v noSSL=%v pending=%v", p.SSLAsked, engine.botNoSSL[pendingKey(1, "BotA")], engine.pendingByBot[pendingKey(1, "BotA")] != nil)
+	ssl, known, _ := store.GetBotSSL(1, "bota")
+	if p.SSLAsked || !known || ssl || engine.pendingByBot[pendingKey(1, "BotA")] == nil {
+		t.Errorf("fallback: asked=%v known=%v ssl=%v pending=%v", p.SSLAsked, known, ssl, engine.pendingByBot[pendingKey(1, "BotA")] != nil)
 	}
 
 	// A normal answer doesn't trigger the fallback.
@@ -566,6 +568,9 @@ func TestEngine_SSLFallback(t *testing.T) {
 	notice("BotB", `** Sending you pack #1 ("b.bin"), which is 1MB. (resume+ssl supported)`)
 	if !q.SSLAsked || !q.Answered {
 		t.Errorf("normal reply: asked=%v answered=%v", q.SSLAsked, q.Answered)
+	}
+	if ssl, known, _ := store.GetBotSSL(1, "BotB"); !known || !ssl {
+		t.Errorf("'ssl supported' advert not remembered: known=%v ssl=%v", known, ssl)
 	}
 
 	// require: a plain offer fails the download.
@@ -577,12 +582,24 @@ func TestEngine_SSLFallback(t *testing.T) {
 		t.Errorf("require: status=%s err=%q", got.Status, got.ErrorMessage)
 	}
 
-	// Silence: falls back after sslNoAnswerFallback.
+	// Silence: the per-request timer falls back.
 	d, _ := engine.queue.Add(1, "#c", "BotD", 1, "d.bin", 1, false, false, true)
 	r := pend(d.ID, "BotD", "")
-	r.CreatedAt = time.Now().Add(-2 * sslNoAnswerFallback)
-	engine.sslSilentFallback()
+	engine.sslCheckSilent(r)
 	if r.SSLAsked {
 		t.Error("silent: still waiting for SSL")
+	}
+
+	// An SSEND offer is remembered and marks the download as SSL.
+	e2, _ := engine.queue.Add(1, "#c", "BotE", 1, "e.bin", 1, false, false, true)
+	pend(e2.ID, "BotE", "")
+	engine.SetPassive("", "") // keep it active so no listener is needed
+	engine.handleMessage(irc.Event{Type: irc.EventIRCMessage, ServerID: 1, Nick: "BotE", Channel: "BotE",
+		Data: map[string]string{"type": "ctcp", "message": "DCC SSEND e.bin 2130706433 1 1"}})
+	if ssl, known, _ := store.GetBotSSL(1, "BotE"); !known || !ssl {
+		t.Errorf("SSEND offer not remembered: known=%v ssl=%v", known, ssl)
+	}
+	if got, _ := store.GetDownload(e2.ID); !got.SSL {
+		t.Error("download not marked SSL")
 	}
 }

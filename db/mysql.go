@@ -162,6 +162,14 @@ func mysqlMigrationStatements() []string {
 		`ALTER TABLE downloads ADD COLUMN auto_subdir BOOLEAN NOT NULL DEFAULT TRUE`,
 		`ALTER TABLE downloads ADD COLUMN subdir_depth INTEGER NOT NULL DEFAULT 3`,
 		`ALTER TABLE downloads ADD COLUMN expected_filename VARCHAR(500) NOT NULL DEFAULT ''`,
+		`ALTER TABLE downloads ADD COLUMN via_ssl BOOLEAN NOT NULL DEFAULT FALSE`,
+		`CREATE TABLE IF NOT EXISTS bot_ssl (
+			server_id BIGINT NOT NULL,
+			bot_nick VARCHAR(255) NOT NULL,
+			supports_ssl BOOLEAN NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE KEY uq_bot_ssl (server_id, bot_nick)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
 		`ALTER TABLE servers ADD COLUMN discovery_mode VARCHAR(20) NOT NULL DEFAULT 'normal'`,
 		`ALTER TABLE servers ADD COLUMN discovery_on_connect BOOLEAN NOT NULL DEFAULT FALSE`,
@@ -474,7 +482,7 @@ func (s *MySQLStore) UpdateRealmSearchBot(id int64, botNick string) error {
 // --- Downloads ---
 
 func (s *MySQLStore) GetDownloads(status string) ([]Download, error) {
-	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir, expected_filename FROM downloads"
+	query := "SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir, expected_filename, via_ssl FROM downloads"
 	var rows *sql.Rows
 	var err error
 	if status != "" {
@@ -494,7 +502,7 @@ func (s *MySQLStore) GetDownloads(status string) ([]Download, error) {
 		if err := rows.Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 			&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 			&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-			&dl.CreatedAt, &statsOnly, &dl.AutoExtract, &dl.TargetDir, &dl.AutoSubdir, &dl.ExpectedFilename); err != nil {
+			&dl.CreatedAt, &statsOnly, &dl.AutoExtract, &dl.TargetDir, &dl.AutoSubdir, &dl.ExpectedFilename, &dl.SSL); err != nil {
 			return nil, err
 		}
 		dl.StatsOnly = statsOnly == 1
@@ -507,11 +515,11 @@ func (s *MySQLStore) GetDownload(id int64) (*Download, error) {
 	var dl Download
 	var statsOnly int
 	err := s.db.QueryRow(
-		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir, expected_filename FROM downloads WHERE id=?", id,
+		"SELECT id, server_id, channel, bot_nick, pack_number, filename, filesize, downloaded_bytes, status, destination_path, error_message, peak_speed, average_speed, started_at, completed_at, created_at, stats_only, auto_extract, target_dir, auto_subdir, expected_filename, via_ssl FROM downloads WHERE id=?", id,
 	).Scan(&dl.ID, &dl.ServerID, &dl.Channel, &dl.BotNick, &dl.PackNumber,
 		&dl.Filename, &dl.Filesize, &dl.DownloadedBytes, &dl.Status, &dl.DestinationPath,
 		&dl.ErrorMessage, &dl.PeakSpeed, &dl.AverageSpeed, &dl.StartedAt, &dl.CompletedAt,
-		&dl.CreatedAt, &statsOnly, &dl.AutoExtract, &dl.TargetDir, &dl.AutoSubdir, &dl.ExpectedFilename)
+		&dl.CreatedAt, &statsOnly, &dl.AutoExtract, &dl.TargetDir, &dl.AutoSubdir, &dl.ExpectedFilename, &dl.SSL)
 	if err != nil {
 		return nil, err
 	}
@@ -539,11 +547,11 @@ func (s *MySQLStore) CreateDownload(dl *Download) error {
 
 func (s *MySQLStore) UpdateDownload(dl *Download) error {
 	_, err := s.db.Exec(
-		`UPDATE downloads SET channel=?, bot_nick=?, pack_number=?, filename=?, filesize=?, downloaded_bytes=?, status=?, destination_path=?, error_message=?, peak_speed=?, average_speed=?, started_at=?, completed_at=?, created_at=?, auto_extract=?, target_dir=?, auto_subdir=?, expected_filename=? WHERE id=?`,
+		`UPDATE downloads SET channel=?, bot_nick=?, pack_number=?, filename=?, filesize=?, downloaded_bytes=?, status=?, destination_path=?, error_message=?, peak_speed=?, average_speed=?, started_at=?, completed_at=?, created_at=?, auto_extract=?, target_dir=?, auto_subdir=?, expected_filename=?, via_ssl=? WHERE id=?`,
 		dl.Channel, dl.BotNick, dl.PackNumber, dl.Filename, dl.Filesize,
 		dl.DownloadedBytes, dl.Status, dl.DestinationPath, dl.ErrorMessage,
 		dl.PeakSpeed, dl.AverageSpeed, dl.StartedAt, dl.CompletedAt, dl.CreatedAt, dl.AutoExtract,
-		dl.TargetDir, dl.AutoSubdir, dl.ExpectedFilename, dl.ID,
+		dl.TargetDir, dl.AutoSubdir, dl.ExpectedFilename, dl.SSL, dl.ID,
 	)
 	return err
 }

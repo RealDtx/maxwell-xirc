@@ -969,6 +969,7 @@
                                                         :class="'badge-' + dl.status"
                                                         x-text="dl.status"
                                                     ></span>
+                                                    <span x-show="dl.ssl" title="Transferred over SSL" aria-label="SSL">🔒</span>
                                                     <span x-show="dl.expected_filename" class="badge badge-needs_action"
                                                           :title="'Pack list was outdated — expected ' + dl.expected_filename + ', bot sent ' + dl.filename">⚠ mismatch</span>
                                                 </span>

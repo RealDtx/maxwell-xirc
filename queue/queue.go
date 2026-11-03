@@ -118,6 +118,7 @@ func (q *Queue) Retry(id int64) error {
 		dl.Filename, dl.ExpectedFilename = dl.ExpectedFilename, ""
 	}
 	dl.DownloadedBytes = 0
+	dl.SSL = false
 	dl.StartedAt = nil
 	dl.CompletedAt = nil
 	return q.store.UpdateDownload(dl)

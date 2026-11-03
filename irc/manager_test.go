@@ -426,4 +426,6 @@ func (m *mockStore) GetDiscoveredChannels(serverID int64) ([]db.DiscoveredChanne
 }
 func (m *mockStore) SetDiscoveredFlag(id int64, flag string) error { return nil }
 func (m *mockStore) MarkDiscoveredSeen(serverID int64) error       { return nil }
+func (m *mockStore) GetBotSSL(int64, string) (bool, bool, error)   { return false, false, nil }
+func (m *mockStore) SetBotSSL(int64, string, bool) error           { return nil }
 func (m *mockStore) CountUnseenDiscovered() (map[int64]int, error) { return nil, nil }

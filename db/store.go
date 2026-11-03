@@ -25,6 +25,11 @@ type Store interface {
 	// SetDiscoveredFlag sets flag ("dismissed" or "added") on row id.
 	SetDiscoveredFlag(id int64, flag string) error
 	MarkDiscoveredSeen(serverID int64) error
+
+	// Bot SSL capability: what a bot answered to "xdcc ssend" (nick is
+	// case-insensitive). known is false for a bot never asked.
+	GetBotSSL(serverID int64, nick string) (ssl, known bool, err error)
+	SetBotSSL(serverID int64, nick string, ssl bool) error
 	// CountUnseenDiscovered counts unseen, non-dismissed, non-added rows per server.
 	CountUnseenDiscovered() (map[int64]int, error)
 

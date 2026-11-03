@@ -38,8 +38,14 @@ type PendingRequest struct {
 
 // sslNoAnswerFallback is how long an "xdcc ssend" may go unanswered before
 // we assume the bot silently ignores the command and fall back to plain.
-// The minute sweep checks it, so the fallback happens within ~1–2 min.
-const sslNoAnswerFallback = 45 * time.Second
+// Bots answer within a second or two; the margin covers IRC flood
+// throttling. It only applies once per bot: the answer is persisted.
+// ponytail: fixed; raise it if slow bots get a duplicate plain request.
+var sslNoAnswerFallback = 8 * time.Second
+
+// sslAdvertRe matches a bot advertising SSL in its notices, e.g.
+// "** Sending you pack #7 (…) - (resume+ssl supported)".
+var sslAdvertRe = regexp.MustCompile(`(?i)\bssl supported\b`)
 
 // sslUnsupportedRe matches a bot's reply to an "xdcc ssend" it doesn't know.
 var sslUnsupportedRe = regexp.MustCompile(`(?i)\b(invalid|unknown|unrecogni[sz]ed|not supported|unsupported|not available|disabled|not enabled|try "?/msg)\b`)
@@ -62,7 +68,6 @@ type Engine struct {
 	eventCh            <-chan irc.Event
 	stopCh             chan struct{}
 	pendingByBot       map[string]*PendingRequest // key: "serverID:botNick"
-	botNoSSL           map[string]bool            // pendingKey → bot can't do SSL DCC (until restart)
 	maxConcurrent      int
 	keepMismatch       bool       // downloads.on_mismatch == "keep"
 	passivePorts       string     // downloads.passive_ports; "" = passive DCC off
@@ -83,7 +88,6 @@ func NewEngine(store db.Store, bus *irc.EventBus, ircMgr *irc.Manager, storageCf
 		ircMgr:             ircMgr,
 		stopCh:             make(chan struct{}),
 		pendingByBot:       make(map[string]*PendingRequest),
-		botNoSSL:           make(map[string]bool),
 		activeTransfers:    make(map[int64]*dcc.Transfer),
 		cancelledTransfers: make(map[int64]bool),
 		activeDestPaths:    make(map[string]bool),
@@ -298,9 +302,11 @@ func (e *Engine) Dispatch(dl *db.Download) error {
 
 	mode := e.realmSSLMode(dl.ServerID, dl.Channel)
 	key := pendingKey(dl.ServerID, dl.BotNick)
-	e.mu.RLock()
-	askSSL := mode == "require" || (mode == "" && !e.botNoSSL[key])
-	e.mu.RUnlock()
+	askSSL := mode == "require"
+	if mode == "" {
+		ssl, known, _ := e.store.GetBotSSL(dl.ServerID, dl.BotNick)
+		askSSL = ssl || !known // unknown bots are asked for SSL
+	}
 
 	// Register before sending to avoid race if bot responds immediately.
 	e.RegisterPendingRequest(dl.ID, dl.ServerID, dl.BotNick)
@@ -314,6 +320,12 @@ func (e *Engine) Dispatch(dl *db.Download) error {
 		delete(e.pendingByBot, pendingKey(dl.ServerID, dl.BotNick))
 		e.mu.Unlock()
 		return err
+	}
+	if askSSL {
+		e.mu.RLock()
+		p := e.pendingByBot[key]
+		e.mu.RUnlock()
+		time.AfterFunc(sslNoAnswerFallback, func() { e.sslCheckSilent(p) })
 	}
 	return nil
 }
@@ -347,6 +359,14 @@ func (e *Engine) sslBotReply(serverID int64, bot, message string) {
 	e.mu.Unlock()
 	if ask {
 		e.sslFallback(p, "bot answered: "+message)
+	} else if sslAdvertRe.MatchString(message) {
+		e.rememberBotSSL(serverID, bot, true)
+	}
+}
+
+func (e *Engine) rememberBotSSL(serverID int64, bot string, ssl bool) {
+	if err := e.store.SetBotSSL(serverID, bot, ssl); err != nil {
+		log.Printf("saving SSL support of %s: %v", bot, err)
 	}
 }
 
@@ -363,10 +383,9 @@ func (e *Engine) sslFallback(p *PendingRequest, reason string) {
 	require := p.SSLMode == "require"
 	if require {
 		delete(e.pendingByBot, key)
-	} else {
-		e.botNoSSL[key] = true
 	}
 	e.mu.Unlock()
+	e.rememberBotSSL(p.ServerID, p.BotNick, false)
 
 	if require {
 		msg := fmt.Sprintf("Bot %s doesn't support SSL transfers and this realm requires SSL (%s)", p.BotNick, reason)
@@ -383,18 +402,16 @@ func (e *Engine) sslFallback(p *PendingRequest, reason string) {
 	}
 }
 
-// sslSilentFallback falls back for "xdcc ssend" requests the bot never
-// answered — some bots ignore unknown commands without a word.
-func (e *Engine) sslSilentFallback() {
-	var stale []*PendingRequest
-	e.mu.RLock()
-	for _, p := range e.pendingByBot {
-		if p.SSLAsked && !p.Answered && time.Since(p.CreatedAt) > sslNoAnswerFallback {
-			stale = append(stale, p)
-		}
+// sslCheckSilent falls back when the bot hasn't said a word since our
+// "xdcc ssend" — some bots ignore unknown commands silently.
+func (e *Engine) sslCheckSilent(p *PendingRequest) {
+	if p == nil {
+		return
 	}
+	e.mu.RLock()
+	silent := p.SSLAsked && !p.Answered
 	e.mu.RUnlock()
-	for _, p := range stale {
+	if silent {
 		e.sslFallback(p, "no answer to xdcc ssend")
 	}
 }
@@ -480,7 +497,6 @@ func (e *Engine) loop() {
 			return
 		case <-sweep.C:
 			e.expirePendingRequests()
-			e.sslSilentFallback()
 			// Safety-net pump: catches slots freed by paths without an
 			// explicit pump call and downloads queued while IRC was down.
 			e.TryDispatchQueued()
@@ -542,10 +558,11 @@ func (e *Engine) handleMessage(ev irc.Event) {
 		return
 	}
 	if !offer.SSL && pending.SSLAsked {
-		e.mu.Lock()
-		e.botNoSSL[key] = true
-		e.mu.Unlock()
+		e.rememberBotSSL(pending.ServerID, ev.Nick, false)
 		log.Printf("download %d: %s answered xdcc ssend with plain DCC", pending.DownloadID, ev.Nick)
+	}
+	if offer.SSL {
+		e.rememberBotSSL(pending.ServerID, ev.Nick, true)
 	}
 
 	// Passive DCC needs a forwarded port range; without one, ask the user.
@@ -654,6 +671,7 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	}
 	dl.Status = "downloading"
 	dl.ErrorMessage = ""
+	dl.SSL = offer.SSL
 	startedAt := time.Now()
 	dl.StartedAt = &startedAt
 	if err := e.store.UpdateDownload(dl); err != nil {
