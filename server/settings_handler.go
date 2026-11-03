@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -284,8 +285,8 @@ func validateSettings(cur, e config.Editable) []string {
 	if _, _, err := dcc.ParsePortRange(e.Downloads.PassivePorts); err != nil {
 		errs = append(errs, "downloads.passive_ports: "+err.Error())
 	}
-	if ip := strings.TrimSpace(e.Downloads.PublicIP); ip != "" && net.ParseIP(ip).To4() == nil {
-		errs = append(errs, "downloads.public_ip must be an IPv4 address")
+	if v := strings.TrimSpace(e.Downloads.PublicIP); v != "" && net.ParseIP(v).To4() == nil && !validHostname(v) {
+		errs = append(errs, "downloads.public_ip must be an IPv4 address or a hostname (e.g. a DynDNS name)")
 	}
 	if n := e.Discovery.NormalStaySeconds; n < 0 || n > 86400 {
 		errs = append(errs, "discovery.normal_stay_seconds must be 0–86400")
@@ -373,3 +374,8 @@ func valuesEqual(a, b any) bool {
 	}
 	return reflect.DeepEqual(a, b)
 }
+
+var hostnameRE = regexp.MustCompile(`^(?i)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+
+// validHostname accepts a dotted DNS name such as a DynDNS hostname.
+func validHostname(s string) bool { return len(s) <= 253 && hostnameRE.MatchString(s) }

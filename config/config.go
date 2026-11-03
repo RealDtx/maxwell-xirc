@@ -46,8 +46,9 @@ type DownloadsConfig struct {
 	// listen on a port from this range ("50000-50010" or "50000") and the bot
 	// connects to us. The range must be forwarded on the router. Empty = off.
 	PassivePorts string `yaml:"passive_ports" json:"passive_ports"`
-	// PublicIP is the address sent to bots for passive DCC (the router's WAN
-	// IPv4). Empty = detect it via api.ipv4.ipify.org.
+	// PublicIP is the address sent to bots for passive DCC: the router's WAN
+	// IPv4 or a DynDNS hostname resolving to it. Empty = auto-detect via
+	// public IP services, then OpenDNS.
 	PublicIP string `yaml:"public_ip" json:"public_ip"`
 }
 

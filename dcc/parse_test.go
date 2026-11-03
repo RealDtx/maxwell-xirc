@@ -3,8 +3,11 @@ package dcc
 import (
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -136,5 +139,19 @@ func TestPassiveTransferAccepts(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(dest); string(b) != "hello" {
 		t.Errorf("got %q", b)
+	}
+}
+
+func TestDetectPublicIPv4FallsBack(t *testing.T) {
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("203.0.113.7\n")) }))
+	defer ok.Close()
+	junk := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>blocked</html>")) }))
+	defer junk.Close()
+	ip, err := detectPublicIPv4([]string{"http://127.0.0.1:1", junk.URL, ok.URL}, "")
+	if err != nil || ip.String() != "203.0.113.7" {
+		t.Fatalf("ip=%v err=%v", ip, err)
+	}
+	if _, err := detectPublicIPv4([]string{junk.URL}, ""); err == nil || !strings.Contains(err.Error(), "public_ip") {
+		t.Errorf("want error naming downloads.public_ip, got %v", err)
 	}
 }

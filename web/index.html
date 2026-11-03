@@ -1647,11 +1647,11 @@
                                             <div class="text-xs" style="color:var(--text-muted); margin-top:4px;">Some bots offer passive (reverse) DCC: they connect to you instead of you to them. Pick a port range, forward it (TCP) on your router to this machine, and with Docker also publish it (e.g. 50000-50010:50000-50010). One port per simultaneous passive transfer.</div>
                                         </div>
                                         <div class="form-group">
-                                            <label>Public IP for passive DCC</label>
-                                            <input type="text" x-model="systemForm.downloads.public_ip" placeholder="empty = auto-detect"
+                                            <label>Public IP or DynDNS hostname for passive DCC</label>
+                                            <input type="text" x-model="systemForm.downloads.public_ip" placeholder="e.g. myhome.dyndns.example — empty = auto-detect"
                                                    :disabled="systemLocked('downloads.public_ip')"
                                                    :title="systemLocked('downloads.public_ip') ? 'Set by environment variable ' + systemEnvVar('downloads.public_ip') : ''">
-                                            <div class="text-xs" style="color:var(--text-muted); margin-top:4px;">The router&rsquo;s WAN IPv4 that bots connect to. Leave empty to look it up via api.ipv4.ipify.org.</div>
+                                            <div class="text-xs" style="color:var(--text-muted); margin-top:4px;">The router&rsquo;s WAN IPv4 that bots connect to, or a DynDNS hostname pointing at it (resolved on every transfer, so IP changes follow). Leave empty to detect it (ipify, icanhazip, checkip.amazonaws.com, then OpenDNS directly).</div>
                                         </div>
                                     </div>
 

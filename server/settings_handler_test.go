@@ -575,3 +575,11 @@ func TestValidateSettings_DiscoveryStayErrorOrder(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestValidHostname(t *testing.T) {
+	for in, ok := range map[string]bool{"myhome.dyndns.example": true, "a.b": true, "localhost": false, "-x.example": false, "x..example": false, "my home.example": false} {
+		if validHostname(in) != ok {
+			t.Errorf("validHostname(%q) = %v", in, !ok)
+		}
+	}
+}
