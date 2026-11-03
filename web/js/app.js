@@ -1630,6 +1630,7 @@ document.addEventListener('alpine:init', () => {
                 }, 3000);
             }).catch((e) => {
                 console.error('download request error', e);
+                alert('Queuing the download failed: ' + (e.message || e));
                 const updated = Object.assign({}, this._downloadingKeys);
                 delete updated[key];
                 this._downloadingKeys = updated;
@@ -2128,7 +2129,7 @@ document.addEventListener('alpine:init', () => {
                 if (status === 'failed') await api.clearDownloads('needs_action');
                 this._dlSelected = {};
                 await this.loadDownloads();
-            } catch (e) { console.error('clearDownloads error', e); }
+            } catch (e) { console.error('clearDownloads error', e); alert('Clearing downloads failed: ' + (e.message || e)); }
         },
 
         async dlClearSelected() {

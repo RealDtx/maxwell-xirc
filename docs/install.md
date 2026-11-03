@@ -113,6 +113,16 @@ The container runs as `PUID:PGID` (compose `user:`), so `./data`,
 `./data` yourself as above — if it's missing, Docker creates it owned by
 root and xirc can't open its database (it exits and restarts in a loop).
 
+**Windows / macOS (Docker Desktop):** keep the install directory — at least
+`./data` — on the Linux side, e.g. inside WSL (`\\wsl$\<distro>\home\…`,
+run `docker compose` from a WSL shell there), not on `C:\`. Folders shared
+from the Windows or macOS filesystem don't reliably support SQLite's WAL
+mode and locking, and writes then fail with "database is locked" (login,
+queuing and clearing downloads). xirc logs `sqlite: WARNING: WAL mode
+unavailable` at startup when that's the case. To move an existing install,
+stop it, copy the whole directory (with `data/`) into WSL and start it from
+there. MariaDB (the `mariadb` profile) isn't affected.
+
 The port is published on `127.0.0.1:8085` only, and a browser on the Docker
 host itself (http://localhost:8085) is admin without logging in — the last
 line above is optional. Requests through a reverse proxy (they carry

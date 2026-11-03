@@ -19,6 +19,8 @@ services:
       # range here and forward it on your router.
       # - "50000-50010:50000-50010"
     volumes:
+      # Docker Desktop (Windows/macOS): keep this directory inside WSL / the
+      # Linux VM, not on C:\ — SQLite can't lock files shared from Windows.
       - ./data:/data
       # Keep downloads and media on the same filesystem so finished files are
       # renamed instantly instead of copied.

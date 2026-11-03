@@ -43,6 +43,13 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("pinging sqlite: %w", err)
 	}
 
+	// Without WAL (e.g. ./data on a Docker Desktop bind mount from Windows)
+	// every open reader blocks writers, so writes fail with SQLITE_BUSY.
+	var mode string
+	if err := db.QueryRow("PRAGMA journal_mode").Scan(&mode); err == nil && !strings.EqualFold(mode, "wal") {
+		log.Printf("sqlite: WARNING: WAL mode unavailable (journal_mode=%s) for %s; writes may fail with \"database is locked\". Keep the data folder on a native Linux filesystem or a Docker named volume, not a Windows/macOS bind mount.", mode, path)
+	}
+
 	return &SQLiteStore{db: db}, nil
 }
 

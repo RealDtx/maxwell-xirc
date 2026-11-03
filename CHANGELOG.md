@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases: see the GitHub release pages.
 
+## [v0.13.2-beta] - 2026-11-03
+
+### Fixed
+- Queuing a download or clearing the download list failed silently; the error is now shown.
+
+### Added
+- Startup warning when SQLite can't use WAL mode (`sqlite: WARNING: WAL mode unavailable`), typically because `./data` is a Docker Desktop folder shared from Windows or macOS — every write then fails with "database is locked". The install guide now says to keep the install directory inside WSL there.
+
 ## [v0.13.1-beta] - 2026-11-03
 
 ### Fixed
