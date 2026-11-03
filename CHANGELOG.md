@@ -2,6 +2,11 @@
 
 Notable changes per release. Older releases: see the GitHub release pages.
 
+## [v0.13.1-beta] - 2026-11-03
+
+### Fixed
+- "database is locked (5) (SQLITE_BUSY)" on login, when clearing downloads and on other writes while bots are advertising or downloads are running: SQLite writers now wait up to 5 s for each other instead of failing at once, and transactions take the write lock up front.
+
 ## [v0.13.0-beta] - 2026-11-03
 
 ### Added

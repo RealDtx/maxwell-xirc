@@ -33,7 +33,7 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(wal)&_pragma=foreign_keys(1)")
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(wal)&_pragma=foreign_keys(1)&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite: %w", err)
 	}
