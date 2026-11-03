@@ -138,6 +138,7 @@ const api = {
     queueLinks(text)      { return this.post('/links/queue', { text }); },
     cancelDownload(id)    { return this.post('/downloads/cancel', { download_id: id }); },
     retryDownload(id)     { return this.post('/downloads/retry', { download_id: id }); },
+    downloadQueueStatus(id) { return this.post('/downloads/queue-status', { download_id: id }); },
     moveDownload(id)      { return this.post('/downloads/move', { download_id: id }); },
     deleteDownloads(ids) { return this.post('/downloads/delete', { ids }); },
     clearDownloads(status) { return this.post('/downloads/clear', { status }); },

@@ -973,7 +973,13 @@
                                                           :title="'Pack list was outdated — expected ' + dl.expected_filename + ', bot sent ' + dl.filename">⚠ mismatch</span>
                                                 </span>
                                             </td>
-                                            <td class="dl-filename-cell" x-text="dl.filename || '-'"></td>
+                                            <td class="dl-filename-cell">
+                                                <span x-text="dl.filename || '-'"></span>
+                                                <template x-if="dlBotNote[dl.id] && (dl.status === 'queued' || dl.status === 'downloading')">
+                                                    <div class="text-xs" :style="'margin-top:2px;' + (dlBotNote[dl.id].refused ? 'color:var(--danger)' : 'color:var(--text-muted)')"
+                                                         :title="'Latest message from ' + dl.bot_nick" x-text="'↳ ' + dlBotNote[dl.id].text"></div>
+                                                </template>
+                                            </td>
                                             <td>
                                                 <span class="tooltip">
                                                     <span x-text="dl.bot_nick || '-'"></span>
@@ -1019,7 +1025,10 @@
                                                                 Extract
                                                             </label>
                                                         </template>
-                                                        <button class="btn btn-danger btn-sm" @click="cancelDownload(dl.id)">Cancel</button>
+                                                        <button class="btn btn-sm" style="margin-right:4px" @click="queueStatus(dl)"
+                                                                title="Ask the bot for your queue position (XDCC QUEUE)">Status</button>
+                                                        <button class="btn btn-danger btn-sm" @click="cancelDownload(dl.id)"
+                                                                title="Cancel here and at the bot (XDCC REMOVE while queued, XDCC CANCEL once offered)">Cancel</button>
                                                         <template x-if="dl.status === 'queued' && isAdmin">
                                                             <button class="btn btn-sm" style="margin-left:4px" @click="moveToFront(dl.id)">Move to front</button>
                                                         </template>

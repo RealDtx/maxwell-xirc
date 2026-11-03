@@ -211,6 +211,7 @@ document.addEventListener('alpine:init', () => {
         discSort: { col: 'users', dir: 'desc' },
         debugBots: localStorage.getItem('mxirc_debug_bots') === '1', // Settings → General
         botDebug: null,         // { server_id, bot } shown in the debug drawer
+        dlBotNote: {},          // download id -> latest notice from its bot (queue position, errors, …)
         discoveryPreview: null, // { server_id, channel, partner, role, row_id, busy, error }
 
         // Active server (for server view)
@@ -594,6 +595,28 @@ document.addEventListener('alpine:init', () => {
             const keys = Object.keys(this.ircMessages).filter(k => k.toLowerCase() === want);
             if (keys.length === 1) return this.ircMessages[keys[0]];
             return keys.flatMap(k => this.ircMessages[k]).sort((x, y) => (x.timestamp < y.timestamp ? -1 : 1));
+        },
+
+        // A bot's private reply (queue position, "Sending you pack", refusals) is
+        // shown under its waiting download, so XDCC QUEUE answers land in place.
+        _noteBotReply(data) {
+            const ch = data.channel || '';
+            const type = (data.data && data.data.type) || '';
+            if (!ch || '#&!+'.includes(ch[0]) || !['notice', 'privmsg', 'refused'].includes(type)) return;
+            const text = data.message || (data.data && data.data.message) || '';
+            const low = ch.toLowerCase();
+            for (const d of this.downloads) {
+                if (d.server_id === data.server_id && (d.bot_nick || '').toLowerCase() === low &&
+                    (d.status === 'queued' || d.status === 'downloading')) {
+                    this.dlBotNote = Object.assign({}, this.dlBotNote, { [d.id]: { text, refused: type === 'refused' } });
+                }
+            }
+        },
+
+        async queueStatus(dl) {
+            this.dlBotNote = Object.assign({}, this.dlBotNote, { [dl.id]: { text: 'Asking ' + dl.bot_nick + '…' } });
+            try { await api.downloadQueueStatus(dl.id); }
+            catch (e) { this.dlBotNote = Object.assign({}, this.dlBotNote, { [dl.id]: { text: e.message || 'Status request failed', refused: true } }); }
         },
 
         // Numbers and dates sort biggest/newest first on the first click.
@@ -2178,6 +2201,7 @@ document.addEventListener('alpine:init', () => {
             const type = data.type;
 
             if (type === 'irc_message') {
+                this._noteBotReply(data);
                 if (data.channel && data.channel !== '') {
                     const key = this.channelKey(data.server_id, data.channel);
                     const existing = this.ircMessages[key] || [];

@@ -143,6 +143,31 @@ func (s *Server) handleCancelDownload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
+// handleDownloadQueueStatus sends XDCC QUEUE to the download's bot; the
+// bot's notice reaches the UI over the WebSocket like any other message.
+func (s *Server) handleDownloadQueueStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req struct {
+		DownloadID int64 `json:"download_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DownloadID == 0 {
+		writeError(w, http.StatusBadRequest, "download_id is required")
+		return
+	}
+	if s.engine == nil {
+		writeError(w, http.StatusInternalServerError, "download engine not initialized")
+		return
+	}
+	if err := s.engine.RequestQueueStatus(req.DownloadID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
 func (s *Server) handleRetryDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

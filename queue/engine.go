@@ -129,6 +129,11 @@ func (e *Engine) CancelTransfer(downloadID int64) {
 	e.mu.Unlock()
 	if pending != nil {
 		e.withdrawRequest(pending)
+	} else if dl, err := e.store.GetDownload(downloadID); err == nil && dl != nil && dl.Status == "downloading" {
+		// The bot already offered the file: XDCC REMOVE no longer applies,
+		// and without XDCC CANCEL it holds the offer open until its own
+		// 180 s timeout ("You already requested that pack" meanwhile).
+		e.cancelAtBot(dl.ServerID, dl.BotNick)
 	}
 
 	e.transferMu.Lock()
@@ -226,6 +231,35 @@ func (e *Engine) withdrawRequest(p *PendingRequest) {
 			log.Printf("failed to withdraw %s pack %d: %v", p.BotNick, dl.PackNumber, err)
 		}
 	}
+}
+
+// cancelAtBot aborts the bot's offer or running transfer to us (best-effort).
+func (e *Engine) cancelAtBot(serverID int64, bot string) {
+	if e.ircMgr == nil {
+		return
+	}
+	if conn := e.ircMgr.GetConnection(serverID); conn != nil {
+		if err := conn.CancelTransfer(bot); err != nil {
+			log.Printf("failed to send XDCC CANCEL to %s: %v", bot, err)
+		}
+	}
+}
+
+// RequestQueueStatus asks the download's bot for its queue position
+// (XDCC QUEUE); the reply arrives as a notice from the bot.
+func (e *Engine) RequestQueueStatus(downloadID int64) error {
+	dl, err := e.store.GetDownload(downloadID)
+	if err != nil || dl == nil {
+		return fmt.Errorf("download %d not found", downloadID)
+	}
+	if e.ircMgr == nil {
+		return fmt.Errorf("no IRC manager configured")
+	}
+	conn := e.ircMgr.GetConnection(dl.ServerID)
+	if conn == nil {
+		return fmt.Errorf("no IRC connection for server %d", dl.ServerID)
+	}
+	return conn.QueueStatus(dl.BotNick)
 }
 
 func (e *Engine) GetPendingRequest(serverID int64, botNick string) *PendingRequest {
@@ -479,6 +513,7 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	if dl.ExpectedFilename != "" && !keepMismatch {
 		// The transfer never starts, so there's nothing to delete; the bot's
 		// offer simply times out.
+		e.cancelAtBot(dl.ServerID, ev.Nick)
 		msg := fmt.Sprintf("Filename mismatch — expected %q, bot sent %q; not downloaded", dl.ExpectedFilename, offer.Filename)
 		dl.Status = "failed"
 		dl.ErrorMessage = msg
@@ -509,6 +544,7 @@ func (e *Engine) handleMessage(ev irc.Event) {
 	}
 
 	if err := dcc.CheckDiskSpace(destDir, offer.Size, st.MinFreeSpace); err != nil {
+		e.cancelAtBot(dl.ServerID, ev.Nick)
 		e.queue.MarkFailed(dl.ID, err.Error())
 		e.bus.Publish(irc.Event{
 			Type: irc.EventNotification,
@@ -539,6 +575,8 @@ func (e *Engine) handleMessage(ev irc.Event) {
 			e.transferMu.Lock()
 			delete(e.activeDestPaths, filepath.Base(destPath))
 			e.transferMu.Unlock()
+			log.Printf("download %d: %v", dl.ID, err)
+			e.cancelAtBot(dl.ServerID, ev.Nick)
 			e.queue.MarkFailed(dl.ID, err.Error())
 			e.TryDispatchQueued()
 			return

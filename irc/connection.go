@@ -640,6 +640,16 @@ func (c *Connection) RemovePack(botNick string, packNumber int) error {
 	return c.xdcc(botNick, fmt.Sprintf("xdcc remove %d", packNumber))
 }
 
+// CancelTransfer aborts the bot's pending offer or running transfer to us.
+func (c *Connection) CancelTransfer(botNick string) error {
+	return c.xdcc(botNick, "xdcc cancel")
+}
+
+// QueueStatus asks the bot for our queue position; it answers with a notice.
+func (c *Connection) QueueStatus(botNick string) error {
+	return c.xdcc(botNick, "xdcc queue")
+}
+
 // SendCTCP sends a CTCP request (e.g. a passive DCC reply) to nick.
 func (c *Connection) SendCTCP(nick, payload string) error {
 	if HasLineBreak(payload) || strings.Contains(payload, "\x01") {
