@@ -195,6 +195,7 @@ func (s *Server) handleRetryDownload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.engine.TryDispatchQueued() // start it now, not on the next minute sweep
 	s.engine.TryDispatchQueued() // start the retried download if a slot is free
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})

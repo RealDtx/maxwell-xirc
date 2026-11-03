@@ -1034,7 +1034,7 @@
                                                         </template>
                                                     </span>
                                                 </template>
-                                                <template x-if="dl.status === 'failed' || dl.status === 'needs_action'">
+                                                <template x-if="dl.status === 'failed' || dl.status === 'needs_action' || dl.status === 'cancelled'">
                                                     <button class="btn btn-primary btn-sm" @click="retryDownload(dl.id)">Retry</button>
                                                 </template>
                                             </td>
