@@ -2,6 +2,11 @@
 
 Notable changes per release. Older releases: see the GitHub release pages.
 
+## [v0.13.3-beta] - 2026-11-04
+
+### Fixed
+- SQLITE_BUSY on login and when queuing downloads, still seen on slow disks (Docker Desktop on Windows) despite the 5 s wait: xirc now uses a single SQLite connection, so its own database calls queue up in order instead of racing each other inside SQLite.
+
 ## [v0.13.2-beta] - 2026-11-03
 
 ### Fixed

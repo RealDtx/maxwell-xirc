@@ -38,6 +38,17 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("opening sqlite: %w", err)
 	}
 
+	// One connection: Go's pool queues every call in order, so writers never
+	// race each other inside SQLite. With several connections a login or
+	// enqueue could lose the busy-retry race to a stream of index writes for
+	// longer than busy_timeout on slow disks (Docker Desktop on Windows) and
+	// fail with SQLITE_BUSY. busy_timeout stays for other processes
+	// (docker exec … --create-admin).
+	// ponytail: reads queue behind writes too; add a separate read-only pool
+	// if search latency ever suffers. Never hold rows open while making
+	// another store call — with one connection that deadlocks.
+	db.SetMaxOpenConns(1)
+
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("pinging sqlite: %w", err)
